@@ -2,6 +2,15 @@ import { DashboardContent } from "@/components/dashboard-content"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { Suspense } from "react"
+
+function DashboardContentFallback() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <div className="text-muted-foreground">Loading dashboard...</div>
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   return (
@@ -30,7 +39,9 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <DashboardContent />
+        <Suspense fallback={<DashboardContentFallback />}>
+          <DashboardContent />
+        </Suspense>
       </div>
     </main>
   )
