@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { UrlInput, AppConfig, PlatformSelector } from "@/components/generate";
 import { Button } from "@/components/ui/button";
-import { Rocket, Sparkles, ArrowRight } from "lucide-react";
+import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 
-export default function GeneratePage() {
+function GenerateContent() {
   const { t, currentLanguage } = useLanguage();
   const searchParams = useSearchParams();
 
@@ -145,5 +145,21 @@ export default function GeneratePage() {
         </form>
       </div>
     </div>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+    </div>
+  );
+}
+
+export default function GeneratePage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <GenerateContent />
+    </Suspense>
   );
 }
