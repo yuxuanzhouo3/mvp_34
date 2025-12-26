@@ -1,0 +1,119 @@
+import {
+  Smartphone,
+  Apple,
+  Monitor,
+  MessageCircle,
+  Bookmark,
+  Wallet,
+  Terminal
+} from "lucide-react";
+
+export type PlatformCategory = "mobile" | "miniprogram" | "desktop";
+
+export interface Platform {
+  id: string;
+  name: {
+    zh: string;
+    en: string;
+  };
+  description: {
+    zh: string;
+    en: string;
+  };
+  category: PlatformCategory;
+  icon: typeof Smartphone;
+  color: string;
+  available: boolean;
+}
+
+export const PLATFORMS: Platform[] = [
+  // 移动端
+  {
+    id: "android",
+    name: { zh: "Android", en: "Android" },
+    description: { zh: "安卓应用 (APK)", en: "Android App (APK)" },
+    category: "mobile",
+    icon: Smartphone,
+    color: "from-green-500 to-green-600",
+    available: true,
+  },
+  {
+    id: "ios",
+    name: { zh: "iOS", en: "iOS" },
+    description: { zh: "苹果应用 (IPA)", en: "iOS App (IPA)" },
+    category: "mobile",
+    icon: Apple,
+    color: "from-gray-700 to-gray-900",
+    available: true,
+  },
+  {
+    id: "harmonyos",
+    name: { zh: "鸿蒙", en: "HarmonyOS" },
+    description: { zh: "鸿蒙应用 (HAP)", en: "HarmonyOS App (HAP)" },
+    category: "mobile",
+    icon: Monitor,
+    color: "from-red-500 to-red-600",
+    available: true,
+  },
+  // 小程序
+  {
+    id: "wechat",
+    name: { zh: "微信小程序", en: "WeChat Mini Program" },
+    description: { zh: "微信生态应用", en: "WeChat Ecosystem App" },
+    category: "miniprogram",
+    icon: MessageCircle,
+    color: "from-green-400 to-green-500",
+    available: true,
+  },
+  {
+    id: "xiaohongshu",
+    name: { zh: "小红书小程序", en: "Xiaohongshu Mini Program" },
+    description: { zh: "小红书生态应用", en: "Xiaohongshu Ecosystem App" },
+    category: "miniprogram",
+    icon: Bookmark,
+    color: "from-red-400 to-pink-500",
+    available: true,
+  },
+  {
+    id: "alipay",
+    name: { zh: "支付宝小程序", en: "Alipay Mini Program" },
+    description: { zh: "支付宝生态应用", en: "Alipay Ecosystem App" },
+    category: "miniprogram",
+    icon: Wallet,
+    color: "from-blue-400 to-blue-500",
+    available: true,
+  },
+  // 桌面端
+  {
+    id: "linux",
+    name: { zh: "Linux", en: "Linux" },
+    description: { zh: "Linux桌面应用", en: "Linux Desktop App" },
+    category: "desktop",
+    icon: Terminal,
+    color: "from-orange-500 to-yellow-500",
+    available: true,
+  },
+];
+
+export const PLATFORM_CATEGORIES = {
+  mobile: {
+    name: { zh: "移动端", en: "Mobile" },
+    description: { zh: "原生移动应用", en: "Native Mobile Apps" },
+  },
+  miniprogram: {
+    name: { zh: "小程序", en: "Mini Programs" },
+    description: { zh: "轻量级小程序应用", en: "Lightweight Mini Programs" },
+  },
+  desktop: {
+    name: { zh: "桌面端", en: "Desktop" },
+    description: { zh: "桌面应用程序", en: "Desktop Applications" },
+  },
+};
+
+export const getPlatformsByCategory = (category: PlatformCategory) => {
+  return PLATFORMS.filter((p) => p.category === category);
+};
+
+export const getPlatformById = (id: string) => {
+  return PLATFORMS.find((p) => p.id === id);
+};

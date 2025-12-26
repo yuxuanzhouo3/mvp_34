@@ -1,26 +1,41 @@
-import type { Metadata } from 'next'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
-import { Analytics } from '@vercel/analytics/next'
-import './globals.css'
+import type { Metadata } from "next";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
+import { Analytics } from "@vercel/analytics/next";
+import { ThemeProvider } from "@/components/theme-provider";
+import { LanguageProvider } from "@/context/LanguageContext";
+import { Header, Footer } from "@/components/layout";
+import { DEFAULT_LANGUAGE } from "@/config";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
-}
+  title: "OneBuild",
+  description: "Build multi-platform apps from any website",
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
-        {children}
+    <html lang={DEFAULT_LANGUAGE} suppressHydrationWarning>
+      <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          disableTransitionOnChange
+        >
+          <LanguageProvider>
+            <div className="flex min-h-screen flex-col">
+              <Header />
+              <main className="flex-1">{children}</main>
+              <Footer />
+            </div>
+          </LanguageProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>
-  )
+  );
 }
