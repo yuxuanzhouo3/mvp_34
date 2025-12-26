@@ -11,6 +11,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "OneBuild",
   description: "Build multi-platform apps from any website",
+  icons: {
+    icon: "/OneBuild_28x28.png",
+    apple: "/OneBuild_108x108.png",
+  },
 };
 
 export default function RootLayout({

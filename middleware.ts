@@ -358,8 +358,8 @@ export async function middleware(request: NextRequest) {
       const clientIP = getClientIP(request);
 
       if (!clientIP) {
-        console.warn("无法获取客户端IP，标记为未知风险");
         if (FAIL_CLOSED) {
+          console.warn("无法获取客户端IP，已拦截访问");
           return new NextResponse(
             JSON.stringify({
               error: "Access Denied",
@@ -372,6 +372,7 @@ export async function middleware(request: NextRequest) {
             }
           );
         }
+        // 开发环境不输出警告，直接放行
         const res = NextResponse.next();
         res.headers.set("X-Geo-Error", "true");
         return res;
