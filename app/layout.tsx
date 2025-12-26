@@ -9,11 +9,11 @@ import { DEFAULT_LANGUAGE } from "@/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OneBuild",
+  title: "MornClient",
   description: "Build multi-platform apps from any website",
   icons: {
-    icon: "/OneBuild_28x28.png",
-    apple: "/OneBuild_108x108.png",
+    icon: "/MornClient_28x28.png",
+    apple: "/MornClient_108x108.png",
   },
 };
 

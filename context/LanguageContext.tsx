@@ -33,7 +33,7 @@ const translations: Record<Language, Record<string, string>> = {
     "hero.trusted": "已有 1000+ 开发者信赖",
 
     // 功能特性
-    "features.title": "为什么选择 OneBuild",
+    "features.title": "为什么选择 MornClient",
     "features.subtitle": "简单、快速、专业的跨平台应用构建方案",
     "features.fast.title": "极速构建",
     "features.fast.desc": "云端并行编译，分钟级生成应用",
@@ -70,7 +70,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     // 页脚
     "footer.slogan": "让应用开发更简单",
-    "footer.copyright": "© 2024 OneBuild. 保留所有权利。",
+    "footer.copyright": "© 2024 MornClient. 保留所有权利。",
     "footer.product": "产品",
     "footer.product.features": "功能特性",
     "footer.product.pricing": "订阅方案",
@@ -110,7 +110,7 @@ const translations: Record<Language, Record<string, string>> = {
     "hero.trusted": "Trusted by 1000+ developers",
 
     // Features
-    "features.title": "Why OneBuild",
+    "features.title": "Why MornClient",
     "features.subtitle": "Simple, fast, and professional cross-platform app building solution",
     "features.fast.title": "Lightning Fast",
     "features.fast.desc": "Cloud parallel compilation, generate apps in minutes",
@@ -147,7 +147,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     // Footer
     "footer.slogan": "Making app development easier",
-    "footer.copyright": "© 2024 OneBuild. All rights reserved.",
+    "footer.copyright": "© 2024 MornClient. All rights reserved.",
     "footer.product": "Product",
     "footer.product.features": "Features",
     "footer.product.pricing": "Pricing",
@@ -172,7 +172,7 @@ const translations: Record<Language, Record<string, string>> = {
 };
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const storageKey = `onebuild-language`;
+  const storageKey = `mornclient-language`;
   const [currentLanguage, setCurrentLanguageState] = useState<Language>(DEFAULT_LANGUAGE as Language);
 
   useEffect(() => {

@@ -7,7 +7,7 @@ export const IS_DOMESTIC_VERSION = DEFAULT_LANGUAGE === "zh";
 
 // 应用配置
 export const APP_CONFIG = {
-  name: "OneBuild",
+  name: "MornClient",
   description: IS_DOMESTIC_VERSION
     ? "一键构建多平台应用"
     : "Build multi-platform apps with one click",

@@ -31,7 +31,7 @@ export function Header() {
               <Box className="relative h-5 w-5 text-white" />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 bg-clip-text text-transparent">
-              OneBuild
+              MornClient
             </span>
           </Link>
 

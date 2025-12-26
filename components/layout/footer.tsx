@@ -40,7 +40,7 @@ export function Footer() {
                 <Box className="relative h-4 w-4 text-white" />
               </div>
               <span className="text-lg font-bold bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 bg-clip-text text-transparent">
-                OneBuild
+                MornClient
               </span>
             </Link>
             <p className="text-sm text-muted-foreground max-w-[200px]">
