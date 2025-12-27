@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { updateSession } from "@/lib/supabase/middleware";
 
 // ============================================================================
 // 区域类型定义
@@ -311,6 +312,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // 先处理 Supabase Session 刷新和路由保护
+  const supabaseResponse = await updateSession(request);
+
+  // 如果 Supabase 中间件返回了重定向（例如未登录用户访问保护路由）
+  if (supabaseResponse.status === 307 || supabaseResponse.status === 308) {
+    return supabaseResponse;
+  }
+
   try {
     const debugParam = searchParams.get("debug");
     const isDevelopment = process.env.NODE_ENV === "development";
@@ -401,16 +410,16 @@ export async function middleware(request: NextRequest) {
     }
 
     // 添加地理信息头
-    const response = NextResponse.next();
-    response.headers.set("X-User-Region", geoResult.region);
-    response.headers.set("X-User-Country", geoResult.countryCode);
-    response.headers.set("X-User-Currency", geoResult.currency);
+    // 复用 supabaseResponse 以保持 cookies 设置
+    supabaseResponse.headers.set("X-User-Region", geoResult.region);
+    supabaseResponse.headers.set("X-User-Country", geoResult.countryCode);
+    supabaseResponse.headers.set("X-User-Currency", geoResult.currency);
 
     if (debugParam && isDevelopment) {
-      response.headers.set("X-Debug-Mode", debugParam);
+      supabaseResponse.headers.set("X-Debug-Mode", debugParam);
     }
 
-    return response;
+    return supabaseResponse;
   } catch (error) {
     console.error("地理分流中间件错误:", error);
 

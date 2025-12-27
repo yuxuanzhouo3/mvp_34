@@ -1,21 +1,37 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
-import { UrlInput, AppConfig, PlatformSelector } from "@/components/generate";
+import { useAuth } from "@/context/AuthContext";
+import { UrlInput, AppConfig, PlatformSelector, AndroidConfig } from "@/components/generate";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 function GenerateContent() {
   const { t, currentLanguage } = useLanguage();
+  const { user } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
+  // Step 1: Platform selection
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+
+  // Step 2: URL
   const [url, setUrl] = useState("");
+
+  // Step 3: Common config
   const [appName, setAppName] = useState("");
   const [appDescription, setAppDescription] = useState("");
   const [appIcon, setAppIcon] = useState<File | null>(null);
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+
+  // Android specific config
+  const [packageName, setPackageName] = useState("");
+  const [versionCode, setVersionCode] = useState("1.0.0");
+  const [privacyPolicy, setPrivacyPolicy] = useState("");
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const urlParam = searchParams.get("url");
@@ -24,19 +40,98 @@ function GenerateContent() {
     }
   }, [searchParams]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Check if Android is the only selected platform
+  const isAndroidOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "android";
+  const hasAndroid = selectedPlatforms.includes("android");
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement generation logic
-    console.log({
-      url,
-      appName,
-      appDescription,
-      appIcon,
-      selectedPlatforms,
-    });
+
+    if (!user) {
+      router.push("/auth/login?redirect=/generate");
+      return;
+    }
+
+    // Validate Android specific fields if Android is selected
+    if (hasAndroid) {
+      if (!appName || !packageName || !versionCode) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写所有必填字段"
+            : "Please fill in all required fields"
+        );
+        return;
+      }
+
+      // Validate package name format
+      const packageRegex = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
+      if (!packageRegex.test(packageName)) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "包名格式不正确，应为 com.xxx.xxx"
+            : "Invalid package name format. Should be com.xxx.xxx"
+        );
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("url", url);
+      formData.append("appName", appName);
+      formData.append("platforms", JSON.stringify(selectedPlatforms));
+
+      if (hasAndroid) {
+        formData.append("packageName", packageName);
+        formData.append("versionCode", versionCode);
+        formData.append("privacyPolicy", privacyPolicy);
+      } else {
+        formData.append("description", appDescription);
+      }
+
+      if (appIcon) {
+        formData.append("icon", appIcon);
+      }
+
+      const response = await fetch("/api/international/android/build", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Build failed");
+      }
+
+      const result = await response.json();
+      toast.success(
+        currentLanguage === "zh"
+          ? "构建任务已创建，正在处理中..."
+          : "Build task created, processing..."
+      );
+      router.push(`/builds`);
+    } catch (error) {
+      console.error("Build error:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : currentLanguage === "zh"
+          ? "构建失败，请重试"
+          : "Build failed, please try again"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const isValid = url && appName && selectedPlatforms.length > 0;
+  // Validation for Android
+  const isAndroidValid = hasAndroid
+    ? url && appName && packageName && versionCode
+    : url && appName;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -65,56 +160,19 @@ function GenerateContent() {
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
             {currentLanguage === "zh"
-              ? "填写基本信息，选择目标平台，一键生成多平台应用"
-              : "Fill in basic info, select platforms, generate multi-platform apps with one click"}
+              ? "选择目标平台，填写基本信息，一键生成多平台应用"
+              : "Select platforms, fill in basic info, generate multi-platform apps with one click"}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-8">
-          {/* Step 1: URL Input */}
+          {/* Step 1: Platform Selection */}
           <div className="relative">
             <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-cyan-500/30">
                 1
               </div>
               <div className="w-px h-full bg-gradient-to-b from-cyan-500/50 to-transparent mt-2" />
-            </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
-              <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
-                {currentLanguage === "zh" ? "输入网站地址" : "Enter Website URL"}
-              </h2>
-              <UrlInput value={url} onChange={setUrl} />
-            </div>
-          </div>
-
-          {/* Step 2: App Config */}
-          <div className="relative">
-            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/30">
-                2
-              </div>
-              <div className="w-px h-full bg-gradient-to-b from-blue-500/50 to-transparent mt-2" />
-            </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
-              <h2 className="text-xl font-semibold mb-6">
-                {currentLanguage === "zh" ? "配置应用信息" : "Configure App Info"}
-              </h2>
-              <AppConfig
-                name={appName}
-                description={appDescription}
-                onNameChange={setAppName}
-                onDescriptionChange={setAppDescription}
-                onIconChange={setAppIcon}
-              />
-            </div>
-          </div>
-
-          {/* Step 3: Platform Selection */}
-          <div className="relative">
-            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-purple-500/30">
-                3
-              </div>
             </div>
             <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
               <PlatformSelector
@@ -124,22 +182,81 @@ function GenerateContent() {
             </div>
           </div>
 
+          {/* Step 2: URL Input */}
+          <div className="relative">
+            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/30">
+                2
+              </div>
+              <div className="w-px h-full bg-gradient-to-b from-blue-500/50 to-transparent mt-2" />
+            </div>
+            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
+              <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                {currentLanguage === "zh" ? "输入网站地址" : "Enter Website URL"}
+              </h2>
+              <UrlInput value={url} onChange={setUrl} />
+            </div>
+          </div>
+
+          {/* Step 3: App Config - Dynamic based on platform */}
+          <div className="relative">
+            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-purple-500/30">
+                3
+              </div>
+            </div>
+            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
+              <h2 className="text-xl font-semibold mb-6">
+                {currentLanguage === "zh" ? "配置应用信息" : "Configure App Info"}
+              </h2>
+
+              {/* Show Android config if Android is selected */}
+              {hasAndroid ? (
+                <AndroidConfig
+                  name={appName}
+                  packageName={packageName}
+                  versionCode={versionCode}
+                  privacyPolicy={privacyPolicy}
+                  onNameChange={setAppName}
+                  onPackageNameChange={setPackageName}
+                  onVersionCodeChange={setVersionCode}
+                  onPrivacyPolicyChange={setPrivacyPolicy}
+                  onIconChange={setAppIcon}
+                />
+              ) : (
+                <AppConfig
+                  name={appName}
+                  description={appDescription}
+                  onNameChange={setAppName}
+                  onDescriptionChange={setAppDescription}
+                  onIconChange={setAppIcon}
+                />
+              )}
+            </div>
+          </div>
+
           {/* Submit Button */}
           <div className="flex justify-center pt-6 pb-12">
             <Button
               type="submit"
               size="lg"
-              disabled={!isValid}
+              disabled={!isValid || isSubmitting}
               className="group h-14 px-10 text-lg rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 hover:from-cyan-400 hover:via-blue-400 hover:to-purple-500 text-white font-semibold shadow-xl shadow-cyan-500/25 hover:shadow-2xl hover:shadow-cyan-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
-              <Rocket className="mr-2 h-5 w-5 group-hover:animate-pulse" />
-              {t("generate.submit")}
-              {selectedPlatforms.length > 0 && (
-                <span className="ml-3 px-2.5 py-1 rounded-full bg-white/20 text-sm font-medium">
-                  {selectedPlatforms.length} {currentLanguage === "zh" ? "个平台" : "platforms"}
-                </span>
+              {isSubmitting ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <Rocket className="mr-2 h-5 w-5 group-hover:animate-pulse" />
+                  {t("generate.submit")}
+                  {selectedPlatforms.length > 0 && (
+                    <span className="ml-3 px-2.5 py-1 rounded-full bg-white/20 text-sm font-medium">
+                      {selectedPlatforms.length} {currentLanguage === "zh" ? "个平台" : "platforms"}
+                    </span>
+                  )}
+                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                </>
               )}
-              <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Button>
           </div>
         </form>

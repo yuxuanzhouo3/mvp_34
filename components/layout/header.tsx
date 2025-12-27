@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "./language-switcher";
 import { ThemeSwitcher } from "./theme-switcher";
-import { Menu, X, Box, Crown, LogIn, Layers } from "lucide-react";
+import { UserMenu } from "@/components/auth";
+import { Menu, X, Box, Crown, LogIn, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 export function Header() {
   const { t, currentLanguage } = useLanguage();
+  const { user, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
@@ -74,14 +77,24 @@ export function Header() {
               </span>
             </Button>
 
-            {/* Login Button */}
-            <Button
-              size="sm"
-              className="h-9 px-4 gap-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 hover:from-cyan-400 hover:via-blue-400 hover:to-purple-500 text-white border-0 shadow-lg shadow-cyan-500/20 hover:shadow-xl hover:shadow-cyan-500/30 transition-all"
-            >
-              <LogIn className="h-4 w-4" />
-              <span className="font-medium">{t("nav.login")}</span>
-            </Button>
+            {/* Auth State */}
+            {loading ? (
+              <div className="h-9 w-9 flex items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : user ? (
+              <UserMenu />
+            ) : (
+              <Link href="/auth/login">
+                <Button
+                  size="sm"
+                  className="h-9 px-4 gap-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 hover:from-cyan-400 hover:via-blue-400 hover:to-purple-500 text-white border-0 shadow-lg shadow-cyan-500/20 hover:shadow-xl hover:shadow-cyan-500/30 transition-all"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span className="font-medium">{t("nav.login")}</span>
+                </Button>
+              </Link>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -122,14 +135,26 @@ export function Header() {
                 <span>{currentLanguage === "zh" ? "订阅会员" : "Subscribe"}</span>
               </Button>
 
-              {/* Login Button - Mobile */}
-              <Button
-                size="sm"
-                className="h-11 gap-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 text-white rounded-xl"
-              >
-                <LogIn className="h-4 w-4" />
-                <span>{t("nav.login")}</span>
-              </Button>
+              {/* Auth State - Mobile */}
+              {loading ? (
+                <div className="h-11 flex items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : user ? (
+                <div className="flex items-center justify-center py-2">
+                  <UserMenu />
+                </div>
+              ) : (
+                <Link href="/auth/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Button
+                    size="sm"
+                    className="w-full h-11 gap-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 text-white rounded-xl"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    <span>{t("nav.login")}</span>
+                  </Button>
+                </Link>
+              )}
             </div>
           </nav>
         </div>

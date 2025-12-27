@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { Analytics } from "@vercel/analytics/next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LanguageProvider } from "@/context/LanguageContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { Header, Footer } from "@/components/layout";
 import { DEFAULT_LANGUAGE } from "@/config";
 import "./globals.css";
@@ -30,13 +31,15 @@ export default function RootLayout({
           defaultTheme="light"
           disableTransitionOnChange
         >
-          <LanguageProvider>
-            <div className="flex min-h-screen flex-col">
-              <Header />
-              <main className="flex-1">{children}</main>
-              <Footer />
-            </div>
-          </LanguageProvider>
+          <AuthProvider>
+            <LanguageProvider>
+              <div className="flex min-h-screen flex-col">
+                <Header />
+                <main className="flex-1">{children}</main>
+                <Footer />
+              </div>
+            </LanguageProvider>
+          </AuthProvider>
         </ThemeProvider>
         <Analytics />
       </body>
