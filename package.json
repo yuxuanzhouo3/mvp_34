@@ -9,6 +9,7 @@
     ]
   },
   "scripts": {
+    "predev": "node scripts/clean-trace.js",
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
