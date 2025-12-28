@@ -321,7 +321,20 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     throw new Error(`Res directory not found: ${resDir}`);
   }
 
-  // 辅助函数：处理单个图标
+  // Step 1: 预处理 - 将用户上传的图片标准化为 1024x1024 正方形
+  // 使用 contain 模式保持宽高比，居中显示，透明背景填充
+  console.log(`[Build ${buildId}] Normalizing icon to 1024x1024...`);
+  const normalizedBuffer = await sharp(iconBuffer)
+    .resize(1024, 1024, {
+      fit: "contain",           // 保持宽高比，完整显示图片
+      background: { r: 0, g: 0, b: 0, alpha: 0 }, // 透明背景
+    })
+    .png()
+    .toBuffer();
+
+  console.log(`[Build ${buildId}] Icon normalized successfully`);
+
+  // 辅助函数：处理单个图标（从标准化后的图片裁剪）
   const processIcon = async (folder: string, size: number, fileName: string) => {
     const iconDir = path.join(resDir, folder);
     const outputPath = path.join(iconDir, fileName);
@@ -333,7 +346,7 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     }
 
     try {
-      await sharp(iconBuffer)
+      await sharp(normalizedBuffer)
         .resize(size, size)
         .png()
         .toFile(outputPath);
