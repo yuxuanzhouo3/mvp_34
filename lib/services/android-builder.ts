@@ -9,6 +9,7 @@ interface BuildConfig {
   url: string;
   appName: string;
   packageName: string;
+  versionName: string;
   versionCode: string;
   privacyPolicy: string;
   iconPath: string | null;
@@ -141,6 +142,15 @@ export async function processAndroidBuild(
     }
 
     await updateAppConfig(configPath, config);
+
+    // Step 3.5: Update AndroidManifest.xml version
+    console.log(`[Build ${buildId}] Updating AndroidManifest.xml...`);
+    const manifestPath = path.join(projectRoot, "app", "src", "main", "AndroidManifest.xml");
+    if (fs.existsSync(manifestPath)) {
+      await updateAndroidManifest(manifestPath, config);
+    } else {
+      console.warn(`[Build ${buildId}] AndroidManifest.xml not found, skipping version update`);
+    }
 
     await updateBuildStatus(supabase, buildId, "processing", 45);
 
@@ -313,10 +323,24 @@ async function updateAppConfig(configPath: string, config: BuildConfig): Promise
     appConfig.general.initialUrl = config.url;
     appConfig.general.appName = config.appName;
     appConfig.general.androidPackageName = config.packageName;
+    appConfig.general.androidVersionName = config.versionName;
     appConfig.general.androidVersionCode = parseInt(config.versionCode, 10) || 1;
   }
 
   fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
+}
+
+async function updateAndroidManifest(manifestPath: string, config: BuildConfig): Promise<void> {
+  // 读取 AndroidManifest.xml
+  let manifestContent = fs.readFileSync(manifestPath, "utf-8");
+
+  // 使用正则替换 android:versionName 属性
+  manifestContent = manifestContent.replace(
+    /android:versionName="[^"]*"/,
+    `android:versionName="${config.versionName}"`
+  );
+
+  fs.writeFileSync(manifestPath, manifestContent, "utf-8");
 }
 
 async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: string): Promise<void> {

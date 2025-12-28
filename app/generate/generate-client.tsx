@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
-import { UrlInput, AppConfig, PlatformSelector, AndroidConfig } from "@/components/generate";
+import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig } from "@/components/generate";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,8 +28,16 @@ function GenerateContent() {
 
   // Android specific config
   const [packageName, setPackageName] = useState("");
-  const [versionCode, setVersionCode] = useState("1.0.0");
+  const [androidVersionName, setAndroidVersionName] = useState("1.0.0");
+  const [androidVersionCode, setAndroidVersionCode] = useState("1");
   const [privacyPolicy, setPrivacyPolicy] = useState("");
+
+  // iOS specific config
+  const [bundleId, setBundleId] = useState("");
+  const [iosVersionString, setIosVersionString] = useState("1.0.0");
+  const [iosBuildNumber, setIosBuildNumber] = useState("1");
+  const [iosPrivacyPolicy, setIosPrivacyPolicy] = useState("");
+  const [iosIcon, setIosIcon] = useState<File | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -43,6 +51,8 @@ function GenerateContent() {
   // Check if Android is the only selected platform
   const isAndroidOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "android";
   const hasAndroid = selectedPlatforms.includes("android");
+  const hasIOS = selectedPlatforms.includes("ios");
+  const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +64,7 @@ function GenerateContent() {
 
     // Validate Android specific fields if Android is selected
     if (hasAndroid) {
-      if (!appName || !packageName || !versionCode) {
+      if (!appName || !packageName || !androidVersionName || !androidVersionCode) {
         toast.error(
           currentLanguage === "zh"
             ? "请填写所有必填字段"
@@ -75,37 +85,89 @@ function GenerateContent() {
       }
     }
 
+    // Validate iOS specific fields if iOS is selected
+    if (hasIOS) {
+      if (!appName || !bundleId || !iosVersionString || !iosBuildNumber) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写所有必填字段"
+            : "Please fill in all required fields"
+        );
+        return;
+      }
+
+      // Validate bundle ID format
+      const bundleIdRegex = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
+      if (!bundleIdRegex.test(bundleId)) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "Bundle ID 格式不正确，应为 com.xxx.xxx"
+            : "Invalid Bundle ID format. Should be com.xxx.xxx"
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
-      const formData = new FormData();
-      formData.append("url", url);
-      formData.append("appName", appName);
-      formData.append("platforms", JSON.stringify(selectedPlatforms));
+      const buildPromises: Promise<Response>[] = [];
 
+      // Build Android if selected
       if (hasAndroid) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", appName);
+        formData.append("platforms", JSON.stringify(["android"]));
         formData.append("packageName", packageName);
-        formData.append("versionCode", versionCode);
+        formData.append("versionName", androidVersionName);
+        formData.append("versionCode", androidVersionCode);
         formData.append("privacyPolicy", privacyPolicy);
-      } else {
-        formData.append("description", appDescription);
+
+        if (appIcon) {
+          formData.append("icon", appIcon);
+        }
+
+        buildPromises.push(
+          fetch("/api/international/android/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
       }
 
-      if (appIcon) {
-        formData.append("icon", appIcon);
+      // Build iOS if selected
+      if (hasIOS) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", appName);
+        formData.append("bundleId", bundleId);
+        formData.append("versionString", iosVersionString);
+        formData.append("buildNumber", iosBuildNumber);
+        formData.append("privacyPolicy", iosPrivacyPolicy);
+
+        if (iosIcon) {
+          formData.append("icon", iosIcon);
+        }
+
+        buildPromises.push(
+          fetch("/api/international/ios/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
       }
 
-      const response = await fetch("/api/international/android/build", {
-        method: "POST",
-        body: formData,
-      });
+      const responses = await Promise.all(buildPromises);
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Build failed");
+      // Check if any response failed
+      for (const response of responses) {
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "Build failed");
+        }
       }
 
-      const result = await response.json();
       toast.success(
         currentLanguage === "zh"
           ? "构建任务已创建，正在处理中..."
@@ -128,10 +190,15 @@ function GenerateContent() {
 
   // Validation for Android
   const isAndroidValid = hasAndroid
-    ? url && appName && packageName && versionCode
-    : url && appName;
+    ? url && appName && packageName && androidVersionName && androidVersionCode
+    : true;
 
-  const isValid = selectedPlatforms.length > 0 && isAndroidValid;
+  // Validation for iOS
+  const isIOSValid = hasIOS
+    ? url && appName && bundleId && iosVersionString && iosBuildNumber
+    : true;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -211,19 +278,43 @@ function GenerateContent() {
               </h2>
 
               {/* Show Android config if Android is selected */}
-              {hasAndroid ? (
+              {hasAndroid && (
                 <AndroidConfig
                   name={appName}
                   packageName={packageName}
-                  versionCode={versionCode}
+                  versionName={androidVersionName}
+                  versionCode={androidVersionCode}
                   privacyPolicy={privacyPolicy}
                   onNameChange={setAppName}
                   onPackageNameChange={setPackageName}
-                  onVersionCodeChange={setVersionCode}
+                  onVersionNameChange={setAndroidVersionName}
+                  onVersionCodeChange={setAndroidVersionCode}
                   onPrivacyPolicyChange={setPrivacyPolicy}
                   onIconChange={setAppIcon}
                 />
-              ) : (
+              )}
+
+              {/* Show iOS config if iOS is selected */}
+              {hasIOS && (
+                <div className={hasAndroid ? "mt-8 pt-8 border-t border-border/50" : ""}>
+                  <IOSConfig
+                    name={appName}
+                    bundleId={bundleId}
+                    versionString={iosVersionString}
+                    buildNumber={iosBuildNumber}
+                    privacyPolicy={iosPrivacyPolicy}
+                    onNameChange={setAppName}
+                    onBundleIdChange={setBundleId}
+                    onVersionStringChange={setIosVersionString}
+                    onBuildNumberChange={setIosBuildNumber}
+                    onPrivacyPolicyChange={setIosPrivacyPolicy}
+                    onIconChange={setIosIcon}
+                  />
+                </div>
+              )}
+
+              {/* Show generic config if no specific platform is selected */}
+              {!hasAndroid && !hasIOS && (
                 <AppConfig
                   name={appName}
                   description={appDescription}

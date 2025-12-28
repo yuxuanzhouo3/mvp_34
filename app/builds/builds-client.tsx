@@ -29,6 +29,7 @@ interface BuildItem {
   id: string;
   app_name: string;
   package_name: string;
+  version_name: string;
   version_code: string;
   url: string;
   platform: string;
@@ -367,7 +368,7 @@ export default function BuildsClient() {
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground truncate mb-1">
-                        {build.package_name} v{build.version_code}
+                        {build.package_name} • v{build.version_name || "1.0.0"} ({currentLanguage === "zh" ? "构建" : "Build"} {build.version_code})
                       </p>
                       <p className="text-sm text-muted-foreground truncate mb-2">{build.url}</p>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">

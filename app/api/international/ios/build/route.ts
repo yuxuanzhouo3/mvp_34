@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { processAndroidBuild } from "@/lib/services/android-builder";
+import { processiOSBuild } from "@/lib/services/ios-builder";
 
 // 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
 export const maxDuration = 120;
@@ -24,25 +24,25 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const url = formData.get("url") as string;
     const appName = formData.get("appName") as string;
-    const packageName = formData.get("packageName") as string;
-    const versionName = formData.get("versionName") as string || "1.0.0";
-    const versionCode = formData.get("versionCode") as string || "1";
+    const bundleId = formData.get("bundleId") as string;
+    const versionString = formData.get("versionString") as string || "1.0.0";
+    const buildNumber = formData.get("buildNumber") as string || "1";
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const icon = formData.get("icon") as File | null;
 
     // Validate required fields
-    if (!url || !appName || !packageName) {
+    if (!url || !appName || !bundleId) {
       return NextResponse.json(
-        { error: "Missing required fields", message: "url, appName, and packageName are required" },
+        { error: "Missing required fields", message: "url, appName, and bundleId are required" },
         { status: 400 }
       );
     }
 
-    // Validate package name format
-    const packageRegex = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
-    if (!packageRegex.test(packageName)) {
+    // Validate bundle ID format
+    const bundleIdRegex = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
+    if (!bundleIdRegex.test(bundleId)) {
       return NextResponse.json(
-        { error: "Invalid package name", message: "Package name should be in format: com.example.app" },
+        { error: "Invalid bundle ID", message: "Bundle ID should be in format: com.example.app" },
         { status: 400 }
       );
     }
@@ -55,7 +55,6 @@ export async function POST(request: NextRequest) {
     if (icon && icon.size > 0) {
       const iconBuffer = Buffer.from(await icon.arrayBuffer());
 
-      // 获取文件扩展名，确保使用安全的文件名（避免中文等特殊字符）
       const fileExt = icon.name.split(".").pop()?.toLowerCase() || "png";
       const safeFileName = `icon_${Date.now()}.${fileExt}`;
       const iconFileName = `icons/${user.id}/${safeFileName}`;
@@ -81,12 +80,12 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: user.id,
         app_name: appName,
-        package_name: packageName,
-        version_name: versionName,
-        version_code: versionCode,
+        package_name: bundleId,  // 使用 package_name 字段存储 bundleId
+        version_name: versionString,  // 版本号，如 "1.0.0"
+        version_code: buildNumber,    // 构建号，如 "1"
         privacy_policy: privacyPolicy,
         url: url,
-        platform: "android",
+        platform: "ios",
         status: "pending",
         progress: 0,
         icon_path: iconPath,
@@ -102,23 +101,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 立即返回 buildId，让前端跳转到构建列表页
-    // 然后在后台异步执行构建过程
     const buildId = build.id;
 
     // 使用 waitUntil 确保后台任务在函数返回后继续执行
-    // 这是 Vercel 提供的 API，用于处理 serverless 函数的后台任务
     waitUntil(
-      processAndroidBuild(buildId, {
+      processiOSBuild(buildId, {
         url,
         appName,
-        packageName,
-        versionName,
-        versionCode,
+        bundleId,
+        versionString,
+        buildNumber,
         privacyPolicy,
         iconPath,
       }).catch((err) => {
-        console.error(`[API] Build process error for ${buildId}:`, err);
+        console.error(`[API] iOS build process error for ${buildId}:`, err);
       })
     );
 
@@ -126,10 +122,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       buildId: buildId,
-      message: "Build task created successfully",
+      message: "iOS build task created successfully",
     });
   } catch (error) {
-    console.error("Build API error:", error);
+    console.error("iOS Build API error:", error);
     return NextResponse.json(
       { error: "Internal server error", message: "An unexpected error occurred" },
       { status: 500 }

@@ -5,35 +5,35 @@ import { useLanguage } from "@/context/LanguageContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, X, Package, Hash, FileText, Smartphone } from "lucide-react";
+import { Upload, X, Package, Hash, FileText, Apple } from "lucide-react";
 
-interface AndroidConfigProps {
+interface iOSConfigProps {
   name: string;
-  packageName: string;
-  versionName: string;
-  versionCode: string;
+  bundleId: string;
+  versionString: string;
+  buildNumber: string;
   privacyPolicy: string;
   onNameChange: (value: string) => void;
-  onPackageNameChange: (value: string) => void;
-  onVersionNameChange: (value: string) => void;
-  onVersionCodeChange: (value: string) => void;
+  onBundleIdChange: (value: string) => void;
+  onVersionStringChange: (value: string) => void;
+  onBuildNumberChange: (value: string) => void;
   onPrivacyPolicyChange: (value: string) => void;
   onIconChange: (file: File | null) => void;
 }
 
-export function AndroidConfig({
+export function IOSConfig({
   name,
-  packageName,
-  versionName,
-  versionCode,
+  bundleId,
+  versionString,
+  buildNumber,
   privacyPolicy,
   onNameChange,
-  onPackageNameChange,
-  onVersionNameChange,
-  onVersionCodeChange,
+  onBundleIdChange,
+  onVersionStringChange,
+  onBuildNumberChange,
   onPrivacyPolicyChange,
   onIconChange,
-}: AndroidConfigProps) {
+}: iOSConfigProps) {
   const { currentLanguage } = useLanguage();
   const [iconPreview, setIconPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,29 +58,29 @@ export function AndroidConfig({
     }
   };
 
-  const validatePackageName = (value: string) => {
-    // Package name should follow com.xxx.xxx format
+  const validateBundleId = (value: string) => {
+    // Bundle ID should follow com.xxx.xxx format
     const regex = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
     return regex.test(value);
   };
 
-  const packageNameValid = !packageName || validatePackageName(packageName);
+  const bundleIdValid = !bundleId || validateBundleId(bundleId);
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center">
-          <Smartphone className="h-5 w-5 text-green-500" />
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-500/20 to-gray-600/20 flex items-center justify-center">
+          <Apple className="h-5 w-5 text-gray-500" />
         </div>
         <div>
           <h3 className="text-lg font-semibold">
-            {currentLanguage === "zh" ? "Android 应用配置" : "Android App Configuration"}
+            {currentLanguage === "zh" ? "iOS 应用配置" : "iOS App Configuration"}
           </h3>
           <p className="text-sm text-muted-foreground">
             {currentLanguage === "zh"
-              ? "配置您的 Android 应用基本信息"
-              : "Configure your Android app settings"}
+              ? "配置您的 iOS 应用基本信息"
+              : "Configure your iOS app settings"}
           </p>
         </div>
       </div>
@@ -94,7 +94,7 @@ export function AndroidConfig({
           </Label>
           {iconPreview ? (
             <div className="relative group">
-              <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-border/50 shadow-lg ring-4 ring-green-500/10">
+              <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-border/50 shadow-lg ring-4 ring-gray-500/10">
                 <img
                   src={iconPreview}
                   alt="App icon preview"
@@ -110,11 +110,11 @@ export function AndroidConfig({
               </button>
             </div>
           ) : (
-            <label className="flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 border-dashed border-border/50 hover:border-green-500 cursor-pointer transition-all duration-200 bg-background/50 hover:bg-green-500/5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center mb-1 group-hover:from-green-500/30 group-hover:to-emerald-500/30 transition-colors">
-                <Upload className="h-5 w-5 text-green-500" />
+            <label className="flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 border-dashed border-border/50 hover:border-gray-500 cursor-pointer transition-all duration-200 bg-background/50 hover:bg-gray-500/5 group">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-500/20 to-gray-600/20 flex items-center justify-center mb-1 group-hover:from-gray-500/30 group-hover:to-gray-600/30 transition-colors">
+                <Upload className="h-5 w-5 text-gray-500" />
               </div>
-              <span className="text-xs text-muted-foreground group-hover:text-green-500 transition-colors">
+              <span className="text-xs text-muted-foreground group-hover:text-gray-500 transition-colors">
                 {currentLanguage === "zh" ? "上传" : "Upload"}
               </span>
               <input
@@ -137,7 +137,7 @@ export function AndroidConfig({
             {currentLanguage === "zh" ? "应用名称" : "App Name"} <span className="text-red-500">*</span>
           </Label>
           <div className="relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-green-500 transition-colors">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-gray-500 transition-colors">
               <Package className="h-5 w-5" />
             </div>
             <Input
@@ -146,66 +146,66 @@ export function AndroidConfig({
               placeholder={currentLanguage === "zh" ? "输入应用名称" : "Enter app name"}
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
+              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
             />
           </div>
         </div>
       </div>
 
-      {/* Package Name */}
+      {/* Bundle ID */}
       <div className="space-y-3">
-        <Label htmlFor="packageName" className="text-base font-medium text-foreground/80">
-          {currentLanguage === "zh" ? "包名" : "Package Name"} <span className="text-red-500">*</span>
+        <Label htmlFor="bundleId" className="text-base font-medium text-foreground/80">
+          Bundle ID <span className="text-red-500">*</span>
         </Label>
         <div className="relative group">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-green-500 transition-colors">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-gray-500 transition-colors">
             <Hash className="h-5 w-5" />
           </div>
           <Input
-            id="packageName"
+            id="bundleId"
             type="text"
             placeholder="com.example.myapp"
-            value={packageName}
-            onChange={(e) => onPackageNameChange(e.target.value)}
+            value={bundleId}
+            onChange={(e) => onBundleIdChange(e.target.value)}
             className={`h-14 pl-12 text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
-              packageNameValid
-                ? "border-border/50 focus:border-green-500 focus:ring-4 focus:ring-green-500/20"
+              bundleIdValid
+                ? "border-border/50 focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20"
                 : "border-red-500 focus:border-red-500 focus:ring-4 focus:ring-red-500/20"
             }`}
           />
         </div>
-        {!packageNameValid && (
+        {!bundleIdValid && (
           <p className="text-xs text-red-500">
             {currentLanguage === "zh"
-              ? "包名格式不正确，应为 com.xxx.xxx"
+              ? "Bundle ID 格式不正确，应为 com.xxx.xxx"
               : "Invalid format. Should be com.xxx.xxx"}
           </p>
         )}
         <p className="text-xs text-muted-foreground">
           {currentLanguage === "zh"
-            ? "唯一标识符，用于应用商店发布"
-            : "Unique identifier for app store publishing"}
+            ? "唯一标识符，用于 App Store 发布"
+            : "Unique identifier for App Store publishing"}
         </p>
       </div>
 
-      {/* Version Name & Version Code Row */}
+      {/* Version String & Build Number Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Version Name */}
+        {/* Version String */}
         <div className="space-y-3">
-          <Label htmlFor="versionName" className="text-base font-medium text-foreground/80">
+          <Label htmlFor="versionString" className="text-base font-medium text-foreground/80">
             {currentLanguage === "zh" ? "版本号" : "Version"} <span className="text-red-500">*</span>
           </Label>
           <div className="relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-green-500 transition-colors">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-gray-500 transition-colors">
               <Hash className="h-5 w-5" />
             </div>
             <Input
-              id="versionName"
+              id="versionString"
               type="text"
               placeholder="1.0.0"
-              value={versionName}
-              onChange={(e) => onVersionNameChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
+              value={versionString}
+              onChange={(e) => onVersionStringChange(e.target.value)}
+              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -215,23 +215,23 @@ export function AndroidConfig({
           </p>
         </div>
 
-        {/* Version Code */}
+        {/* Build Number */}
         <div className="space-y-3">
-          <Label htmlFor="versionCode" className="text-base font-medium text-foreground/80">
+          <Label htmlFor="buildNumber" className="text-base font-medium text-foreground/80">
             {currentLanguage === "zh" ? "构建号" : "Build Number"} <span className="text-red-500">*</span>
           </Label>
           <div className="relative group">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-green-500 transition-colors">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-gray-500 transition-colors">
               <Hash className="h-5 w-5" />
             </div>
             <Input
-              id="versionCode"
+              id="buildNumber"
               type="number"
               min="1"
               placeholder={currentLanguage === "zh" ? "例如: 1, 2, 3" : "e.g. 1, 2, 3"}
-              value={versionCode}
-              onChange={(e) => onVersionCodeChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
+              value={buildNumber}
+              onChange={(e) => onBuildNumberChange(e.target.value)}
+              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -260,7 +260,7 @@ export function AndroidConfig({
             }
             value={privacyPolicy}
             onChange={(e) => onPrivacyPolicyChange(e.target.value)}
-            className="min-h-[200px] pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200 resize-none"
+            className="min-h-[200px] pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200 resize-none"
           />
         </div>
         <p className="text-xs text-muted-foreground">
