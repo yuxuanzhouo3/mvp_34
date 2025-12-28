@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processAndroidBuild } from "@/lib/services/android-builder";
@@ -103,18 +104,20 @@ export async function POST(request: NextRequest) {
     // 然后在后台异步执行构建过程
     const buildId = build.id;
 
-    // 使用 Promise 启动后台任务（不等待）
-    // 注意：在 Vercel serverless 中，需要确保函数有足够的执行时间
-    processAndroidBuild(buildId, {
-      url,
-      appName,
-      packageName,
-      versionCode,
-      privacyPolicy,
-      iconPath,
-    }).catch((err) => {
-      console.error(`[API] Build process error for ${buildId}:`, err);
-    });
+    // 使用 waitUntil 确保后台任务在函数返回后继续执行
+    // 这是 Vercel 提供的 API，用于处理 serverless 函数的后台任务
+    waitUntil(
+      processAndroidBuild(buildId, {
+        url,
+        appName,
+        packageName,
+        versionCode,
+        privacyPolicy,
+        iconPath,
+      }).catch((err) => {
+        console.error(`[API] Build process error for ${buildId}:`, err);
+      })
+    );
 
     // 立即返回，让前端可以开始轮询进度
     return NextResponse.json({
