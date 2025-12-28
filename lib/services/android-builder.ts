@@ -144,12 +144,18 @@ export async function processAndroidBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", 45);
 
-    // Step 4: Update privacy policy
+    // Step 4: Update privacy policy (支持 Markdown 格式)
     console.log(`[Build ${buildId}] Updating privacy policy...`);
-    const privacyPath = path.join(assetsDir, "privacy_policy.txt");
+    const privacyPathMd = path.join(assetsDir, "privacy_policy.md");
+    const privacyPathTxt = path.join(assetsDir, "privacy_policy.txt");
     if (config.privacyPolicy) {
-      fs.writeFileSync(privacyPath, config.privacyPolicy, "utf-8");
-    } else if (fs.existsSync(privacyPath)) {
+      // 写入 .md 文件
+      fs.writeFileSync(privacyPathMd, config.privacyPolicy, "utf-8");
+      // 同时删除旧的 .txt 文件（如果存在）
+      if (fs.existsSync(privacyPathTxt)) {
+        fs.unlinkSync(privacyPathTxt);
+      }
+    } else if (fs.existsSync(privacyPathMd) || fs.existsSync(privacyPathTxt)) {
       // 如果没有提供隐私政策但文件存在，保持原样
       console.log(`[Build ${buildId}] No privacy policy provided, keeping existing file`);
     }
