@@ -5,6 +5,12 @@ import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv } from "./env";
 let supabaseInstance: ReturnType<typeof createBrowserClient> | null = null;
 
 export function createClient() {
+  // 在服务端构建时跳过创建（避免预渲染错误）
+  if (typeof window === "undefined") {
+    // 返回一个占位符，实际方法会在客户端调用时执行
+    return null as unknown as ReturnType<typeof createBrowserClient>;
+  }
+
   if (supabaseInstance) {
     return supabaseInstance;
   }
@@ -13,7 +19,8 @@ export function createClient() {
   const supabaseKey = getSupabaseAnonKeyFromEnv();
 
   if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Missing Supabase environment variables");
+    console.warn("Missing Supabase environment variables");
+    return null as unknown as ReturnType<typeof createBrowserClient>;
   }
 
   supabaseInstance = createBrowserClient(supabaseUrl, supabaseKey, {

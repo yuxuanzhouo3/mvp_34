@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -22,11 +22,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const initializedRef = useRef(false);
 
-  // 使用useMemo缓存supabase客户端
+  // 使用useMemo缓存supabase客户端（SSR时可能为null）
   const supabase = useMemo(() => createClient(), []);
 
   const refreshSession = useCallback(async () => {
+    // 如果supabase为null（SSR时），直接返回
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
@@ -39,6 +46,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   useEffect(() => {
+    // 防止重复初始化
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    // 如果supabase为null（SSR时），直接设置loading为false
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
     refreshSession().finally(() => setLoading(false));
 
@@ -63,6 +80,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase, refreshSession, router]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    if (!supabase) {
+      return { error: new Error("Auth service not available") };
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -86,6 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   const signUp = useCallback(async (email: string, password: string, name?: string) => {
+    if (!supabase) {
+      return { error: new Error("Auth service not available") };
+    }
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -115,6 +140,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   const signOut = useCallback(async () => {
+    if (!supabase) {
+      setUser(null);
+      setSession(null);
+      return;
+    }
+
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
