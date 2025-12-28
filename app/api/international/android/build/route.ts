@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processAndroidBuild } from "@/lib/services/android-builder";
 
+// 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
+export const maxDuration = 120;
+
 export async function POST(request: NextRequest) {
   try {
     // Get authenticated user
@@ -96,8 +99,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Start async build process (don't await)
-    processAndroidBuild(build.id, {
+    // 立即返回 buildId，让前端跳转到构建列表页
+    // 然后在后台异步执行构建过程
+    const buildId = build.id;
+
+    // 使用 Promise 启动后台任务（不等待）
+    // 注意：在 Vercel serverless 中，需要确保函数有足够的执行时间
+    processAndroidBuild(buildId, {
       url,
       appName,
       packageName,
@@ -105,12 +113,13 @@ export async function POST(request: NextRequest) {
       privacyPolicy,
       iconPath,
     }).catch((err) => {
-      console.error("Build process error:", err);
+      console.error(`[API] Build process error for ${buildId}:`, err);
     });
 
+    // 立即返回，让前端可以开始轮询进度
     return NextResponse.json({
       success: true,
-      buildId: build.id,
+      buildId: buildId,
       message: "Build task created successfully",
     });
   } catch (error) {

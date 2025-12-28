@@ -165,16 +165,24 @@ export async function processAndroidBuild(
     // Step 5: Process icons if provided
     if (config.iconPath) {
       console.log(`[Build ${buildId}] Processing icons, iconPath: ${config.iconPath}`);
-      const { data: iconData, error: iconError } = await supabase.storage
-        .from("user-builds")
-        .download(config.iconPath);
+      try {
+        const { data: iconData, error: iconError } = await supabase.storage
+          .from("user-builds")
+          .download(config.iconPath);
 
-      if (!iconError && iconData) {
-        console.log(`[Build ${buildId}] Icon downloaded successfully, size: ${iconData.size} bytes`);
-        const iconBuffer = Buffer.from(await iconData.arrayBuffer());
-        await processIcons(projectRoot, iconBuffer, buildId);
-      } else {
-        console.error(`[Build ${buildId}] Failed to download icon: ${iconError?.message}`);
+        if (iconError) {
+          console.error(`[Build ${buildId}] Failed to download icon: ${iconError.message}`);
+          // 图标下载失败不中断构建，继续执行
+        } else if (iconData) {
+          console.log(`[Build ${buildId}] Icon downloaded successfully, size: ${iconData.size} bytes`);
+          const iconBuffer = Buffer.from(await iconData.arrayBuffer());
+          await processIcons(projectRoot, iconBuffer, buildId);
+          console.log(`[Build ${buildId}] Icon processing completed`);
+        }
+      } catch (iconProcessError) {
+        // 图标处理失败不中断构建，记录错误并继续
+        console.error(`[Build ${buildId}] Icon processing failed:`, iconProcessError);
+        console.log(`[Build ${buildId}] Continuing build without custom icons...`);
       }
     } else {
       console.log(`[Build ${buildId}] No icon provided, skipping icon processing`);
@@ -334,7 +342,7 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
 
   console.log(`[Build ${buildId}] Icon normalized successfully`);
 
-  // 辅助函数：处理单个图标（从标准化后的图片裁剪）
+  // 辅助函数：处理普通图标（从标准化后的图片缩放）
   const processIcon = async (folder: string, size: number, fileName: string) => {
     const iconDir = path.join(resDir, folder);
     const outputPath = path.join(iconDir, fileName);
@@ -357,28 +365,75 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     }
   };
 
+  // 辅助函数：处理自适应图标前景层（需要添加安全边距）
+  // Android 自适应图标规范：画布 108dp，可见区域 72dp（66.7%），安全区域 66dp（61%）
+  // 系统会裁剪外围区域，所以图标需要缩小并居中
+  const processForegroundIcon = async (folder: string, size: number, fileName: string) => {
+    const iconDir = path.join(resDir, folder);
+    const outputPath = path.join(iconDir, fileName);
+
+    if (!fs.existsSync(iconDir)) {
+      console.log(`[Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
+      return;
+    }
+
+    try {
+      // 计算安全区域大小（约 61% 的画布尺寸）
+      const safeSize = Math.round(size * 0.61);
+
+      // 先把图标缩放到安全区域大小
+      const resizedIcon = await sharp(normalizedBuffer)
+        .resize(safeSize, safeSize)
+        .png()
+        .toBuffer();
+
+      // 创建透明画布，把图标居中放置
+      await sharp({
+        create: {
+          width: size,
+          height: size,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .composite([
+          {
+            input: resizedIcon,
+            gravity: "center",
+          },
+        ])
+        .png()
+        .toFile(outputPath);
+
+      console.log(`[Build ${buildId}] Created foreground: ${folder}/${fileName} (${size}x${size}, icon ${safeSize}x${safeSize})`);
+    } catch (err) {
+      console.error(`[Build ${buildId}] Failed to create ${outputPath}:`, err);
+      throw err;
+    }
+  };
+
   // 1. 应用图标 (ic_launcher.png)
   console.log(`[Build ${buildId}] Processing app icons (ic_launcher.png)...`);
   for (const { folder, size } of APP_ICON_SIZES) {
     await processIcon(folder, size, "ic_launcher.png");
   }
 
-  // 2. 自适应图标前景层 (ic_launcher_foreground.png)
+  // 2. 自适应图标前景层 (ic_launcher_foreground.png) - 需要添加安全边距
   console.log(`[Build ${buildId}] Processing app icon foreground (ic_launcher_foreground.png)...`);
   for (const { folder, size } of APP_ICON_FOREGROUND_SIZES) {
-    await processIcon(folder, size, "ic_launcher_foreground.png");
+    await processForegroundIcon(folder, size, "ic_launcher_foreground.png");
   }
 
-  // 3. 启动页图标 (splash.png)
+  // 3. 启动页图标 (splash.png) - Android 12+ 也会裁剪，需要添加安全边距
   console.log(`[Build ${buildId}] Processing splash icons (splash.png)...`);
   for (const { folder, size } of SPLASH_ICON_SIZES) {
-    await processIcon(folder, size, "splash.png");
+    await processForegroundIcon(folder, size, "splash.png");
   }
 
   // 4. 夜间模式启动页图标 (splash.png)
   console.log(`[Build ${buildId}] Processing night mode splash icons...`);
   for (const { folder, size } of SPLASH_NIGHT_ICON_SIZES) {
-    await processIcon(folder, size, "splash.png");
+    await processForegroundIcon(folder, size, "splash.png");
   }
 
   // 5. 侧边栏Logo (ic_sidebar_logo.png)
