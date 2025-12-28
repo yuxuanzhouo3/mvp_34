@@ -380,28 +380,19 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     try {
       // 计算安全区域大小（约 61% 的画布尺寸）
       const safeSize = Math.round(size * 0.61);
+      // 计算需要添加的边距
+      const padding = Math.round((size - safeSize) / 2);
 
-      // 先把图标缩放到安全区域大小
-      const resizedIcon = await sharp(normalizedBuffer)
+      // 先把图标缩放到安全区域大小，然后用 extend 添加透明边距
+      await sharp(normalizedBuffer)
         .resize(safeSize, safeSize)
-        .png()
-        .toBuffer();
-
-      // 创建透明画布，把图标居中放置
-      await sharp({
-        create: {
-          width: size,
-          height: size,
-          channels: 4,
+        .extend({
+          top: padding,
+          bottom: padding,
+          left: padding,
+          right: padding,
           background: { r: 0, g: 0, b: 0, alpha: 0 },
-        },
-      })
-        .composite([
-          {
-            input: resizedIcon,
-            gravity: "center",
-          },
-        ])
+        })
         .png()
         .toFile(outputPath);
 
