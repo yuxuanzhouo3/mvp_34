@@ -192,13 +192,19 @@ export function AndroidConfig({
             </div>
             <Input
               id="versionCode"
-              type="text"
-              placeholder="1.0.0"
+              type="number"
+              min="1"
+              placeholder={currentLanguage === "zh" ? "例如: 1, 2, 3" : "e.g. 1, 2, 3"}
               value={versionCode}
               onChange={(e) => onVersionCodeChange(e.target.value)}
               className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            {currentLanguage === "zh"
+              ? "整数版本号，每次更新递增"
+              : "Integer version code, increment on each update"}
+          </p>
         </div>
       </div>
 

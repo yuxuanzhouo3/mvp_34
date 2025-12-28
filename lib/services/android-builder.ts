@@ -14,7 +14,7 @@ interface BuildConfig {
   iconPath: string | null;
 }
 
-// Icon sizes for Android
+// Icon sizes for Android - 应用图标 (ic_launcher.png)
 const APP_ICON_SIZES = [
   { folder: "mipmap-mdpi", size: 48 },
   { folder: "mipmap-hdpi", size: 72 },
@@ -23,12 +23,67 @@ const APP_ICON_SIZES = [
   { folder: "mipmap-xxxhdpi", size: 192 },
 ];
 
+// 自适应图标前景层 (ic_launcher_foreground.png) - Android 8.0+
+const APP_ICON_FOREGROUND_SIZES = [
+  { folder: "mipmap-mdpi", size: 108 },
+  { folder: "mipmap-hdpi", size: 162 },
+  { folder: "mipmap-xhdpi", size: 216 },
+  { folder: "mipmap-xxhdpi", size: 324 },
+  { folder: "mipmap-xxxhdpi", size: 432 },
+];
+
+// 启动页图标 (splash.png)
 const SPLASH_ICON_SIZES = [
   { folder: "drawable-mdpi", size: 180 },
   { folder: "drawable-hdpi", size: 270 },
   { folder: "drawable-xhdpi", size: 360 },
   { folder: "drawable-xxhdpi", size: 540 },
   { folder: "drawable-xxxhdpi", size: 720 },
+];
+
+// 夜间模式启动页图标 (splash.png)
+const SPLASH_NIGHT_ICON_SIZES = [
+  { folder: "drawable-night-mdpi", size: 180 },
+  { folder: "drawable-night-hdpi", size: 270 },
+  { folder: "drawable-night-xhdpi", size: 360 },
+  { folder: "drawable-night-xxhdpi", size: 540 },
+  { folder: "drawable-night-xxxhdpi", size: 720 },
+];
+
+// 侧边栏Logo (ic_sidebar_logo.png)
+const SIDEBAR_LOGO_SIZES = [
+  { folder: "mipmap-mdpi", size: 48 },
+  { folder: "mipmap-hdpi", size: 72 },
+  { folder: "mipmap-xhdpi", size: 96 },
+  { folder: "mipmap-xxhdpi", size: 144 },
+  { folder: "mipmap-xxxhdpi", size: 192 },
+];
+
+// 夜间模式侧边栏Logo (ic_sidebar_logo.png)
+const SIDEBAR_LOGO_NIGHT_SIZES = [
+  { folder: "mipmap-night-mdpi", size: 48 },
+  { folder: "mipmap-night-hdpi", size: 72 },
+  { folder: "mipmap-night-xhdpi", size: 96 },
+  { folder: "mipmap-night-xxhdpi", size: 144 },
+  { folder: "mipmap-night-xxxhdpi", size: 192 },
+];
+
+// 操作栏图标 (ic_actionbar.png)
+const ACTIONBAR_ICON_SIZES = [
+  { folder: "drawable-hdpi", size: 72 },
+  { folder: "drawable-mdpi", size: 48 },
+  { folder: "drawable-xhdpi", size: 96 },
+  { folder: "drawable-xxhdpi", size: 144 },
+  { folder: "drawable-xxxhdpi", size: 192 },
+];
+
+// 夜间模式操作栏图标 (ic_actionbar.png)
+const ACTIONBAR_NIGHT_ICON_SIZES = [
+  { folder: "drawable-night-hdpi", size: 72 },
+  { folder: "drawable-night-mdpi", size: 48 },
+  { folder: "drawable-night-xhdpi", size: 96 },
+  { folder: "drawable-night-xxhdpi", size: 144 },
+  { folder: "drawable-night-xxxhdpi", size: 192 },
 ];
 
 export async function processAndroidBuild(
@@ -103,17 +158,20 @@ export async function processAndroidBuild(
 
     // Step 5: Process icons if provided
     if (config.iconPath) {
-      console.log(`[Build ${buildId}] Processing icons...`);
+      console.log(`[Build ${buildId}] Processing icons, iconPath: ${config.iconPath}`);
       const { data: iconData, error: iconError } = await supabase.storage
         .from("user-builds")
         .download(config.iconPath);
 
       if (!iconError && iconData) {
+        console.log(`[Build ${buildId}] Icon downloaded successfully, size: ${iconData.size} bytes`);
         const iconBuffer = Buffer.from(await iconData.arrayBuffer());
-        await processIcons(projectRoot, iconBuffer);
+        await processIcons(projectRoot, iconBuffer, buildId);
       } else {
-        console.warn(`[Build ${buildId}] Failed to download icon: ${iconError?.message}`);
+        console.error(`[Build ${buildId}] Failed to download icon: ${iconError?.message}`);
       }
+    } else {
+      console.log(`[Build ${buildId}] No icon provided, skipping icon processing`);
     }
 
     await updateBuildStatus(supabase, buildId, "processing", 75);
@@ -241,42 +299,94 @@ async function updateAppConfig(configPath: string, config: BuildConfig): Promise
     appConfig.general.initialUrl = config.url;
     appConfig.general.appName = config.appName;
     appConfig.general.androidPackageName = config.packageName;
-    appConfig.general.androidVersionCode = parseInt(config.versionCode.replace(/\./g, "")) || 1;
+    appConfig.general.androidVersionCode = parseInt(config.versionCode, 10) || 1;
   }
 
   fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 }
 
-async function processIcons(tempDir: string, iconBuffer: Buffer): Promise<void> {
-  const resDir = path.join(tempDir, "app", "src", "main", "res");
+async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: string): Promise<void> {
+  const resDir = path.join(projectRoot, "app", "src", "main", "res");
 
-  // Process app icons
-  for (const { folder, size } of APP_ICON_SIZES) {
+  console.log(`[Build ${buildId}] Processing icons, res directory: ${resDir}`);
+
+  if (!fs.existsSync(resDir)) {
+    console.error(`[Build ${buildId}] Res directory not found: ${resDir}`);
+    throw new Error(`Res directory not found: ${resDir}`);
+  }
+
+  // 辅助函数：处理单个图标
+  const processIcon = async (folder: string, size: number, fileName: string) => {
     const iconDir = path.join(resDir, folder);
+    const outputPath = path.join(iconDir, fileName);
+
+    // 只有目录存在时才处理（不创建新目录）
     if (!fs.existsSync(iconDir)) {
-      fs.mkdirSync(iconDir, { recursive: true });
+      console.log(`[Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
+      return;
     }
 
-    const outputPath = path.join(iconDir, "ic_launcher.png");
-    await sharp(iconBuffer)
-      .resize(size, size)
-      .png()
-      .toFile(outputPath);
+    try {
+      await sharp(iconBuffer)
+        .resize(size, size)
+        .png()
+        .toFile(outputPath);
+      console.log(`[Build ${buildId}] Created: ${folder}/${fileName} (${size}x${size})`);
+    } catch (err) {
+      console.error(`[Build ${buildId}] Failed to create ${outputPath}:`, err);
+      throw err;
+    }
+  };
+
+  // 1. 应用图标 (ic_launcher.png)
+  console.log(`[Build ${buildId}] Processing app icons (ic_launcher.png)...`);
+  for (const { folder, size } of APP_ICON_SIZES) {
+    await processIcon(folder, size, "ic_launcher.png");
   }
 
-  // Process splash icons
+  // 2. 自适应图标前景层 (ic_launcher_foreground.png)
+  console.log(`[Build ${buildId}] Processing app icon foreground (ic_launcher_foreground.png)...`);
+  for (const { folder, size } of APP_ICON_FOREGROUND_SIZES) {
+    await processIcon(folder, size, "ic_launcher_foreground.png");
+  }
+
+  // 3. 启动页图标 (splash.png)
+  console.log(`[Build ${buildId}] Processing splash icons (splash.png)...`);
   for (const { folder, size } of SPLASH_ICON_SIZES) {
-    const splashDir = path.join(resDir, folder);
-    if (!fs.existsSync(splashDir)) {
-      fs.mkdirSync(splashDir, { recursive: true });
-    }
-
-    const outputPath = path.join(splashDir, "splash.png");
-    await sharp(iconBuffer)
-      .resize(size, size)
-      .png()
-      .toFile(outputPath);
+    await processIcon(folder, size, "splash.png");
   }
+
+  // 4. 夜间模式启动页图标 (splash.png)
+  console.log(`[Build ${buildId}] Processing night mode splash icons...`);
+  for (const { folder, size } of SPLASH_NIGHT_ICON_SIZES) {
+    await processIcon(folder, size, "splash.png");
+  }
+
+  // 5. 侧边栏Logo (ic_sidebar_logo.png)
+  console.log(`[Build ${buildId}] Processing sidebar logo (ic_sidebar_logo.png)...`);
+  for (const { folder, size } of SIDEBAR_LOGO_SIZES) {
+    await processIcon(folder, size, "ic_sidebar_logo.png");
+  }
+
+  // 6. 夜间模式侧边栏Logo (ic_sidebar_logo.png)
+  console.log(`[Build ${buildId}] Processing night mode sidebar logo...`);
+  for (const { folder, size } of SIDEBAR_LOGO_NIGHT_SIZES) {
+    await processIcon(folder, size, "ic_sidebar_logo.png");
+  }
+
+  // 7. 操作栏图标 (ic_actionbar.png)
+  console.log(`[Build ${buildId}] Processing actionbar icons (ic_actionbar.png)...`);
+  for (const { folder, size } of ACTIONBAR_ICON_SIZES) {
+    await processIcon(folder, size, "ic_actionbar.png");
+  }
+
+  // 8. 夜间模式操作栏图标 (ic_actionbar.png)
+  console.log(`[Build ${buildId}] Processing night mode actionbar icons...`);
+  for (const { folder, size } of ACTIONBAR_NIGHT_ICON_SIZES) {
+    await processIcon(folder, size, "ic_actionbar.png");
+  }
+
+  console.log(`[Build ${buildId}] All icons processed successfully`);
 }
 
 function addFolderToZip(zip: AdmZip, folderPath: string, zipPath: string): void {

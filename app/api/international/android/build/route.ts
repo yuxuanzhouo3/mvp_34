@@ -49,7 +49,11 @@ export async function POST(request: NextRequest) {
     let iconPath: string | null = null;
     if (icon && icon.size > 0) {
       const iconBuffer = Buffer.from(await icon.arrayBuffer());
-      const iconFileName = `icons/${user.id}/${Date.now()}_${icon.name}`;
+
+      // 获取文件扩展名，确保使用安全的文件名（避免中文等特殊字符）
+      const fileExt = icon.name.split(".").pop()?.toLowerCase() || "png";
+      const safeFileName = `icon_${Date.now()}.${fileExt}`;
+      const iconFileName = `icons/${user.id}/${safeFileName}`;
 
       const { error: uploadError } = await serviceClient.storage
         .from("user-builds")
@@ -62,6 +66,7 @@ export async function POST(request: NextRequest) {
         console.error("Icon upload error:", uploadError);
       } else {
         iconPath = iconFileName;
+        console.log("Icon uploaded successfully:", iconPath);
       }
     }
 

@@ -102,7 +102,7 @@ export default function BuildsPage() {
     );
 
     if (hasProcessingBuilds) {
-      const interval = setInterval(fetchBuilds, 3000);
+      const interval = setInterval(fetchBuilds, 1000); // 每秒轮询一次，增强进度条体验
       return () => clearInterval(interval);
     }
   }, [builds, fetchBuilds]);
