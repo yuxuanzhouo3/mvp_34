@@ -68,22 +68,22 @@ const SIDEBAR_LOGO_NIGHT_SIZES = [
   { folder: "mipmap-night-xxxhdpi", size: 192 },
 ];
 
-// 操作栏图标 (ic_actionbar.png)
+// 操作栏图标 (ic_actionbar.png) - 24dp 基准
 const ACTIONBAR_ICON_SIZES = [
-  { folder: "drawable-hdpi", size: 72 },
-  { folder: "drawable-mdpi", size: 48 },
-  { folder: "drawable-xhdpi", size: 96 },
-  { folder: "drawable-xxhdpi", size: 144 },
-  { folder: "drawable-xxxhdpi", size: 192 },
+  { folder: "drawable-mdpi", size: 24 },
+  { folder: "drawable-hdpi", size: 36 },
+  { folder: "drawable-xhdpi", size: 48 },
+  { folder: "drawable-xxhdpi", size: 72 },
+  { folder: "drawable-xxxhdpi", size: 96 },
 ];
 
-// 夜间模式操作栏图标 (ic_actionbar.png)
+// 夜间模式操作栏图标 (ic_actionbar.png) - 24dp 基准
 const ACTIONBAR_NIGHT_ICON_SIZES = [
-  { folder: "drawable-night-hdpi", size: 72 },
-  { folder: "drawable-night-mdpi", size: 48 },
-  { folder: "drawable-night-xhdpi", size: 96 },
-  { folder: "drawable-night-xxhdpi", size: 144 },
-  { folder: "drawable-night-xxxhdpi", size: 192 },
+  { folder: "drawable-night-mdpi", size: 24 },
+  { folder: "drawable-night-hdpi", size: 36 },
+  { folder: "drawable-night-xhdpi", size: 48 },
+  { folder: "drawable-night-xxhdpi", size: 72 },
+  { folder: "drawable-night-xxxhdpi", size: 96 },
 ];
 
 export async function processAndroidBuild(
