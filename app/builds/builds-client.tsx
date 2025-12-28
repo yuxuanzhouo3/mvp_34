@@ -14,16 +14,18 @@ import {
   Loader2,
   AlertCircle,
   Smartphone,
-  Monitor,
+  Apple,
   Package,
   RefreshCw,
   Search,
-  Filter,
+  Timer,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import Image from "next/image";
 
 type BuildStatus = "pending" | "processing" | "completed" | "failed";
+type PlatformFilter = "all" | "android" | "ios";
 
 interface BuildItem {
   id: string;
@@ -38,6 +40,9 @@ interface BuildItem {
   output_file_path: string | null;
   error_message: string | null;
   created_at: string;
+  expires_at: string;
+  icon_path: string | null;
+  icon_url: string | null;
   downloadUrl?: string;
 }
 
@@ -47,6 +52,12 @@ interface BuildStats {
   processing: number;
   completed: number;
   failed: number;
+}
+
+interface PlatformStats {
+  android: number;
+  ios: number;
+  other: number;
 }
 
 export default function BuildsClient() {
@@ -60,7 +71,13 @@ export default function BuildsClient() {
     completed: 0,
     failed: 0,
   });
+  const [platformStats, setPlatformStats] = useState<PlatformStats>({
+    android: 0,
+    ios: 0,
+    other: 0,
+  });
   const [searchQuery, setSearchQuery] = useState("");
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -68,7 +85,11 @@ export default function BuildsClient() {
     if (!user) return;
 
     try {
-      const response = await fetch("/api/international/builds");
+      const params = new URLSearchParams();
+      if (platformFilter !== "all") {
+        params.set("platform", platformFilter);
+      }
+      const response = await fetch(`/api/international/builds?${params.toString()}`);
       if (!response.ok) {
         throw new Error("Failed to fetch builds");
       }
@@ -76,6 +97,7 @@ export default function BuildsClient() {
       const data = await response.json();
       setBuilds(data.builds || []);
       setStats(data.stats || { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 });
+      setPlatformStats(data.platformStats || { android: 0, ios: 0, other: 0 });
     } catch (error) {
       console.error("Fetch builds error:", error);
       toast.error(
@@ -85,7 +107,7 @@ export default function BuildsClient() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, currentLanguage]);
+  }, [user, currentLanguage, platformFilter]);
 
   // Initial fetch
   useEffect(() => {
@@ -103,7 +125,7 @@ export default function BuildsClient() {
     );
 
     if (hasProcessingBuilds) {
-      const interval = setInterval(fetchBuilds, 1000); // 每秒轮询一次，增强进度条体验
+      const interval = setInterval(fetchBuilds, 1000);
       return () => clearInterval(interval);
     }
   }, [builds, fetchBuilds]);
@@ -200,10 +222,32 @@ export default function BuildsClient() {
     switch (platform) {
       case "android":
         return <Smartphone className="h-5 w-5" />;
-      case "linux":
-        return <Monitor className="h-5 w-5" />;
+      case "ios":
+        return <Apple className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
+    }
+  };
+
+  const getPlatformName = (platform: string) => {
+    switch (platform) {
+      case "android":
+        return "Android";
+      case "ios":
+        return "iOS";
+      default:
+        return platform;
+    }
+  };
+
+  const getPlatformColor = (platform: string) => {
+    switch (platform) {
+      case "android":
+        return "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20";
+      case "ios":
+        return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20";
+      default:
+        return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }
   };
 
@@ -216,6 +260,39 @@ export default function BuildsClient() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const getExpiresInfo = (expiresAt: string) => {
+    const now = new Date();
+    const expires = new Date(expiresAt);
+    const diffMs = expires.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 0) {
+      return {
+        text: currentLanguage === "zh" ? "已过期" : "Expired",
+        color: "text-red-500",
+        urgent: true,
+      };
+    } else if (diffDays === 1) {
+      return {
+        text: currentLanguage === "zh" ? "1天后过期" : "Expires in 1 day",
+        color: "text-red-500",
+        urgent: true,
+      };
+    } else if (diffDays <= 3) {
+      return {
+        text: currentLanguage === "zh" ? `${diffDays}天后过期` : `Expires in ${diffDays} days`,
+        color: "text-amber-500",
+        urgent: true,
+      };
+    } else {
+      return {
+        text: currentLanguage === "zh" ? `${diffDays}天后过期` : `Expires in ${diffDays} days`,
+        color: "text-muted-foreground",
+        urgent: false,
+      };
+    }
   };
 
   const filteredBuilds = builds.filter(
@@ -274,6 +351,40 @@ export default function BuildsClient() {
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Platform Filter Tabs */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          <Button
+            variant={platformFilter === "all" ? "default" : "outline"}
+            size="sm"
+            className={`h-10 px-4 rounded-xl gap-2 ${platformFilter === "all" ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white" : ""}`}
+            onClick={() => setPlatformFilter("all")}
+          >
+            <Layers className="h-4 w-4" />
+            {currentLanguage === "zh" ? "全部" : "All"}
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{stats.total}</span>
+          </Button>
+          <Button
+            variant={platformFilter === "android" ? "default" : "outline"}
+            size="sm"
+            className={`h-10 px-4 rounded-xl gap-2 ${platformFilter === "android" ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white" : ""}`}
+            onClick={() => setPlatformFilter("android")}
+          >
+            <Smartphone className="h-4 w-4" />
+            Android
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{platformStats.android}</span>
+          </Button>
+          <Button
+            variant={platformFilter === "ios" ? "default" : "outline"}
+            size="sm"
+            className={`h-10 px-4 rounded-xl gap-2 ${platformFilter === "ios" ? "bg-gradient-to-r from-gray-600 to-gray-800 text-white" : ""}`}
+            onClick={() => setPlatformFilter("ios")}
+          >
+            <Apple className="h-4 w-4" />
+            iOS
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{platformStats.ios}</span>
+          </Button>
         </div>
 
         {/* Stats */}
@@ -353,12 +464,38 @@ export default function BuildsClient() {
                 <div className="flex flex-col md:flex-row md:items-center gap-4">
                   {/* Icon & Info */}
                   <div className="flex items-start gap-4 flex-1">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shrink-0">
-                      {getPlatformIcon(build.platform)}
+                    {/* App Icon or Platform Icon */}
+                    <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 relative">
+                      {build.icon_url ? (
+                        <Image
+                          src={build.icon_url}
+                          alt={build.app_name}
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                      ) : (
+                        <div className={`w-full h-full flex items-center justify-center ${
+                          build.platform === "android"
+                            ? "bg-gradient-to-br from-green-500/10 to-emerald-500/10 dark:from-green-500/20 dark:to-emerald-500/20 text-green-600 dark:text-green-400"
+                            : build.platform === "ios"
+                            ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
+                            : "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 text-cyan-600 dark:text-cyan-400"
+                        }`}>
+                          {getPlatformIcon(build.platform)}
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
                         <h3 className="font-semibold text-lg truncate">{build.app_name}</h3>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 ${getPlatformColor(build.platform)}`}
+                        >
+                          {getPlatformIcon(build.platform)}
+                          <span className="ml-1">{getPlatformName(build.platform)}</span>
+                        </Badge>
                         <Badge
                           variant="outline"
                           className={`shrink-0 ${getStatusColor(build.status)}`}
@@ -376,6 +513,12 @@ export default function BuildsClient() {
                           <Clock className="h-3.5 w-3.5" />
                           {formatDate(build.created_at)}
                         </span>
+                        {build.expires_at && (
+                          <span className={`flex items-center gap-1 ${getExpiresInfo(build.expires_at).color}`}>
+                            <Timer className="h-3.5 w-3.5" />
+                            {getExpiresInfo(build.expires_at).text}
+                          </span>
+                        )}
                       </div>
 
                       {/* Progress bar for processing status */}
