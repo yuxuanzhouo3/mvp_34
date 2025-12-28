@@ -65,14 +65,26 @@ export async function processAndroidBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", 30);
 
-    // Step 3: Ensure assets directory exists and update config file
+    // Step 2.5: Find the actual project root (folder containing 'app' directory)
+    const projectRoot = findProjectRoot(tempDir);
+    if (!projectRoot) {
+      throw new Error("Invalid zip structure: cannot find 'app' directory");
+    }
+    console.log(`[Build ${buildId}] Project root found: ${projectRoot}`);
+
+    // Step 3: Update config file in the existing assets directory
     console.log(`[Build ${buildId}] Updating config...`);
-    const assetsDir = path.join(tempDir, "app", "src", "main", "assets");
+    const assetsDir = path.join(projectRoot, "app", "src", "main", "assets");
+
     if (!fs.existsSync(assetsDir)) {
-      fs.mkdirSync(assetsDir, { recursive: true });
+      throw new Error(`Assets directory not found: ${assetsDir}`);
     }
 
     const configPath = path.join(assetsDir, "appConfig.json");
+    if (!fs.existsSync(configPath)) {
+      throw new Error(`Config file not found: ${configPath}`);
+    }
+
     await updateAppConfig(configPath, config);
 
     await updateBuildStatus(supabase, buildId, "processing", 45);
@@ -82,9 +94,9 @@ export async function processAndroidBuild(
     const privacyPath = path.join(assetsDir, "privacy_policy.txt");
     if (config.privacyPolicy) {
       fs.writeFileSync(privacyPath, config.privacyPolicy, "utf-8");
-    } else {
-      // 写入默认的隐私政策占位符
-      fs.writeFileSync(privacyPath, "Privacy Policy\n\nNo privacy policy provided.", "utf-8");
+    } else if (fs.existsSync(privacyPath)) {
+      // 如果没有提供隐私政策但文件存在，保持原样
+      console.log(`[Build ${buildId}] No privacy policy provided, keeping existing file`);
     }
 
     await updateBuildStatus(supabase, buildId, "processing", 55);
@@ -98,7 +110,7 @@ export async function processAndroidBuild(
 
       if (!iconError && iconData) {
         const iconBuffer = Buffer.from(await iconData.arrayBuffer());
-        await processIcons(tempDir, iconBuffer);
+        await processIcons(projectRoot, iconBuffer);
       } else {
         console.warn(`[Build ${buildId}] Failed to download icon: ${iconError?.message}`);
       }
@@ -106,7 +118,7 @@ export async function processAndroidBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", 75);
 
-    // Step 6: Repack zip
+    // Step 6: Repack zip (pack from tempDir to preserve original structure)
     console.log(`[Build ${buildId}] Repacking zip...`);
     const newZip = new AdmZip();
     addFolderToZip(newZip, tempDir, "");
@@ -180,36 +192,57 @@ async function updateBuildStatus(
     .eq("id", buildId);
 }
 
-async function updateAppConfig(configPath: string, config: BuildConfig): Promise<void> {
-  let appConfig: Record<string, unknown>;
-
-  if (fs.existsSync(configPath)) {
-    // 读取现有配置文件
-    const configContent = fs.readFileSync(configPath, "utf-8");
-    appConfig = JSON.parse(configContent);
-  } else {
-    // 创建默认配置结构
-    console.log(`Config file not found, creating new one: ${configPath}`);
-    appConfig = {
-      general: {
-        initialUrl: "",
-        appName: "",
-        androidPackageName: "",
-        androidVersionCode: 1,
-      },
-    };
+/**
+ * 递归查找包含 'app' 目录的项目根目录
+ * zip 解压后可能有一个或多个层级的父目录
+ */
+function findProjectRoot(dir: string, maxDepth: number = 3): string | null {
+  // 检查当前目录是否包含 'app' 子目录
+  const appDir = path.join(dir, "app");
+  if (fs.existsSync(appDir) && fs.statSync(appDir).isDirectory()) {
+    // 进一步验证是否是 Android 项目结构
+    const mainDir = path.join(appDir, "src", "main");
+    if (fs.existsSync(mainDir)) {
+      return dir;
+    }
   }
+
+  // 如果达到最大深度，停止搜索
+  if (maxDepth <= 0) {
+    return null;
+  }
+
+  // 递归搜索子目录
+  try {
+    const items = fs.readdirSync(dir);
+    for (const item of items) {
+      const itemPath = path.join(dir, item);
+      if (fs.statSync(itemPath).isDirectory()) {
+        const result = findProjectRoot(itemPath, maxDepth - 1);
+        if (result) {
+          return result;
+        }
+      }
+    }
+  } catch {
+    // 忽略读取错误
+  }
+
+  return null;
+}
+
+async function updateAppConfig(configPath: string, config: BuildConfig): Promise<void> {
+  // 读取现有配置文件
+  const configContent = fs.readFileSync(configPath, "utf-8");
+  const appConfig = JSON.parse(configContent);
 
   // Update general settings
-  if (!appConfig.general) {
-    appConfig.general = {};
+  if (appConfig.general) {
+    appConfig.general.initialUrl = config.url;
+    appConfig.general.appName = config.appName;
+    appConfig.general.androidPackageName = config.packageName;
+    appConfig.general.androidVersionCode = parseInt(config.versionCode.replace(/\./g, "")) || 1;
   }
-
-  const general = appConfig.general as Record<string, unknown>;
-  general.initialUrl = config.url;
-  general.appName = config.appName;
-  general.androidPackageName = config.packageName;
-  general.androidVersionCode = parseInt(config.versionCode.replace(/\./g, "")) || 1;
 
   fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 }
