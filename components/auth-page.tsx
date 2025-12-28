@@ -86,6 +86,8 @@ export function AuthPage({ mode }: AuthPageProps) {
         const confirmRedirectTo = new URL("/auth/confirm", window.location.origin);
         confirmRedirectTo.searchParams.set("next", next || "/");
 
+        console.log("emailRedirectTo:", confirmRedirectTo.toString());
+
         const { data, error } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,

@@ -1,8 +1,8 @@
-"use client";
-
 import { Suspense } from "react";
 import { RegisterForm } from "@/components/auth";
 import { Loader2, Sparkles } from "lucide-react";
+
+export const dynamic = "force-dynamic";
 
 function RegisterContent() {
   return (
