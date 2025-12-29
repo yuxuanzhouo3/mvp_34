@@ -18,7 +18,6 @@ import {
   Package,
   RefreshCw,
   Search,
-  Timer,
   MessageCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -586,16 +585,21 @@ export default function BuildsClient() {
                       </Button>
                     </div>
                     {/* Time Info */}
-                    <div className="flex flex-col items-start md:items-end gap-1">
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
                         <Clock className="h-3 w-3" />
                         <span>{formatDate(build.created_at)}</span>
                       </div>
                       {build.expires_at && (
-                        <div className={`flex items-center gap-1.5 text-xs ${getExpiresInfo(build.expires_at).color}`}>
-                          <Timer className="h-3 w-3" />
-                          <span>{getExpiresInfo(build.expires_at).text}</span>
-                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          getExpiresInfo(build.expires_at).urgent
+                            ? "bg-red-500/15 text-red-600 dark:text-red-400"
+                            : getExpiresInfo(build.expires_at).color === "text-orange-500"
+                            ? "bg-orange-500/15 text-orange-600 dark:text-orange-400"
+                            : "bg-muted text-muted-foreground"
+                        }`}>
+                          {getExpiresInfo(build.expires_at).text}
+                        </span>
                       )}
                     </div>
                   </div>
