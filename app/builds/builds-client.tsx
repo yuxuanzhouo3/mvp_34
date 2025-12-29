@@ -19,13 +19,55 @@ import {
   RefreshCw,
   Search,
   Timer,
+  MessageCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Image from "next/image";
 
 type BuildStatus = "pending" | "processing" | "completed" | "failed";
-type PlatformFilter = "all" | "android" | "ios";
+type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop";
+
+// Category classification helper
+function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" {
+  if (platform === "android" || platform === "ios") return "mobile";
+  if (platform === "wechat") return "miniprogram";
+  return "desktop"; // windows, macos, linux, etc.
+}
+
+// Build icon component - simple platform icon display
+function BuildIcon({ build, getPlatformIcon }: {
+  build: { platform: string; app_name: string; icon_url: string | null };
+  getPlatformIcon: (platform: string) => React.ReactNode;
+}) {
+  // If has uploaded icon, use it
+  if (build.icon_url) {
+    return (
+      <Image
+        src={build.icon_url}
+        alt={build.app_name}
+        fill
+        className="object-cover"
+        unoptimized
+      />
+    );
+  }
+
+  // Use platform icon with gradient background
+  const bgClass = build.platform === "android"
+    ? "bg-gradient-to-br from-green-500/10 to-emerald-500/10 dark:from-green-500/20 dark:to-emerald-500/20 text-green-600 dark:text-green-400"
+    : build.platform === "ios"
+    ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
+    : build.platform === "wechat"
+    ? "bg-gradient-to-br from-emerald-500/10 to-green-500/10 dark:from-emerald-500/20 dark:to-green-500/20 text-emerald-600 dark:text-emerald-400"
+    : "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 text-cyan-600 dark:text-cyan-400";
+
+  return (
+    <div className={`w-full h-full flex items-center justify-center ${bgClass}`}>
+      {getPlatformIcon(build.platform)}
+    </div>
+  );
+}
 
 interface BuildItem {
   id: string;
@@ -54,10 +96,10 @@ interface BuildStats {
   failed: number;
 }
 
-interface PlatformStats {
-  android: number;
-  ios: number;
-  other: number;
+interface CategoryStats {
+  mobile: number;
+  miniprogram: number;
+  desktop: number;
 }
 
 export default function BuildsClient() {
@@ -71,13 +113,13 @@ export default function BuildsClient() {
     completed: 0,
     failed: 0,
   });
-  const [platformStats, setPlatformStats] = useState<PlatformStats>({
-    android: 0,
-    ios: 0,
-    other: 0,
+  const [categoryStats, setCategoryStats] = useState<CategoryStats>({
+    mobile: 0,
+    miniprogram: 0,
+    desktop: 0,
   });
   const [searchQuery, setSearchQuery] = useState("");
-  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -85,19 +127,23 @@ export default function BuildsClient() {
     if (!user) return;
 
     try {
-      const params = new URLSearchParams();
-      if (platformFilter !== "all") {
-        params.set("platform", platformFilter);
-      }
-      const response = await fetch(`/api/international/builds?${params.toString()}`);
+      const response = await fetch("/api/international/builds");
       if (!response.ok) {
         throw new Error("Failed to fetch builds");
       }
 
       const data = await response.json();
-      setBuilds(data.builds || []);
+      const buildsList = data.builds || [];
+      setBuilds(buildsList);
       setStats(data.stats || { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 });
-      setPlatformStats(data.platformStats || { android: 0, ios: 0, other: 0 });
+
+      // Calculate category stats from builds
+      const catStats: CategoryStats = { mobile: 0, miniprogram: 0, desktop: 0 };
+      buildsList.forEach((b: BuildItem) => {
+        const cat = getBuildCategory(b.platform);
+        catStats[cat]++;
+      });
+      setCategoryStats(catStats);
     } catch (error) {
       console.error("Fetch builds error:", error);
       toast.error(
@@ -107,7 +153,7 @@ export default function BuildsClient() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, currentLanguage, platformFilter]);
+  }, [user, currentLanguage]);
 
   // Initial fetch
   useEffect(() => {
@@ -224,6 +270,8 @@ export default function BuildsClient() {
         return <Smartphone className="h-5 w-5" />;
       case "ios":
         return <Apple className="h-5 w-5" />;
+      case "wechat":
+        return <MessageCircle className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
     }
@@ -235,6 +283,8 @@ export default function BuildsClient() {
         return "Android";
       case "ios":
         return "iOS";
+      case "wechat":
+        return "WeChat";
       default:
         return platform;
     }
@@ -246,6 +296,8 @@ export default function BuildsClient() {
         return "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20";
       case "ios":
         return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20";
+      case "wechat":
+        return "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }
@@ -295,12 +347,18 @@ export default function BuildsClient() {
     }
   };
 
-  const filteredBuilds = builds.filter(
-    (build) =>
+  const filteredBuilds = builds.filter((build) => {
+    // Search filter
+    const matchesSearch =
       build.app_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       build.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      build.package_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      build.package_name.toLowerCase().includes(searchQuery.toLowerCase());
+
+    // Category filter
+    const matchesCategory = categoryFilter === "all" || getBuildCategory(build.platform) === categoryFilter;
+
+    return matchesSearch && matchesCategory;
+  });
 
   if (authLoading || loading) {
     return (
@@ -353,72 +411,48 @@ export default function BuildsClient() {
           </div>
         </div>
 
-        {/* Platform Filter Tabs */}
+        {/* Category Filter Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">
           <Button
-            variant={platformFilter === "all" ? "default" : "outline"}
+            variant={categoryFilter === "all" ? "default" : "outline"}
             size="sm"
-            className={`h-10 px-4 rounded-xl gap-2 ${platformFilter === "all" ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white" : ""}`}
-            onClick={() => setPlatformFilter("all")}
+            className={`h-9 px-4 rounded-xl gap-2 ${categoryFilter === "all" ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white" : ""}`}
+            onClick={() => setCategoryFilter("all")}
           >
             <Layers className="h-4 w-4" />
             {currentLanguage === "zh" ? "全部" : "All"}
             <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{stats.total}</span>
           </Button>
           <Button
-            variant={platformFilter === "android" ? "default" : "outline"}
+            variant={categoryFilter === "mobile" ? "default" : "outline"}
             size="sm"
-            className={`h-10 px-4 rounded-xl gap-2 ${platformFilter === "android" ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white" : ""}`}
-            onClick={() => setPlatformFilter("android")}
+            className={`h-9 px-4 rounded-xl gap-2 ${categoryFilter === "mobile" ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white" : ""}`}
+            onClick={() => setCategoryFilter("mobile")}
           >
             <Smartphone className="h-4 w-4" />
-            Android
-            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{platformStats.android}</span>
+            {currentLanguage === "zh" ? "移动应用" : "Mobile Apps"}
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.mobile}</span>
           </Button>
           <Button
-            variant={platformFilter === "ios" ? "default" : "outline"}
+            variant={categoryFilter === "miniprogram" ? "default" : "outline"}
             size="sm"
-            className={`h-10 px-4 rounded-xl gap-2 ${platformFilter === "ios" ? "bg-gradient-to-r from-gray-600 to-gray-800 text-white" : ""}`}
-            onClick={() => setPlatformFilter("ios")}
+            className={`h-9 px-4 rounded-xl gap-2 ${categoryFilter === "miniprogram" ? "bg-gradient-to-r from-emerald-500 to-green-600 text-white" : ""}`}
+            onClick={() => setCategoryFilter("miniprogram")}
           >
-            <Apple className="h-4 w-4" />
-            iOS
-            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{platformStats.ios}</span>
+            <MessageCircle className="h-4 w-4" />
+            {currentLanguage === "zh" ? "小程序" : "Mini Programs"}
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.miniprogram}</span>
           </Button>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div className="p-4 rounded-xl bg-card border border-border/50 shadow-sm">
-            <div className="text-2xl font-bold text-foreground">{stats.total}</div>
-            <div className="text-sm text-muted-foreground">
-              {currentLanguage === "zh" ? "全部" : "Total"}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-card border border-border/50 shadow-sm">
-            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.pending}</div>
-            <div className="text-sm text-muted-foreground">
-              {currentLanguage === "zh" ? "等待中" : "Pending"}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-card border border-border/50 shadow-sm">
-            <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{stats.processing}</div>
-            <div className="text-sm text-muted-foreground">
-              {currentLanguage === "zh" ? "构建中" : "Building"}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-card border border-border/50 shadow-sm">
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.completed}</div>
-            <div className="text-sm text-muted-foreground">
-              {currentLanguage === "zh" ? "已完成" : "Completed"}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-card border border-border/50 shadow-sm">
-            <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.failed}</div>
-            <div className="text-sm text-muted-foreground">
-              {currentLanguage === "zh" ? "失败" : "Failed"}
-            </div>
-          </div>
+          <Button
+            variant={categoryFilter === "desktop" ? "default" : "outline"}
+            size="sm"
+            className={`h-9 px-4 rounded-xl gap-2 ${categoryFilter === "desktop" ? "bg-gradient-to-r from-purple-500 to-indigo-600 text-white" : ""}`}
+            onClick={() => setCategoryFilter("desktop")}
+          >
+            <Package className="h-4 w-4" />
+            {currentLanguage === "zh" ? "桌面应用" : "Desktop Apps"}
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.desktop}</span>
+          </Button>
         </div>
 
         {/* Search & Filter */}
@@ -459,72 +493,55 @@ export default function BuildsClient() {
             filteredBuilds.map((build) => (
               <div
                 key={build.id}
-                className="p-5 rounded-2xl bg-card border border-border/50 shadow-sm hover:shadow-md hover:border-border transition-all"
+                className="p-4 rounded-2xl bg-card border border-border/50 shadow-sm hover:shadow-md hover:border-border transition-all"
               >
-                <div className="flex flex-col md:flex-row md:items-center gap-4">
-                  {/* Icon & Info */}
-                  <div className="flex items-start gap-4 flex-1">
+                <div className="flex flex-col md:flex-row gap-4">
+                  {/* Left: Icon & Main Info */}
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
                     {/* App Icon or Platform Icon */}
-                    <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 relative">
-                      {build.icon_url ? (
-                        <Image
-                          src={build.icon_url}
-                          alt={build.app_name}
-                          fill
-                          className="object-cover"
-                          unoptimized
-                        />
-                      ) : (
-                        <div className={`w-full h-full flex items-center justify-center ${
-                          build.platform === "android"
-                            ? "bg-gradient-to-br from-green-500/10 to-emerald-500/10 dark:from-green-500/20 dark:to-emerald-500/20 text-green-600 dark:text-green-400"
-                            : build.platform === "ios"
-                            ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
-                            : "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 text-cyan-600 dark:text-cyan-400"
-                        }`}>
-                          {getPlatformIcon(build.platform)}
-                        </div>
-                      )}
+                    <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 relative">
+                      <BuildIcon build={build} getPlatformIcon={getPlatformIcon} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h3 className="font-semibold text-lg truncate">{build.app_name}</h3>
+                      {/* Title Row */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold truncate">{build.app_name}</h3>
+                        <span className="text-sm text-muted-foreground">
+                          v{build.version_name || "1.0.0"}
+                          {build.version_code && build.version_code !== "1" && ` · Build ${build.version_code}`}
+                        </span>
                         <Badge
                           variant="outline"
-                          className={`shrink-0 ${getPlatformColor(build.platform)}`}
+                          className={`shrink-0 text-xs ${getPlatformColor(build.platform)}`}
                         >
-                          {getPlatformIcon(build.platform)}
-                          <span className="ml-1">{getPlatformName(build.platform)}</span>
+                          {getPlatformName(build.platform)}
                         </Badge>
                         <Badge
                           variant="outline"
-                          className={`shrink-0 ${getStatusColor(build.status)}`}
+                          className={`shrink-0 text-xs ${getStatusColor(build.status)}`}
                         >
                           {getStatusIcon(build.status)}
-                          <span className="ml-1.5">{getStatusText(build.status)}</span>
+                          <span className="ml-1">{getStatusText(build.status)}</span>
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground truncate mb-1">
-                        {build.package_name} • v{build.version_name || "1.0.0"} ({currentLanguage === "zh" ? "构建" : "Build"} {build.version_code})
-                      </p>
-                      <p className="text-sm text-muted-foreground truncate mb-2">{build.url}</p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" />
-                          {formatDate(build.created_at)}
-                        </span>
-                        {build.expires_at && (
-                          <span className={`flex items-center gap-1 ${getExpiresInfo(build.expires_at).color}`}>
-                            <Timer className="h-3.5 w-3.5" />
-                            {getExpiresInfo(build.expires_at).text}
-                          </span>
-                        )}
+
+                      {/* Info Row */}
+                      <div className="mt-1.5 flex flex-col gap-0.5 text-sm text-muted-foreground">
+                        <span className="truncate">{build.package_name}</span>
+                        <a
+                          href={build.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate text-cyan-600 dark:text-cyan-400 hover:underline text-xs"
+                        >
+                          {build.url}
+                        </a>
                       </div>
 
                       {/* Progress bar for processing status */}
                       {(build.status === "pending" || build.status === "processing") && (
                         <div className="mt-3">
-                          <div className="h-2 w-full max-w-xs rounded-full bg-muted overflow-hidden">
+                          <div className="h-1.5 w-full max-w-xs rounded-full bg-muted overflow-hidden">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300"
                               style={{ width: `${build.progress || 0}%` }}
@@ -545,26 +562,42 @@ export default function BuildsClient() {
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 md:shrink-0">
-                    {build.status === "completed" && (
+                  {/* Right: Actions & Time Info */}
+                  <div className="flex flex-row md:flex-col items-start md:items-end justify-between md:justify-start gap-3 md:shrink-0 border-t md:border-t-0 md:border-l border-border/30 pt-3 md:pt-0 md:pl-4">
+                    {/* Buttons */}
+                    <div className="flex items-center gap-2">
+                      {build.status === "completed" && (
+                        <Button
+                          size="sm"
+                          className="h-9 px-4 rounded-xl gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
+                          onClick={() => handleDownload(build.id)}
+                        >
+                          <Download className="h-4 w-4" />
+                          {currentLanguage === "zh" ? "下载" : "Download"}
+                        </Button>
+                      )}
                       <Button
+                        variant="ghost"
                         size="sm"
-                        className="h-10 px-4 rounded-xl gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
-                        onClick={() => handleDownload(build.id)}
+                        className="h-9 px-2.5 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                        onClick={() => handleDelete(build.id)}
                       >
-                        <Download className="h-4 w-4" />
-                        {currentLanguage === "zh" ? "下载" : "Download"}
+                        <Trash2 className="h-4 w-4" />
                       </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-10 px-3 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
-                      onClick={() => handleDelete(build.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    </div>
+                    {/* Time Info */}
+                    <div className="flex flex-col items-start md:items-end gap-1">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span>{formatDate(build.created_at)}</span>
+                      </div>
+                      {build.expires_at && (
+                        <div className={`flex items-center gap-1.5 text-xs ${getExpiresInfo(build.expires_at).color}`}>
+                          <Timer className="h-3 w-3" />
+                          <span>{getExpiresInfo(build.expires_at).text}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

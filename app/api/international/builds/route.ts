@@ -83,7 +83,8 @@ export async function GET(request: NextRequest) {
     const platformStats = {
       android: counts?.filter((b) => b.platform === "android").length || 0,
       ios: counts?.filter((b) => b.platform === "ios").length || 0,
-      other: counts?.filter((b) => b.platform !== "android" && b.platform !== "ios").length || 0,
+      wechat: counts?.filter((b) => b.platform === "wechat").length || 0,
+      other: counts?.filter((b) => b.platform !== "android" && b.platform !== "ios" && b.platform !== "wechat").length || 0,
     };
 
     return NextResponse.json({

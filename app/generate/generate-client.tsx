@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig } from "@/components/generate";
+import { WechatConfig } from "@/components/generate/wechat-config";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +40,10 @@ function GenerateContent() {
   const [iosPrivacyPolicy, setIosPrivacyPolicy] = useState("");
   const [iosIcon, setIosIcon] = useState<File | null>(null);
 
+  // WeChat specific config
+  const [wechatAppId, setWechatAppId] = useState("");
+  const [wechatVersion, setWechatVersion] = useState("1.0.0");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -52,7 +57,9 @@ function GenerateContent() {
   const isAndroidOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "android";
   const hasAndroid = selectedPlatforms.includes("android");
   const hasIOS = selectedPlatforms.includes("ios");
+  const hasWechat = selectedPlatforms.includes("wechat");
   const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
+  const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,6 +115,29 @@ function GenerateContent() {
       }
     }
 
+    // Validate WeChat specific fields if WeChat is selected
+    if (hasWechat) {
+      if (!appName || !wechatAppId || !wechatVersion) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写所有必填字段"
+            : "Please fill in all required fields"
+        );
+        return;
+      }
+
+      // Validate AppID format (wx + 16 hex characters)
+      const appIdRegex = /^wx[a-f0-9]{16}$/i;
+      if (!appIdRegex.test(wechatAppId)) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "AppID 格式不正确，应为 wx + 16位十六进制字符"
+            : "Invalid AppID format. Should be wx + 16 hex characters"
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -158,6 +188,22 @@ function GenerateContent() {
         );
       }
 
+      // Build WeChat if selected
+      if (hasWechat) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", appName);
+        formData.append("appId", wechatAppId);
+        formData.append("version", wechatVersion);
+
+        buildPromises.push(
+          fetch("/api/international/wechat/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
+      }
+
       const responses = await Promise.all(buildPromises);
 
       // Check if any response failed
@@ -198,7 +244,12 @@ function GenerateContent() {
     ? url && appName && bundleId && iosVersionString && iosBuildNumber
     : true;
 
-  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid;
+  // Validation for WeChat
+  const isWechatValid = hasWechat
+    ? url && appName && wechatAppId && wechatVersion
+    : true;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -313,8 +364,22 @@ function GenerateContent() {
                 </div>
               )}
 
+              {/* Show WeChat config if WeChat is selected */}
+              {hasWechat && (
+                <div className={(hasAndroid || hasIOS) ? "mt-8 pt-8 border-t border-border/50" : ""}>
+                  <WechatConfig
+                    name={appName}
+                    appId={wechatAppId}
+                    version={wechatVersion}
+                    onNameChange={setAppName}
+                    onAppIdChange={setWechatAppId}
+                    onVersionChange={setWechatVersion}
+                  />
+                </div>
+              )}
+
               {/* Show generic config if no specific platform is selected */}
-              {!hasAndroid && !hasIOS && (
+              {!hasAndroid && !hasIOS && !hasWechat && (
                 <AppConfig
                   name={appName}
                   description={appDescription}
