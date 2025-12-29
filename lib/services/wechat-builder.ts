@@ -71,27 +71,9 @@ export async function processWechatBuild(
       await updateProjectConfig(projectConfigPath, config);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 60);
-
-    // Step 5: Update app.json
-    console.log(`[Build ${buildId}] Updating app.json...`);
-    const appJsonPath = path.join(projectRoot, "app.json");
-    if (fs.existsSync(appJsonPath)) {
-      await updateAppJson(appJsonPath, config);
-    }
-
-    await updateBuildStatus(supabase, buildId, "processing", 70);
-
-    // Step 6: Update page config files
-    console.log(`[Build ${buildId}] Updating page configs...`);
-    const webshellJsonPath = path.join(projectRoot, "pages", "webshell", "webshell.json");
-    if (fs.existsSync(webshellJsonPath)) {
-      await updatePageConfig(webshellJsonPath, config.appName);
-    }
-
     await updateBuildStatus(supabase, buildId, "processing", 80);
 
-    // Step 7: Repack zip
+    // Step 5: Repack zip
     console.log(`[Build ${buildId}] Repacking zip...`);
     const newZip = new AdmZip();
     addFolderToZip(newZip, tempDir, "");
@@ -263,28 +245,6 @@ async function updateProjectConfig(configPath: string, config: WechatBuildConfig
   projectConfig.appid = config.appId;
 
   fs.writeFileSync(configPath, JSON.stringify(projectConfig, null, 2), "utf-8");
-}
-
-async function updateAppJson(appJsonPath: string, config: WechatBuildConfig): Promise<void> {
-  const content = fs.readFileSync(appJsonPath, "utf-8");
-  const appJson = JSON.parse(content);
-
-  // Update navigation bar title to app name
-  if (appJson.window) {
-    appJson.window.navigationBarTitleText = config.appName;
-  }
-
-  fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2), "utf-8");
-}
-
-async function updatePageConfig(configPath: string, appName: string): Promise<void> {
-  const content = fs.readFileSync(configPath, "utf-8");
-  const pageConfig = JSON.parse(content);
-
-  // Update navigation bar title to app name
-  pageConfig.navigationBarTitleText = appName;
-
-  fs.writeFileSync(configPath, JSON.stringify(pageConfig, null, 2), "utf-8");
 }
 
 function addFolderToZip(zip: AdmZip, folderPath: string, zipPath: string): void {
