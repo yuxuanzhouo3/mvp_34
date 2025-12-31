@@ -5,7 +5,9 @@ import {
   MessageCircle,
   Bookmark,
   Wallet,
-  Terminal
+  Terminal,
+  Laptop,
+  AppWindow
 } from "lucide-react";
 
 export type PlatformCategory = "mobile" | "miniprogram" | "desktop";
@@ -84,6 +86,24 @@ export const PLATFORMS: Platform[] = [
     available: true,
   },
   // 桌面端
+  {
+    id: "windows",
+    name: { zh: "Windows", en: "Windows" },
+    description: { zh: "Windows桌面应用 (EXE)", en: "Windows Desktop App (EXE)" },
+    category: "desktop",
+    icon: AppWindow,
+    color: "from-blue-500 to-blue-600",
+    available: true,
+  },
+  {
+    id: "macos",
+    name: { zh: "macOS", en: "macOS" },
+    description: { zh: "Mac桌面应用 (DMG)", en: "Mac Desktop App (DMG)" },
+    category: "desktop",
+    icon: Laptop,
+    color: "from-gray-600 to-gray-800",
+    available: true,
+  },
   {
     id: "linux",
     name: { zh: "Linux", en: "Linux" },
