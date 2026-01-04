@@ -1,9 +1,9 @@
 "use server";
 
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv, getSiteUrl } from "@/lib/supabase/env";
+import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv } from "@/lib/supabase/env";
 
 /**
  * Google OAuth登录 - Server Action
@@ -12,11 +12,16 @@ import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv, getSiteUrl } from "@/
 export async function signInWithGoogle(next: string = "/") {
   const supabaseUrl = getSupabaseUrlFromEnv();
   const supabaseAnonKey = getSupabaseAnonKeyFromEnv();
-  const siteUrl = getSiteUrl();
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing Supabase environment variables");
+    throw new Error("Missing Supabase configuration");
   }
+
+  // 动态获取 origin，支持代理环境（如 Vercel、Nginx 反向代理等）
+  const headersList = await headers();
+  const host = headersList.get("host");
+  const proto = headersList.get("x-forwarded-proto") || "https";
+  const origin = `${proto}://${host}`;
 
   const cookieStore = await cookies();
 
@@ -30,17 +35,22 @@ export async function signInWithGoogle(next: string = "/") {
           cookiesToSet.forEach(({ name, value, options }) =>
             cookieStore.set(name, value, options)
           );
-        } catch {
-          // Server Component中可能失败
+        } catch (error) {
+          // Server Component中可能失败，忽略
+          console.warn("[signInWithGoogle] Failed to set cookies:", error);
         }
       },
     },
   });
 
+  const redirectTo = `${origin}/auth/callback${next && next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`;
+
+  console.info("[signInWithGoogle] Starting OAuth flow", { origin, redirectTo });
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(next)}`,
+      redirectTo,
       queryParams: {
         access_type: "offline",
         prompt: "consent",
@@ -49,11 +59,12 @@ export async function signInWithGoogle(next: string = "/") {
   });
 
   if (error) {
-    console.error("Google OAuth error:", error);
+    console.error("[signInWithGoogle] Error:", error.message);
     throw new Error(error.message);
   }
 
   if (data.url) {
+    console.info("[signInWithGoogle] Redirecting to:", data.url);
     redirect(data.url);
   }
 }

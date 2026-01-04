@@ -1,7 +1,7 @@
 import {
   Smartphone,
   Apple,
-  Monitor,
+  Hexagon,
   MessageCircle,
   Bookmark,
   Wallet,
@@ -50,10 +50,10 @@ export const PLATFORMS: Platform[] = [
   },
   {
     id: "harmonyos",
-    name: { zh: "鸿蒙", en: "HarmonyOS" },
+    name: { zh: "HarmonyOS", en: "HarmonyOS" },
     description: { zh: "鸿蒙应用 (HAP)", en: "HarmonyOS App (HAP)" },
     category: "mobile",
-    icon: Monitor,
+    icon: Hexagon,
     color: "from-red-500 to-red-600",
     available: true,
   },

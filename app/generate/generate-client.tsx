@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
-import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig } from "@/components/generate";
+import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig, HarmonyOSConfig } from "@/components/generate";
 import { WechatConfig } from "@/components/generate/wechat-config";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
@@ -44,6 +44,13 @@ function GenerateContent() {
   const [wechatAppId, setWechatAppId] = useState("");
   const [wechatVersion, setWechatVersion] = useState("1.0.0");
 
+  // HarmonyOS specific config
+  const [harmonyBundleName, setHarmonyBundleName] = useState("");
+  const [harmonyVersionName, setHarmonyVersionName] = useState("1.0.0");
+  const [harmonyVersionCode, setHarmonyVersionCode] = useState("1");
+  const [harmonyPrivacyPolicy, setHarmonyPrivacyPolicy] = useState("");
+  const [harmonyIcon, setHarmonyIcon] = useState<File | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -58,8 +65,10 @@ function GenerateContent() {
   const hasAndroid = selectedPlatforms.includes("android");
   const hasIOS = selectedPlatforms.includes("ios");
   const hasWechat = selectedPlatforms.includes("wechat");
+  const hasHarmonyOS = selectedPlatforms.includes("harmonyos");
   const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
   const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
+  const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,6 +147,29 @@ function GenerateContent() {
       }
     }
 
+    // Validate HarmonyOS specific fields if HarmonyOS is selected
+    if (hasHarmonyOS) {
+      if (!appName || !harmonyBundleName || !harmonyVersionName || !harmonyVersionCode) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写所有必填字段"
+            : "Please fill in all required fields"
+        );
+        return;
+      }
+
+      // Validate bundle name format
+      const bundleNameRegex = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i;
+      if (!bundleNameRegex.test(harmonyBundleName)) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "包名格式不正确，应为 com.xxx_harmony.app"
+            : "Invalid bundle name format. Should be com.xxx_harmony.app"
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -204,6 +236,28 @@ function GenerateContent() {
         );
       }
 
+      // Build HarmonyOS if selected
+      if (hasHarmonyOS) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", appName);
+        formData.append("bundleName", harmonyBundleName);
+        formData.append("versionName", harmonyVersionName);
+        formData.append("versionCode", harmonyVersionCode);
+        formData.append("privacyPolicy", harmonyPrivacyPolicy);
+
+        if (harmonyIcon) {
+          formData.append("icon", harmonyIcon);
+        }
+
+        buildPromises.push(
+          fetch("/api/international/harmonyos/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
+      }
+
       const responses = await Promise.all(buildPromises);
 
       // Check if any response failed
@@ -249,7 +303,12 @@ function GenerateContent() {
     ? url && appName && wechatAppId && wechatVersion
     : true;
 
-  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid;
+  // Validation for HarmonyOS
+  const isHarmonyOSValid = hasHarmonyOS
+    ? url && appName && harmonyBundleName && harmonyVersionName && harmonyVersionCode
+    : true;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -378,8 +437,27 @@ function GenerateContent() {
                 </div>
               )}
 
+              {/* Show HarmonyOS config if HarmonyOS is selected */}
+              {hasHarmonyOS && (
+                <div className={(hasAndroid || hasIOS || hasWechat) ? "mt-8 pt-8 border-t border-border/50" : ""}>
+                  <HarmonyOSConfig
+                    name={appName}
+                    bundleName={harmonyBundleName}
+                    versionName={harmonyVersionName}
+                    versionCode={harmonyVersionCode}
+                    privacyPolicy={harmonyPrivacyPolicy}
+                    onNameChange={setAppName}
+                    onBundleNameChange={setHarmonyBundleName}
+                    onVersionNameChange={setHarmonyVersionName}
+                    onVersionCodeChange={setHarmonyVersionCode}
+                    onPrivacyPolicyChange={setHarmonyPrivacyPolicy}
+                    onIconChange={setHarmonyIcon}
+                  />
+                </div>
+              )}
+
               {/* Show generic config if no specific platform is selected */}
-              {!hasAndroid && !hasIOS && !hasWechat && (
+              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && (
                 <AppConfig
                   name={appName}
                   description={appDescription}

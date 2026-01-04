@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   MessageCircle,
+  Hexagon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -29,7 +30,7 @@ type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop";
 
 // Category classification helper
 function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" {
-  if (platform === "android" || platform === "ios") return "mobile";
+  if (platform === "android" || platform === "ios" || platform === "harmonyos") return "mobile";
   if (platform === "wechat") return "miniprogram";
   return "desktop"; // windows, macos, linux, etc.
 }
@@ -59,6 +60,8 @@ function BuildIcon({ build, getPlatformIcon }: {
     ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
     : build.platform === "wechat"
     ? "bg-gradient-to-br from-emerald-500/10 to-green-500/10 dark:from-emerald-500/20 dark:to-green-500/20 text-emerald-600 dark:text-emerald-400"
+    : build.platform === "harmonyos"
+    ? "bg-gradient-to-br from-red-500/10 to-orange-500/10 dark:from-red-500/20 dark:to-orange-500/20 text-red-600 dark:text-red-400"
     : "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 text-cyan-600 dark:text-cyan-400";
 
   return (
@@ -271,6 +274,8 @@ export default function BuildsClient() {
         return <Apple className="h-5 w-5" />;
       case "wechat":
         return <MessageCircle className="h-5 w-5" />;
+      case "harmonyos":
+        return <Hexagon className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
     }
@@ -284,6 +289,8 @@ export default function BuildsClient() {
         return "iOS";
       case "wechat":
         return "WeChat";
+      case "harmonyos":
+        return "HarmonyOS";
       default:
         return platform;
     }
@@ -297,6 +304,8 @@ export default function BuildsClient() {
         return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20";
       case "wechat":
         return "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20";
+      case "harmonyos":
+        return "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }

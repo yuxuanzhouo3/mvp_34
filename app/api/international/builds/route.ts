@@ -84,7 +84,8 @@ export async function GET(request: NextRequest) {
       android: counts?.filter((b) => b.platform === "android").length || 0,
       ios: counts?.filter((b) => b.platform === "ios").length || 0,
       wechat: counts?.filter((b) => b.platform === "wechat").length || 0,
-      other: counts?.filter((b) => b.platform !== "android" && b.platform !== "ios" && b.platform !== "wechat").length || 0,
+      harmonyos: counts?.filter((b) => b.platform === "harmonyos").length || 0,
+      other: counts?.filter((b) => !["android", "ios", "wechat", "harmonyos"].includes(b.platform)).length || 0,
     };
 
     return NextResponse.json({
