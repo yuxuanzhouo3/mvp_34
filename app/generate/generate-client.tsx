@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig, HarmonyOSConfig } from "@/components/generate";
 import { WechatConfig } from "@/components/generate/wechat-config";
 import { ChromeExtensionConfig } from "@/components/generate/chrome-extension-config";
+import { WindowsConfig } from "@/components/generate/windows-config";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -58,6 +59,9 @@ function GenerateContent() {
   const [chromeExtensionDescription, setChromeExtensionDescription] = useState("");
   const [chromeExtensionIcon, setChromeExtensionIcon] = useState<File | null>(null);
 
+  // Windows specific config
+  const [windowsAppName, setWindowsAppName] = useState("");
+  const [windowsIcon, setWindowsIcon] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -74,6 +78,7 @@ function GenerateContent() {
   const hasWechat = selectedPlatforms.includes("wechat");
   const hasHarmonyOS = selectedPlatforms.includes("harmonyos");
   const hasChrome = selectedPlatforms.includes("chrome");
+  const hasWindows = selectedPlatforms.includes("windows");
   const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
   const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
   const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos";
@@ -191,6 +196,18 @@ function GenerateContent() {
       }
     }
 
+    // Validate Windows specific fields if Windows is selected
+    if (hasWindows) {
+      if (!windowsAppName) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写应用名称"
+            : "Please fill in the app name"
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -299,6 +316,24 @@ function GenerateContent() {
         );
       }
 
+      // Build Windows if selected
+      if (hasWindows) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", windowsAppName);
+
+        if (windowsIcon) {
+          formData.append("icon", windowsIcon);
+        }
+
+        buildPromises.push(
+          fetch("/api/international/windows/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
+      }
+
       const responses = await Promise.all(buildPromises);
 
       // Check if any response failed
@@ -354,7 +389,12 @@ function GenerateContent() {
     ? url && chromeExtensionName && chromeExtensionVersion && chromeExtensionDescription
     : true;
 
-  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid && isChromeValid;
+  // Validation for Windows
+  const isWindowsValid = hasWindows
+    ? url && windowsAppName
+    : true;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid && isChromeValid && isWindowsValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -517,8 +557,19 @@ function GenerateContent() {
                 </div>
               )}
 
+              {/* Show Windows config if Windows is selected */}
+              {hasWindows && (
+                <div className={(hasAndroid || hasIOS || hasWechat || hasHarmonyOS || hasChrome) ? "mt-8 pt-8 border-t border-border/50" : ""}>
+                  <WindowsConfig
+                    name={windowsAppName}
+                    onNameChange={setWindowsAppName}
+                    onIconChange={setWindowsIcon}
+                  />
+                </div>
+              )}
+
               {/* Show generic config if no specific platform is selected */}
-              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && (
+              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && !hasWindows && (
                 <AppConfig
                   name={appName}
                   description={appDescription}
