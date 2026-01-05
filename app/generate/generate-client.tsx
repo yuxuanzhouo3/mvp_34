@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig, HarmonyOSConfig } from "@/components/generate";
 import { WechatConfig } from "@/components/generate/wechat-config";
+import { ChromeExtensionConfig } from "@/components/generate/chrome-extension-config";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -51,6 +52,12 @@ function GenerateContent() {
   const [harmonyPrivacyPolicy, setHarmonyPrivacyPolicy] = useState("");
   const [harmonyIcon, setHarmonyIcon] = useState<File | null>(null);
 
+  // Chrome Extension specific config
+  const [chromeExtensionName, setChromeExtensionName] = useState("");
+  const [chromeExtensionVersion, setChromeExtensionVersion] = useState("1.0.0");
+  const [chromeExtensionDescription, setChromeExtensionDescription] = useState("");
+  const [chromeExtensionIcon, setChromeExtensionIcon] = useState<File | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -66,9 +73,11 @@ function GenerateContent() {
   const hasIOS = selectedPlatforms.includes("ios");
   const hasWechat = selectedPlatforms.includes("wechat");
   const hasHarmonyOS = selectedPlatforms.includes("harmonyos");
+  const hasChrome = selectedPlatforms.includes("chrome");
   const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
   const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
   const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos";
+  const isChromeOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "chrome";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +179,18 @@ function GenerateContent() {
       }
     }
 
+    // Validate Chrome Extension specific fields if Chrome is selected
+    if (hasChrome) {
+      if (!chromeExtensionName || !chromeExtensionVersion || !chromeExtensionDescription) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写所有必填字段"
+            : "Please fill in all required fields"
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -258,6 +279,26 @@ function GenerateContent() {
         );
       }
 
+      // Build Chrome Extension if selected
+      if (hasChrome) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", chromeExtensionName);
+        formData.append("versionName", chromeExtensionVersion);
+        formData.append("description", chromeExtensionDescription);
+
+        if (chromeExtensionIcon) {
+          formData.append("icon", chromeExtensionIcon);
+        }
+
+        buildPromises.push(
+          fetch("/api/international/chrome/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
+      }
+
       const responses = await Promise.all(buildPromises);
 
       // Check if any response failed
@@ -308,7 +349,12 @@ function GenerateContent() {
     ? url && appName && harmonyBundleName && harmonyVersionName && harmonyVersionCode
     : true;
 
-  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid;
+  // Validation for Chrome Extension
+  const isChromeValid = hasChrome
+    ? url && chromeExtensionName && chromeExtensionVersion && chromeExtensionDescription
+    : true;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid && isChromeValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -456,8 +502,23 @@ function GenerateContent() {
                 </div>
               )}
 
+              {/* Show Chrome Extension config if Chrome is selected */}
+              {hasChrome && (
+                <div className={(hasAndroid || hasIOS || hasWechat || hasHarmonyOS) ? "mt-8 pt-8 border-t border-border/50" : ""}>
+                  <ChromeExtensionConfig
+                    name={chromeExtensionName}
+                    versionName={chromeExtensionVersion}
+                    description={chromeExtensionDescription}
+                    onNameChange={setChromeExtensionName}
+                    onVersionNameChange={setChromeExtensionVersion}
+                    onDescriptionChange={setChromeExtensionDescription}
+                    onIconChange={setChromeExtensionIcon}
+                  />
+                </div>
+              )}
+
               {/* Show generic config if no specific platform is selected */}
-              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && (
+              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && (
                 <AppConfig
                   name={appName}
                   description={appDescription}

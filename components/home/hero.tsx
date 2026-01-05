@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowRight, Sparkles, Users, Smartphone, AppWindow, Monitor } from "lucide-react";
+import { ArrowRight, Sparkles, Users, Smartphone, AppWindow, Monitor, Chrome } from "lucide-react";
 
 export function Hero() {
   const { t, currentLanguage } = useLanguage();
@@ -33,6 +33,13 @@ export function Hero() {
       description: "Windows / macOS / Linux",
       icon: Monitor,
       color: "from-violet-500 to-purple-600",
+    },
+    {
+      id: "browser",
+      name: currentLanguage === "zh" ? "浏览器扩展" : "Browser Extensions",
+      description: "Chrome",
+      icon: Chrome,
+      color: "from-blue-500 to-green-500",
     },
   ];
 
@@ -80,7 +87,7 @@ export function Hero() {
 
           {/* Platform tags in one row */}
           <div className="flex flex-wrap items-center justify-center gap-2 mb-12">
-            {["Android", "iOS", currentLanguage === "zh" ? "鸿蒙" : "HarmonyOS", currentLanguage === "zh" ? "小程序" : "Mini Programs", "Windows", "macOS", "Linux"].map((platform) => (
+            {["Android", "iOS", currentLanguage === "zh" ? "鸿蒙" : "HarmonyOS", currentLanguage === "zh" ? "小程序" : "Mini Programs", "Windows", "macOS", "Linux", "Chrome"].map((platform) => (
               <span
                 key={platform}
                 className="px-3 py-1.5 text-sm font-medium rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 text-foreground"
@@ -120,7 +127,7 @@ export function Hero() {
           </div>
 
           {/* Simplified Platform Categories */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
             {platformCategories.map((category) => {
               const Icon = category.icon;
               return (

@@ -20,18 +20,20 @@ import {
   Search,
   MessageCircle,
   Hexagon,
+  Chrome,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Image from "next/image";
 
 type BuildStatus = "pending" | "processing" | "completed" | "failed";
-type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop";
+type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop" | "browser";
 
 // Category classification helper
-function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" {
+function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" | "browser" {
   if (platform === "android" || platform === "ios" || platform === "harmonyos") return "mobile";
   if (platform === "wechat") return "miniprogram";
+  if (platform === "chrome") return "browser";
   return "desktop"; // windows, macos, linux, etc.
 }
 
@@ -62,6 +64,8 @@ function BuildIcon({ build, getPlatformIcon }: {
     ? "bg-gradient-to-br from-emerald-500/10 to-green-500/10 dark:from-emerald-500/20 dark:to-green-500/20 text-emerald-600 dark:text-emerald-400"
     : build.platform === "harmonyos"
     ? "bg-gradient-to-br from-red-500/10 to-orange-500/10 dark:from-red-500/20 dark:to-orange-500/20 text-red-600 dark:text-red-400"
+    : build.platform === "chrome"
+    ? "bg-gradient-to-br from-blue-500/10 to-green-500/10 dark:from-blue-500/20 dark:to-green-500/20 text-blue-600 dark:text-blue-400"
     : "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 text-cyan-600 dark:text-cyan-400";
 
   return (
@@ -102,6 +106,7 @@ interface CategoryStats {
   mobile: number;
   miniprogram: number;
   desktop: number;
+  browser: number;
 }
 
 export default function BuildsClient() {
@@ -119,6 +124,7 @@ export default function BuildsClient() {
     mobile: 0,
     miniprogram: 0,
     desktop: 0,
+    browser: 0,
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -140,7 +146,7 @@ export default function BuildsClient() {
       setStats(data.stats || { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 });
 
       // Calculate category stats from builds
-      const catStats: CategoryStats = { mobile: 0, miniprogram: 0, desktop: 0 };
+      const catStats: CategoryStats = { mobile: 0, miniprogram: 0, desktop: 0, browser: 0 };
       buildsList.forEach((b: BuildItem) => {
         const cat = getBuildCategory(b.platform);
         catStats[cat]++;
@@ -276,6 +282,8 @@ export default function BuildsClient() {
         return <MessageCircle className="h-5 w-5" />;
       case "harmonyos":
         return <Hexagon className="h-5 w-5" />;
+      case "chrome":
+        return <Chrome className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
     }
@@ -291,6 +299,8 @@ export default function BuildsClient() {
         return "WeChat";
       case "harmonyos":
         return "HarmonyOS";
+      case "chrome":
+        return "Chrome";
       default:
         return platform;
     }
@@ -306,6 +316,8 @@ export default function BuildsClient() {
         return "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20";
       case "harmonyos":
         return "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20";
+      case "chrome":
+        return "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }
@@ -460,6 +472,16 @@ export default function BuildsClient() {
             <Package className="h-4 w-4" />
             {currentLanguage === "zh" ? "桌面应用" : "Desktop Apps"}
             <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.desktop}</span>
+          </Button>
+          <Button
+            variant={categoryFilter === "browser" ? "default" : "outline"}
+            size="sm"
+            className={`h-9 px-4 rounded-xl gap-2 ${categoryFilter === "browser" ? "bg-gradient-to-r from-blue-500 to-green-500 text-white" : ""}`}
+            onClick={() => setCategoryFilter("browser")}
+          >
+            <Chrome className="h-4 w-4" />
+            {currentLanguage === "zh" ? "浏览器扩展" : "Browser Extensions"}
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.browser}</span>
           </Button>
         </div>
 

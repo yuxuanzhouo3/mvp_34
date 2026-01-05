@@ -14,7 +14,7 @@ interface PlatformSelectorProps {
 export function PlatformSelector({ selectedPlatforms, onSelectionChange }: PlatformSelectorProps) {
   const { t, currentLanguage } = useLanguage();
 
-  const categories: PlatformCategory[] = ["mobile", "miniprogram", "desktop"];
+  const categories: PlatformCategory[] = ["mobile", "miniprogram", "desktop", "browser"];
 
   const togglePlatform = (platformId: string) => {
     if (selectedPlatforms.includes(platformId)) {

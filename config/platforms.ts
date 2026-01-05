@@ -7,10 +7,11 @@ import {
   Wallet,
   Terminal,
   Laptop,
-  AppWindow
+  AppWindow,
+  Chrome
 } from "lucide-react";
 
-export type PlatformCategory = "mobile" | "miniprogram" | "desktop";
+export type PlatformCategory = "mobile" | "miniprogram" | "desktop" | "browser";
 
 export interface Platform {
   id: string;
@@ -113,6 +114,16 @@ export const PLATFORMS: Platform[] = [
     color: "from-orange-500 to-yellow-500",
     available: true,
   },
+  // 浏览器扩展
+  {
+    id: "chrome",
+    name: { zh: "Chrome 扩展", en: "Chrome Extension" },
+    description: { zh: "Chrome 浏览器扩展", en: "Chrome Browser Extension" },
+    category: "browser",
+    icon: Chrome,
+    color: "from-blue-500 to-green-500",
+    available: true,
+  },
 ];
 
 export const PLATFORM_CATEGORIES = {
@@ -127,6 +138,10 @@ export const PLATFORM_CATEGORIES = {
   desktop: {
     name: { zh: "桌面端", en: "Desktop" },
     description: { zh: "桌面应用程序", en: "Desktop Applications" },
+  },
+  browser: {
+    name: { zh: "浏览器扩展", en: "Browser Extensions" },
+    description: { zh: "浏览器扩展插件", en: "Browser Extension Plugins" },
   },
 };
 
