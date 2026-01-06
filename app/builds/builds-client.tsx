@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,13 +23,19 @@ import {
   Hexagon,
   Chrome,
   Monitor,
+  Archive,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Image from "next/image";
 
 type BuildStatus = "pending" | "processing" | "completed" | "failed";
-type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop" | "browser";
+type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop" | "browser" | "expired";
+
+// Check if a build is expired
+function isExpired(expiresAt: string): boolean {
+  return new Date(expiresAt).getTime() < Date.now();
+}
 
 // Category classification helper
 function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" | "browser" {
@@ -56,18 +63,20 @@ function BuildIcon({ build, getPlatformIcon }: {
     );
   }
 
-  // Use platform icon with gradient background
+  // Use platform icon with gradient background - using official brand colors
   const bgClass = build.platform === "android"
-    ? "bg-gradient-to-br from-green-500/10 to-emerald-500/10 dark:from-green-500/20 dark:to-emerald-500/20 text-green-600 dark:text-green-400"
+    ? "bg-gradient-to-br from-[#3DDC84]/10 to-[#3DDC84]/20 dark:from-[#3DDC84]/15 dark:to-[#3DDC84]/25 text-[#3DDC84]"
     : build.platform === "ios"
     ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
     : build.platform === "wechat"
-    ? "bg-gradient-to-br from-emerald-500/10 to-green-500/10 dark:from-emerald-500/20 dark:to-green-500/20 text-emerald-600 dark:text-emerald-400"
+    ? "bg-gradient-to-br from-[#07C160]/10 to-[#07C160]/20 dark:from-[#07C160]/15 dark:to-[#07C160]/25 text-[#07C160]"
     : build.platform === "harmonyos"
-    ? "bg-gradient-to-br from-red-500/10 to-orange-500/10 dark:from-red-500/20 dark:to-orange-500/20 text-red-600 dark:text-red-400"
+    ? "bg-gradient-to-br from-[#E52828]/10 to-[#E52828]/20 dark:from-[#E52828]/15 dark:to-[#E52828]/25 text-[#E52828] dark:text-[#FF4D4D]"
     : build.platform === "chrome"
-    ? "bg-gradient-to-br from-blue-500/10 to-green-500/10 dark:from-blue-500/20 dark:to-green-500/20 text-blue-600 dark:text-blue-400"
-    : "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 dark:from-cyan-500/20 dark:to-blue-500/20 text-cyan-600 dark:text-cyan-400";
+    ? "bg-gradient-to-br from-[#4285F4]/10 to-[#4285F4]/20 dark:from-[#4285F4]/15 dark:to-[#4285F4]/25 text-[#4285F4]"
+    : build.platform === "windows"
+    ? "bg-gradient-to-br from-[#0078D4]/10 to-[#0078D4]/20 dark:from-[#0078D4]/15 dark:to-[#0078D4]/25 text-[#0078D4]"
+    : "bg-gradient-to-br from-purple-500/10 to-purple-600/10 dark:from-purple-500/20 dark:to-purple-600/20 text-purple-600 dark:text-purple-400";
 
   return (
     <div className={`w-full h-full flex items-center justify-center ${bgClass}`}>
@@ -108,6 +117,7 @@ interface CategoryStats {
   miniprogram: number;
   desktop: number;
   browser: number;
+  expired: number;
 }
 
 export default function BuildsClient() {
@@ -126,6 +136,7 @@ export default function BuildsClient() {
     miniprogram: 0,
     desktop: 0,
     browser: 0,
+    expired: 0,
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -136,7 +147,7 @@ export default function BuildsClient() {
     if (!user) return;
 
     try {
-      const response = await fetch("/api/international/builds");
+      const response = await fetch(api.builds.list());
       if (!response.ok) {
         throw new Error("Failed to fetch builds");
       }
@@ -146,11 +157,15 @@ export default function BuildsClient() {
       setBuilds(buildsList);
       setStats(data.stats || { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 });
 
-      // Calculate category stats from builds
-      const catStats: CategoryStats = { mobile: 0, miniprogram: 0, desktop: 0, browser: 0 };
+      // Calculate category stats from builds (excluding expired from category counts)
+      const catStats: CategoryStats = { mobile: 0, miniprogram: 0, desktop: 0, browser: 0, expired: 0 };
       buildsList.forEach((b: BuildItem) => {
-        const cat = getBuildCategory(b.platform);
-        catStats[cat]++;
+        if (b.expires_at && isExpired(b.expires_at)) {
+          catStats.expired++;
+        } else {
+          const cat = getBuildCategory(b.platform);
+          catStats[cat]++;
+        }
       });
       setCategoryStats(catStats);
     } catch (error) {
@@ -192,12 +207,24 @@ export default function BuildsClient() {
 
   const handleDownload = async (buildId: string) => {
     try {
-      const response = await fetch(`/api/international/builds/${buildId}`);
+      const response = await fetch(api.builds.get(buildId));
       if (!response.ok) {
         throw new Error("Failed to get download URL");
       }
 
       const data = await response.json();
+
+      // Check if build is expired
+      if (data.build?.expired) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "此构建已过期，文件已被清理"
+            : "This build has expired and files have been cleaned up"
+        );
+        fetchBuilds(); // Refresh to update UI
+        return;
+      }
+
       if (data.build?.downloadUrl) {
         window.open(data.build.downloadUrl, "_blank");
       } else {
@@ -217,7 +244,7 @@ export default function BuildsClient() {
     }
 
     try {
-      const response = await fetch(`/api/international/builds/${buildId}`, {
+      const response = await fetch(api.builds.delete(buildId), {
         method: "DELETE",
       });
 
@@ -314,17 +341,22 @@ export default function BuildsClient() {
   const getPlatformColor = (platform: string) => {
     switch (platform) {
       case "android":
-        return "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/20";
+        // Android 官方绿色
+        return "text-[#3DDC84] dark:text-[#3DDC84] bg-[#3DDC84]/10 dark:bg-[#3DDC84]/15 border-[#3DDC84]/30 dark:border-[#3DDC84]/30";
       case "ios":
         return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20";
       case "wechat":
-        return "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20";
+        // 微信官方绿色 #07C160
+        return "text-[#07C160] dark:text-[#07C160] bg-[#07C160]/10 dark:bg-[#07C160]/15 border-[#07C160]/30 dark:border-[#07C160]/30";
       case "harmonyos":
-        return "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20";
+        // 鸿蒙官方红色 #E52828
+        return "text-[#E52828] dark:text-[#FF4D4D] bg-[#E52828]/10 dark:bg-[#E52828]/15 border-[#E52828]/30 dark:border-[#E52828]/30";
       case "chrome":
-        return "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20";
+        // Chrome 多彩渐变效果用蓝色代表
+        return "text-[#4285F4] dark:text-[#4285F4] bg-[#4285F4]/10 dark:bg-[#4285F4]/15 border-[#4285F4]/30 dark:border-[#4285F4]/30";
       case "windows":
-        return "text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border-sky-200 dark:border-sky-500/20";
+        // Windows 官方蓝色 #0078D4
+        return "text-[#0078D4] dark:text-[#0078D4] bg-[#0078D4]/10 dark:bg-[#0078D4]/15 border-[#0078D4]/30 dark:border-[#0078D4]/30";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }
@@ -381,9 +413,20 @@ export default function BuildsClient() {
       build.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
       build.package_name.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Category filter
-    const matchesCategory = categoryFilter === "all" || getBuildCategory(build.platform) === categoryFilter;
+    // Check if build is expired
+    const buildExpired = build.expires_at && isExpired(build.expires_at);
 
+    // Category filter - expired items only show in "expired" tab
+    if (categoryFilter === "expired") {
+      return matchesSearch && buildExpired;
+    }
+
+    // For other tabs, exclude expired items
+    if (buildExpired) {
+      return false;
+    }
+
+    const matchesCategory = categoryFilter === "all" || getBuildCategory(build.platform) === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
@@ -448,7 +491,7 @@ export default function BuildsClient() {
           >
             <Layers className="h-4 w-4" />
             {currentLanguage === "zh" ? "全部" : "All"}
-            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{stats.total}</span>
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{stats.total - categoryStats.expired}</span>
           </Button>
           <Button
             variant={categoryFilter === "mobile" ? "default" : "outline"}
@@ -490,6 +533,18 @@ export default function BuildsClient() {
             {currentLanguage === "zh" ? "浏览器扩展" : "Browser Extensions"}
             <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.browser}</span>
           </Button>
+          {categoryStats.expired > 0 && (
+            <Button
+              variant={categoryFilter === "expired" ? "default" : "outline"}
+              size="sm"
+              className={`h-9 px-4 rounded-xl gap-2 ${categoryFilter === "expired" ? "bg-gradient-to-r from-gray-500 to-gray-600 text-white" : "text-muted-foreground"}`}
+              onClick={() => setCategoryFilter("expired")}
+            >
+              <Archive className="h-4 w-4" />
+              {currentLanguage === "zh" ? "已过期" : "Expired"}
+              <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-white/20">{categoryStats.expired}</span>
+            </Button>
+          )}
         </div>
 
         {/* Search & Filter */}
@@ -603,7 +658,7 @@ export default function BuildsClient() {
                   <div className="flex flex-row md:flex-col items-start md:items-end justify-between md:justify-start gap-3 md:shrink-0 border-t md:border-t-0 md:border-l border-border/30 pt-3 md:pt-0 md:pl-4">
                     {/* Buttons */}
                     <div className="flex items-center gap-2">
-                      {build.status === "completed" && (
+                      {build.status === "completed" && build.expires_at && !isExpired(build.expires_at) && (
                         <Button
                           size="sm"
                           className="h-9 px-4 rounded-xl gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
@@ -612,6 +667,12 @@ export default function BuildsClient() {
                           <Download className="h-4 w-4" />
                           {currentLanguage === "zh" ? "下载" : "Download"}
                         </Button>
+                      )}
+                      {build.expires_at && isExpired(build.expires_at) && (
+                        <Badge variant="outline" className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600">
+                          <Archive className="h-3 w-3 mr-1" />
+                          {currentLanguage === "zh" ? "文件已清理" : "Files cleaned"}
+                        </Badge>
                       )}
                       <Button
                         variant="ghost"
