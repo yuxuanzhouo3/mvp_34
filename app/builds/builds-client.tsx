@@ -21,6 +21,7 @@ import {
   MessageCircle,
   Hexagon,
   Chrome,
+  Monitor,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -284,6 +285,8 @@ export default function BuildsClient() {
         return <Hexagon className="h-5 w-5" />;
       case "chrome":
         return <Chrome className="h-5 w-5" />;
+      case "windows":
+        return <Monitor className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
     }
@@ -301,6 +304,8 @@ export default function BuildsClient() {
         return "HarmonyOS";
       case "chrome":
         return "Chrome";
+      case "windows":
+        return "Windows";
       default:
         return platform;
     }
@@ -318,6 +323,8 @@ export default function BuildsClient() {
         return "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20";
       case "chrome":
         return "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20";
+      case "windows":
+        return "text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border-sky-200 dark:border-sky-500/20";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }
