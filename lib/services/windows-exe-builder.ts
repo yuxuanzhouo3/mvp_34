@@ -11,8 +11,8 @@ interface WindowsBuildConfig {
 }
 
 /**
- * Tauri å•æ–‡ä»¶ EXE æ–¹æ¡ˆ
- * æœåŠ¡ç«¯ä¸‹è½½é¢„æ„å»ºçš„ Tauri EXEï¼Œä¿®æ”¹å›¾æ ‡å’Œå…ƒæ•°æ®åç›´æ¥æä¾›ä¸‹è½½
+ * Tauri µ¥ÎÄ¼ş EXE ·½°¸
+ * ·şÎñ¶ËÏÂÔØÔ¤¹¹½¨µÄ Tauri EXE£¬ĞŞ¸ÄÍ¼±êºÍÔªÊı¾İºóÖ±½ÓÌá¹©ÏÂÔØ
  */
 export async function processWindowsExeBuild(
   buildId: string,
@@ -24,54 +24,71 @@ export async function processWindowsExeBuild(
   try {
     await updateBuildStatus(supabase, buildId, "processing", 5);
 
-    // Step 1: ä¸‹è½½é¢„æ„å»ºçš„ Tauri EXE
-    console.log(`[Build ${buildId}] Downloading tauri-shell.exe...`);
+    // Step 1: ÏÂÔØÔ¤¹¹½¨µÄ Tauri EXE
+    console.log();
     const { data: exeData, error: downloadError } = await supabase.storage
       .from("WindowsApp")
       .download("tauri-shell.exe");
 
     if (downloadError || !exeData) {
-      throw new Error(`Failed to download tauri-shell.exe: ${downloadError?.message || "No data"}`);
+      throw new Error();
     }
 
     await updateBuildStatus(supabase, buildId, "processing", 30);
 
-    // Step 2: åˆ›å»ºä¸´æ—¶ç›®å½•
-    tempDir = path.join(os.tmpdir(), `win-build-${buildId}-${Date.now()}`);
+    // Step 2: ´´½¨ÁÙÊ±Ä¿Â¼
+    tempDir = path.join(os.tmpdir(), );
     fs.mkdirSync(tempDir, { recursive: true });
 
-    // Step 3: å†™å…¥ EXE æ–‡ä»¶
+    // Step 3: Ğ´Èë EXE ÎÄ¼ş
     const safeAppName = config.appName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, "") || "App";
-    const exePath = path.join(tempDir, `${safeAppName}.exe`);
+    const exePath = path.join(tempDir, );
     const exeBuffer = Buffer.from(await exeData.arrayBuffer());
     fs.writeFileSync(exePath, exeBuffer);
 
     await updateBuildStatus(supabase, buildId, "processing", 45);
 
-    // Step 4: ä¿®æ”¹ EXE èµ„æºï¼ˆå›¾æ ‡ã€å…ƒæ•°æ®å’Œé…ç½®ï¼‰
-    console.log(`[Build ${buildId}] Modifying EXE resources...`);
+    // Step 4: ĞŞ¸Ä EXE ×ÊÔ´£¨Í¼±êºÍÔªÊı¾İ£©
+    console.log();
     await modifyExeResources(supabase, exePath, config);
+
+    await updateBuildStatus(supabase, buildId, "processing", 65);
+
+    // Step 5: Ğ´Èë app-config.json
+    console.log();
+    const configPath = path.join(tempDir, "app-config.json");
+    const appConfig = { url: config.url, title: config.appName };
+    fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 
     await updateBuildStatus(supabase, buildId, "processing", 75);
 
-    // Step 5: ç›´æ¥ä¸Šä¼ å•ä¸ª EXEï¼ˆé…ç½®å·²åµŒå…¥èµ„æºæ®µï¼‰
-    console.log(`[Build ${buildId}] Uploading result...`);
-    const outputBuffer = fs.readFileSync(exePath);
-    const outputPath = `builds/${buildId}/${safeAppName}.exe`;
+    // Step 6: ´ò°üÎª ZIP£¨EXE + config£©
+    console.log();
+    const AdmZip = (await import("adm-zip")).default;
+    const zip = new AdmZip();
+    zip.addLocalFile(exePath);
+    zip.addLocalFile(configPath);
+    const outputBuffer = zip.toBuffer();
+
+    await updateBuildStatus(supabase, buildId, "processing", 85);
+
+    // Step 7: ÉÏ´«½á¹û
+    console.log();
+    const outputPath = ;
     const { error: uploadError } = await supabase.storage
       .from("user-builds")
       .upload(outputPath, outputBuffer, {
-        contentType: "application/octet-stream",
+        contentType: "application/zip",
         upsert: true,
       });
 
     if (uploadError) {
-      throw new Error(`Failed to upload result: ${uploadError.message}`);
+      throw new Error();
     }
 
     await updateBuildStatus(supabase, buildId, "processing", 95);
 
-    // Step 8: æ›´æ–°æ„å»ºè®°å½•
+    // Step 8: ¸üĞÂ¹¹½¨¼ÇÂ¼
     const { error: updateError } = await supabase
       .from("builds")
       .update({
@@ -82,12 +99,12 @@ export async function processWindowsExeBuild(
       .eq("id", buildId);
 
     if (updateError) {
-      throw new Error(`Failed to update build record: ${updateError.message}`);
+      throw new Error();
     }
 
-    console.log(`[Build ${buildId}] Completed successfully!`);
+    console.log();
   } catch (error) {
-    console.error(`[Build ${buildId}] Error:`, error);
+    console.error(, error);
 
     await supabase
       .from("builds")
@@ -101,7 +118,7 @@ export async function processWindowsExeBuild(
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch (cleanupError) {
-        console.warn(`[Build ${buildId}] Failed to cleanup temp dir:`, cleanupError);
+        console.warn(, cleanupError);
       }
     }
   }
@@ -141,7 +158,7 @@ async function modifyExeResources(
           CompanyName: "",
           LegalCopyright: "",
           InternalName: config.appName,
-          OriginalFilename: `${config.appName}.exe`,
+          OriginalFilename: ,
         }
       );
       vi.outputToResourceEntries(res.entries);
@@ -162,32 +179,14 @@ async function modifyExeResources(
           );
         }
       } catch (iconError) {
-        console.warn(`[modifyExeResources] Failed to replace icon:`, iconError);
+        console.warn(, iconError);
       }
     }
 
-    // å†™å…¥é…ç½®åˆ°è‡ªå®šä¹‰èµ„æºæ®µ "APPCONFIG"
-    const appConfig = JSON.stringify({ url: config.url, title: config.appName });
-    const configBuffer = Buffer.from(appConfig, "utf-8");
-    // è½¬æ¢ä¸º ArrayBuffer ä»¥ç¡®ä¿ resedit å…¼å®¹æ€§
-    const configArrayBuffer = configBuffer.buffer.slice(
-      configBuffer.byteOffset,
-      configBuffer.byteOffset + configBuffer.byteLength
-    );
-    res.entries.push({
-      type: "APPCONFIG",
-      id: 1,
-      lang: 0x0409,
-      codepage: 1200,
-      bin: configArrayBuffer,
-    });
-
     res.outputResource(exe);
     fs.writeFileSync(exePath, Buffer.from(exe.generate()));
-    console.log(`[modifyExeResources] Successfully embedded config: ${appConfig}`);
   } catch (error) {
-    console.error(`[modifyExeResources] Failed to modify EXE:`, error);
-    throw error; // é…ç½®å†™å…¥å¤±è´¥æ—¶æŠ›å‡ºå¼‚å¸¸ï¼Œé˜»æ­¢æ„å»ºç»§ç»­
+    console.warn(, error);
   }
 }
 
