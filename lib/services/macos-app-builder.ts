@@ -111,14 +111,20 @@ export async function processMacOSAppBuild(
           addFolderWithPermissions(fullPath, entryZipPath);
         } else {
           const fileData = fs.readFileSync(fullPath);
-          // 检查是否是 MacOS 目录下的可执行文件
-          const isMacOSExecutable = entryZipPath.includes("/Contents/MacOS/");
-          // Unix 权限: 0o755 (rwxr-xr-x) 用于可执行文件, 0o644 (rw-r--r--) 用于普通文件
-          // adm-zip 使用外部文件属性格式: (permissions << 16)
-          const unixPermissions = isMacOSExecutable ? 0o755 : 0o644;
-          const externalAttr = (unixPermissions << 16) >>> 0;
+          outputZip.addFile(entryZipPath, fileData);
 
-          outputZip.addFile(entryZipPath, fileData, "", externalAttr);
+          // 检查是否是 MacOS 目录下的可执行文件，设置 Unix 权限
+          const isMacOSExecutable = entryZipPath.includes("/Contents/MacOS/");
+          if (isMacOSExecutable) {
+            // 获取刚添加的 entry 并设置 Unix 权限
+            const zipEntry = outputZip.getEntry(entryZipPath);
+            if (zipEntry) {
+              // ZIP 外部属性格式: 高 16 位是 Unix 权限
+              // 0o755 = rwxr-xr-x, 0o100000 = regular file
+              // 完整格式: (file_type | permissions) << 16
+              zipEntry.header.attr = ((0o100000 | 0o755) << 16) >>> 0;
+            }
+          }
         }
       }
     };
