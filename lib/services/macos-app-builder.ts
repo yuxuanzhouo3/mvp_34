@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { PassThrough } from "stream";
 
 interface MacOSBuildConfig {
   url: string;
@@ -96,41 +97,46 @@ export async function processMacOSAppBuild(
       fs.renameSync(appDir, newAppDir);
     }
 
-    // Step 9: 打包为 ZIP（保留 Unix 可执行权限）
-    console.log("[macOS Build] Creating ZIP archive...");
-    const outputZip = new AdmZip();
+    // Step 9: 打包为 ZIP（使用 archiver 正确设置 Unix 可执行权限）
+    console.log("[macOS Build] Creating ZIP archive with archiver...");
+    const archiver = (await import("archiver")).default;
 
-    // 递归添加文件并设置正确的 Unix 权限
-    const addFolderWithPermissions = (folderPath: string, zipPath: string) => {
-      const entries = fs.readdirSync(folderPath, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(folderPath, entry.name);
-        const entryZipPath = zipPath ? `${zipPath}/${entry.name}` : entry.name;
+    const outputBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const passThrough = new PassThrough();
 
-        if (entry.isDirectory()) {
-          addFolderWithPermissions(fullPath, entryZipPath);
-        } else {
-          const fileData = fs.readFileSync(fullPath);
-          outputZip.addFile(entryZipPath, fileData);
+      passThrough.on("data", (chunk: Buffer) => chunks.push(chunk));
+      passThrough.on("end", () => resolve(Buffer.concat(chunks)));
+      passThrough.on("error", reject);
 
-          // 检查是否是 MacOS 目录下的可执行文件，设置 Unix 权限
-          const isMacOSExecutable = entryZipPath.includes("/Contents/MacOS/");
-          if (isMacOSExecutable) {
-            // 获取刚添加的 entry 并设置 Unix 权限
-            const zipEntry = outputZip.getEntry(entryZipPath);
-            if (zipEntry) {
-              // ZIP 外部属性格式: 高 16 位是 Unix 权限
-              // 0o755 = rwxr-xr-x, 0o100000 = regular file
-              // 完整格式: (file_type | permissions) << 16
-              zipEntry.header.attr = ((0o100000 | 0o755) << 16) >>> 0;
-            }
+      const archive = archiver("zip", { zlib: { level: 9 } });
+      archive.on("error", reject);
+      archive.pipe(passThrough);
+
+      // 递归添加文件并设置正确的 Unix 权限
+      const addFolderToArchive = (folderPath: string, zipPath: string) => {
+        const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(folderPath, entry.name);
+          const entryZipPath = zipPath ? `${zipPath}/${entry.name}` : entry.name;
+
+          if (entry.isDirectory()) {
+            addFolderToArchive(fullPath, entryZipPath);
+          } else {
+            const fileData = fs.readFileSync(fullPath);
+            // 检查是否是 MacOS 目录下的可执行文件
+            const isMacOSExecutable = entryZipPath.includes("/Contents/MacOS/");
+            // Unix 权限: 0o755 (rwxr-xr-x) 用于可执行文件, 0o644 (rw-r--r--) 用于普通文件
+            const mode = isMacOSExecutable ? 0o755 : 0o644;
+
+            archive.append(fileData, { name: entryZipPath, mode });
           }
         }
-      }
-    };
+      };
 
-    addFolderWithPermissions(newAppDir, `${safeAppName}.app`);
-    const outputBuffer = outputZip.toBuffer();
+      addFolderToArchive(newAppDir, `${safeAppName}.app`);
+      archive.finalize();
+    });
 
     await updateBuildStatus(supabase, buildId, "processing", 85);
 
