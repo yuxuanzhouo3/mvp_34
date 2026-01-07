@@ -96,10 +96,34 @@ export async function processMacOSAppBuild(
       fs.renameSync(appDir, newAppDir);
     }
 
-    // Step 9: 打包为 ZIP
+    // Step 9: 打包为 ZIP（保留 Unix 可执行权限）
     console.log("[macOS Build] Creating ZIP archive...");
     const outputZip = new AdmZip();
-    outputZip.addLocalFolder(newAppDir, `${safeAppName}.app`);
+
+    // 递归添加文件并设置正确的 Unix 权限
+    const addFolderWithPermissions = (folderPath: string, zipPath: string) => {
+      const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(folderPath, entry.name);
+        const entryZipPath = zipPath ? `${zipPath}/${entry.name}` : entry.name;
+
+        if (entry.isDirectory()) {
+          addFolderWithPermissions(fullPath, entryZipPath);
+        } else {
+          const fileData = fs.readFileSync(fullPath);
+          // 检查是否是 MacOS 目录下的可执行文件
+          const isMacOSExecutable = entryZipPath.includes("/Contents/MacOS/");
+          // Unix 权限: 0o755 (rwxr-xr-x) 用于可执行文件, 0o644 (rw-r--r--) 用于普通文件
+          // adm-zip 使用外部文件属性格式: (permissions << 16)
+          const unixPermissions = isMacOSExecutable ? 0o755 : 0o644;
+          const externalAttr = (unixPermissions << 16) >>> 0;
+
+          outputZip.addFile(entryZipPath, fileData, "", externalAttr);
+        }
+      }
+    };
+
+    addFolderWithPermissions(newAppDir, `${safeAppName}.app`);
     const outputBuffer = outputZip.toBuffer();
 
     await updateBuildStatus(supabase, buildId, "processing", 85);
