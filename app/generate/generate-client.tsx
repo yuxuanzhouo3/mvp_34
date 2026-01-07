@@ -8,6 +8,7 @@ import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig, Harmon
 import { WechatConfig } from "@/components/generate/wechat-config";
 import { ChromeExtensionConfig } from "@/components/generate/chrome-extension-config";
 import { WindowsConfig } from "@/components/generate/windows-config";
+import { MacOSConfig } from "@/components/generate/macos-config";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -62,6 +63,11 @@ function GenerateContent() {
   // Windows specific config
   const [windowsAppName, setWindowsAppName] = useState("");
   const [windowsIcon, setWindowsIcon] = useState<File | null>(null);
+
+  // macOS specific config
+  const [macosAppName, setMacosAppName] = useState("");
+  const [macosIcon, setMacosIcon] = useState<File | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -79,6 +85,7 @@ function GenerateContent() {
   const hasHarmonyOS = selectedPlatforms.includes("harmonyos");
   const hasChrome = selectedPlatforms.includes("chrome");
   const hasWindows = selectedPlatforms.includes("windows");
+  const hasMacos = selectedPlatforms.includes("macos");
   const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
   const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
   const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos";
@@ -199,6 +206,18 @@ function GenerateContent() {
     // Validate Windows specific fields if Windows is selected
     if (hasWindows) {
       if (!windowsAppName) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "请填写应用名称"
+            : "Please fill in the app name"
+        );
+        return;
+      }
+    }
+
+    // Validate macOS specific fields if macOS is selected
+    if (hasMacos) {
+      if (!macosAppName) {
         toast.error(
           currentLanguage === "zh"
             ? "请填写应用名称"
@@ -334,6 +353,24 @@ function GenerateContent() {
         );
       }
 
+      // Build macOS if selected
+      if (hasMacos) {
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", macosAppName);
+
+        if (macosIcon) {
+          formData.append("icon", macosIcon);
+        }
+
+        buildPromises.push(
+          fetch("/api/international/macos/build", {
+            method: "POST",
+            body: formData,
+          })
+        );
+      }
+
       const responses = await Promise.all(buildPromises);
 
       // Check if any response failed
@@ -394,7 +431,12 @@ function GenerateContent() {
     ? url && windowsAppName
     : true;
 
-  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid && isChromeValid && isWindowsValid;
+  // Validation for macOS
+  const isMacosValid = hasMacos
+    ? url && macosAppName
+    : true;
+
+  const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid && isChromeValid && isWindowsValid && isMacosValid;
 
   return (
     <div className="min-h-screen relative overflow-hidden pt-20">
@@ -568,8 +610,19 @@ function GenerateContent() {
                 </div>
               )}
 
+              {/* Show macOS config if macOS is selected */}
+              {hasMacos && (
+                <div className={(hasAndroid || hasIOS || hasWechat || hasHarmonyOS || hasChrome || hasWindows) ? "mt-8 pt-8 border-t border-border/50" : ""}>
+                  <MacOSConfig
+                    name={macosAppName}
+                    onNameChange={setMacosAppName}
+                    onIconChange={setMacosIcon}
+                  />
+                </div>
+              )}
+
               {/* Show generic config if no specific platform is selected */}
-              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && !hasWindows && (
+              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && !hasWindows && !hasMacos && (
                 <AppConfig
                   name={appName}
                   description={appDescription}

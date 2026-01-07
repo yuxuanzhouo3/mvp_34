@@ -76,6 +76,8 @@ function BuildIcon({ build, getPlatformIcon }: {
     ? "bg-gradient-to-br from-[#4285F4]/10 to-[#4285F4]/20 dark:from-[#4285F4]/15 dark:to-[#4285F4]/25 text-[#4285F4]"
     : build.platform === "windows"
     ? "bg-gradient-to-br from-[#0078D4]/10 to-[#0078D4]/20 dark:from-[#0078D4]/15 dark:to-[#0078D4]/25 text-[#0078D4]"
+    : build.platform === "macos"
+    ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
     : "bg-gradient-to-br from-purple-500/10 to-purple-600/10 dark:from-purple-500/20 dark:to-purple-600/20 text-purple-600 dark:text-purple-400";
 
   return (
@@ -314,6 +316,8 @@ export default function BuildsClient() {
         return <Chrome className="h-5 w-5" />;
       case "windows":
         return <Monitor className="h-5 w-5" />;
+      case "macos":
+        return <Apple className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
     }
@@ -333,6 +337,8 @@ export default function BuildsClient() {
         return "Chrome";
       case "windows":
         return "Windows";
+      case "macos":
+        return "macOS";
       default:
         return platform;
     }
@@ -357,6 +363,9 @@ export default function BuildsClient() {
       case "windows":
         // Windows 官方蓝色 #0078D4
         return "text-[#0078D4] dark:text-[#0078D4] bg-[#0078D4]/10 dark:bg-[#0078D4]/15 border-[#0078D4]/30 dark:border-[#0078D4]/30";
+      case "macos":
+        // macOS 使用 Apple 灰色
+        return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }

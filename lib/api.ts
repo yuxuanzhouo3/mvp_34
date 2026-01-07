@@ -41,6 +41,7 @@ export const API_ENDPOINTS = {
   WECHAT_BUILD: "wechat/build",
   HARMONYOS_BUILD: "harmonyos/build",
   WINDOWS_BUILD: "windows/build",
+  MACOS_BUILD: "macos/build",
   CHROME_BUILD: "chrome/build",
 } as const;
 
@@ -59,6 +60,7 @@ export const api = {
     wechat: () => buildApiPath(API_ENDPOINTS.WECHAT_BUILD),
     harmonyos: () => buildApiPath(API_ENDPOINTS.HARMONYOS_BUILD),
     windows: () => buildApiPath(API_ENDPOINTS.WINDOWS_BUILD),
+    macos: () => buildApiPath(API_ENDPOINTS.MACOS_BUILD),
     chrome: () => buildApiPath(API_ENDPOINTS.CHROME_BUILD),
   },
 };
