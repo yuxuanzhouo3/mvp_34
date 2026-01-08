@@ -80,6 +80,16 @@ export async function processLinuxAppBuild(
     const configPath = path.join(resourcesDir, "app-config.json");
     fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 
+    // Step 5.1: 替换 install.sh 中的占位符
+    const safeAppName = config.appName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s]/g, "").trim() || "App";
+    const installShPath = path.join(appDir, "install.sh");
+    if (fs.existsSync(installShPath)) {
+      let installScript = fs.readFileSync(installShPath, "utf-8");
+      installScript = installScript.replace(/\{\{APP_NAME\}\}/g, safeAppName);
+      fs.writeFileSync(installShPath, installScript, "utf-8");
+      console.log("[Linux Build] Updated install.sh with app name:", safeAppName);
+    }
+
     await updateBuildStatus(supabase, buildId, "processing", 55);
 
     // Step 6: 替换图标（如果提供）
@@ -90,18 +100,7 @@ export async function processLinuxAppBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", 65);
 
-    // Step 7: 重命名可执行文件和目录
-    const safeAppName = config.appName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s]/g, "").trim() || "App";
-    const safeExeName = safeAppName.toLowerCase().replace(/\s+/g, "-");
-
-    // 查找并重命名可执行文件
-    const oldExePath = path.join(appDir, "tauri-shell");
-    const newExePath = path.join(appDir, safeExeName);
-    if (fs.existsSync(oldExePath) && oldExePath !== newExePath) {
-      fs.renameSync(oldExePath, newExePath);
-    }
-
-    // 重命名目录
+    // Step 7: 重命名目录
     const newAppDir = path.join(tempDir, safeAppName);
     if (appDir !== newAppDir) {
       fs.renameSync(appDir, newAppDir);
@@ -136,8 +135,8 @@ export async function processLinuxAppBuild(
             addFolderToArchive(fullPath, entryZipPath);
           } else {
             const fileData = fs.readFileSync(fullPath);
-            // 检查是否是可执行文件（与目录同名或名为 tauri-shell）
-            const isExecutable = entry.name === safeExeName ||
+            // 检查是否是可执行文件（二进制文件或脚本）
+            const isExecutable = entry.name === "install.sh" ||
                                  entry.name === "tauri-shell" ||
                                  !entry.name.includes(".");
             // Unix 权限: 0o755 (rwxr-xr-x) 用于可执行文件, 0o644 (rw-r--r--) 用于普通文件
@@ -226,7 +225,7 @@ function findAppDirectory(baseDir: string): string | null {
   for (const entry of entries) {
     if (entry.isDirectory() && entry.name !== "__MACOSX") {
       const subDir = path.join(baseDir, entry.name);
-      // 检查是否包含 tauri-shell 可执行文件或 resources 目录
+      // 检查是否包含二进制文件或 resources 目录
       if (fs.existsSync(path.join(subDir, "tauri-shell")) ||
           fs.existsSync(path.join(subDir, "resources"))) {
         return subDir;
