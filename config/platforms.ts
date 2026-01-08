@@ -99,7 +99,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: "macos",
     name: { zh: "macOS", en: "macOS" },
-    description: { zh: "Mac桌面应用 (DMG)", en: "Mac Desktop App (DMG)" },
+    description: { zh: "Mac桌面应用 (APP)", en: "Mac Desktop App (APP)" },
     category: "desktop",
     icon: Laptop,
     color: "from-gray-600 to-gray-800",

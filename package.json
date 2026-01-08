@@ -73,6 +73,7 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
+    "tar": "^7.5.2",
     "vaul": "^0.9.9",
     "zod": "3.25.76"
   },
