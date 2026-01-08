@@ -11,8 +11,8 @@ interface WindowsBuildConfig {
 }
 
 /**
- * Tauri 单文件 EXE 方案
- * 服务端下载预构建的 Tauri EXE，修改图标和元数据后直接提供下载
+ * Windows EXE Builder
+ * Downloads pre-built Tauri EXE, modifies icon and metadata, then provides for download
  */
 export async function processWindowsExeBuild(
   buildId: string,
@@ -24,46 +24,46 @@ export async function processWindowsExeBuild(
   try {
     await updateBuildStatus(supabase, buildId, "processing", 5);
 
-    // Step 1: 下载预构建的 Tauri EXE
-    console.log();
+    // Step 1: Download pre-built Tauri EXE
+    console.log("[Windows Build] Downloading template...");
     const { data: exeData, error: downloadError } = await supabase.storage
       .from("WindowsApp")
       .download("tauri-shell.exe");
 
     if (downloadError || !exeData) {
-      throw new Error();
+      throw new Error(`Failed to download Windows template: ${downloadError?.message || "No data"}`);
     }
 
     await updateBuildStatus(supabase, buildId, "processing", 30);
 
-    // Step 2: 创建临时目录
-    tempDir = path.join(os.tmpdir(), );
+    // Step 2: Create temp directory
+    tempDir = path.join(os.tmpdir(), `windows-build-${buildId}`);
     fs.mkdirSync(tempDir, { recursive: true });
 
-    // Step 3: 写入 EXE 文件
+    // Step 3: Write EXE file
     const safeAppName = config.appName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, "") || "App";
-    const exePath = path.join(tempDir, );
+    const exePath = path.join(tempDir, `${safeAppName}.exe`);
     const exeBuffer = Buffer.from(await exeData.arrayBuffer());
     fs.writeFileSync(exePath, exeBuffer);
 
     await updateBuildStatus(supabase, buildId, "processing", 45);
 
-    // Step 4: 修改 EXE 资源（图标和元数据）
-    console.log();
+    // Step 4: Modify EXE resources (icon and metadata)
+    console.log("[Windows Build] Modifying resources...");
     await modifyExeResources(supabase, exePath, config);
 
     await updateBuildStatus(supabase, buildId, "processing", 65);
 
-    // Step 5: 写入 app-config.json
-    console.log();
+    // Step 5: Write app-config.json
+    console.log("[Windows Build] Writing config...");
     const configPath = path.join(tempDir, "app-config.json");
     const appConfig = { url: config.url, title: config.appName };
     fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 
     await updateBuildStatus(supabase, buildId, "processing", 75);
 
-    // Step 6: 打包为 ZIP（EXE + config）
-    console.log();
+    // Step 6: Package as ZIP (EXE + config)
+    console.log("[Windows Build] Creating ZIP archive...");
     const AdmZip = (await import("adm-zip")).default;
     const zip = new AdmZip();
     zip.addLocalFile(exePath);
@@ -72,9 +72,9 @@ export async function processWindowsExeBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", 85);
 
-    // Step 7: 上传结果
-    console.log();
-    const outputPath = ;
+    // Step 7: Upload result
+    console.log("[Windows Build] Uploading result...");
+    const outputPath = `builds/${buildId}/${safeAppName}.zip`;
     const { error: uploadError } = await supabase.storage
       .from("user-builds")
       .upload(outputPath, outputBuffer, {
@@ -83,12 +83,12 @@ export async function processWindowsExeBuild(
       });
 
     if (uploadError) {
-      throw new Error();
+      throw new Error(`Failed to upload result: ${uploadError.message}`);
     }
 
     await updateBuildStatus(supabase, buildId, "processing", 95);
 
-    // Step 8: 更新构建记录
+    // Step 8: Update build record
     const { error: updateError } = await supabase
       .from("builds")
       .update({
@@ -99,12 +99,12 @@ export async function processWindowsExeBuild(
       .eq("id", buildId);
 
     if (updateError) {
-      throw new Error();
+      throw new Error(`Failed to update build record: ${updateError.message}`);
     }
 
-    console.log();
+    console.log("[Windows Build] Build completed successfully!");
   } catch (error) {
-    console.error(, error);
+    console.error("[Windows Build] Error:", error);
 
     await supabase
       .from("builds")
@@ -118,7 +118,7 @@ export async function processWindowsExeBuild(
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch (cleanupError) {
-        console.warn(, cleanupError);
+        console.warn("[Windows Build] Cleanup error:", cleanupError);
       }
     }
   }
@@ -158,7 +158,7 @@ async function modifyExeResources(
           CompanyName: "",
           LegalCopyright: "",
           InternalName: config.appName,
-          OriginalFilename: ,
+          OriginalFilename: `${config.appName}.exe`,
         }
       );
       vi.outputToResourceEntries(res.entries);
@@ -179,14 +179,14 @@ async function modifyExeResources(
           );
         }
       } catch (iconError) {
-        console.warn(, iconError);
+        console.warn("[Windows Build] Icon replacement failed:", iconError);
       }
     }
 
     res.outputResource(exe);
     fs.writeFileSync(exePath, Buffer.from(exe.generate()));
   } catch (error) {
-    console.warn(, error);
+    console.warn("[Windows Build] Resource modification failed:", error);
   }
 }
 
