@@ -217,13 +217,14 @@ export async function processAndroidBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", 95);
 
-    // Step 8: Update build record with output path
+    // Step 8: Update build record with output path and file size
     const { error: updateError } = await supabase
       .from("builds")
       .update({
         status: "completed",
         progress: 100,
         output_file_path: outputPath,
+        file_size: outputBuffer.length,
       })
       .eq("id", buildId);
 

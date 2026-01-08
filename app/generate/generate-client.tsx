@@ -75,6 +75,45 @@ function GenerateContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 快捷填写：当应用名称变化时，同步到其他平台
+  const handleAppNameChange = (name: string) => {
+    setAppName(name);
+    // 同步到其他平台（如果它们还没有自定义值）
+    if (!chromeExtensionName || chromeExtensionName === appName) {
+      setChromeExtensionName(name);
+    }
+    if (!windowsAppName || windowsAppName === appName) {
+      setWindowsAppName(name);
+    }
+    if (!macosAppName || macosAppName === appName) {
+      setMacosAppName(name);
+    }
+    if (!linuxAppName || linuxAppName === appName) {
+      setLinuxAppName(name);
+    }
+  };
+
+  // 快捷填写：根据应用名称自动生成包名
+  const generatePackageName = (name: string) => {
+    const sanitized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return `com.app.${sanitized || 'myapp'}`;
+  };
+
+  // 当应用名称变化时，如果包名为空或是自动生成的，则自动更新包名
+  const handleAppNameWithPackage = (name: string) => {
+    handleAppNameChange(name);
+    const autoPackage = generatePackageName(appName);
+    if (!packageName || packageName === autoPackage || packageName === 'com.app.myapp') {
+      setPackageName(generatePackageName(name));
+    }
+    if (!bundleId || bundleId === autoPackage || bundleId === 'com.app.myapp') {
+      setBundleId(generatePackageName(name));
+    }
+    if (!harmonyBundleName || harmonyBundleName === autoPackage || harmonyBundleName === 'com.app.myapp') {
+      setHarmonyBundleName(generatePackageName(name));
+    }
+  };
+
   useEffect(() => {
     const urlParam = searchParams.get("url");
     if (urlParam) {
@@ -564,7 +603,7 @@ function GenerateContent() {
                   versionName={androidVersionName}
                   versionCode={androidVersionCode}
                   privacyPolicy={privacyPolicy}
-                  onNameChange={setAppName}
+                  onNameChange={handleAppNameWithPackage}
                   onPackageNameChange={setPackageName}
                   onVersionNameChange={setAndroidVersionName}
                   onVersionCodeChange={setAndroidVersionCode}
@@ -582,7 +621,7 @@ function GenerateContent() {
                     versionString={iosVersionString}
                     buildNumber={iosBuildNumber}
                     privacyPolicy={iosPrivacyPolicy}
-                    onNameChange={setAppName}
+                    onNameChange={handleAppNameWithPackage}
                     onBundleIdChange={setBundleId}
                     onVersionStringChange={setIosVersionString}
                     onBuildNumberChange={setIosBuildNumber}
@@ -599,7 +638,7 @@ function GenerateContent() {
                     name={appName}
                     appId={wechatAppId}
                     version={wechatVersion}
-                    onNameChange={setAppName}
+                    onNameChange={handleAppNameChange}
                     onAppIdChange={setWechatAppId}
                     onVersionChange={setWechatVersion}
                   />
@@ -615,7 +654,7 @@ function GenerateContent() {
                     versionName={harmonyVersionName}
                     versionCode={harmonyVersionCode}
                     privacyPolicy={harmonyPrivacyPolicy}
-                    onNameChange={setAppName}
+                    onNameChange={handleAppNameWithPackage}
                     onBundleNameChange={setHarmonyBundleName}
                     onVersionNameChange={setHarmonyVersionName}
                     onVersionCodeChange={setHarmonyVersionCode}

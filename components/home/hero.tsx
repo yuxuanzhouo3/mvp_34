@@ -30,7 +30,7 @@ export function Hero() {
     {
       id: "desktop",
       name: currentLanguage === "zh" ? "桌面应用" : "Desktop Apps",
-      description: "Windows / macOS / Linux",
+      description: "Windows / MacOS / Linux",
       icon: Monitor,
       color: "from-violet-500 to-purple-600",
     },
@@ -87,7 +87,7 @@ export function Hero() {
 
           {/* Platform tags in one row */}
           <div className="flex flex-wrap items-center justify-center gap-2 mb-12">
-            {["Android", "iOS", currentLanguage === "zh" ? "鸿蒙" : "HarmonyOS", currentLanguage === "zh" ? "小程序" : "Mini Programs", "Windows", "macOS", "Linux", "Chrome"].map((platform) => (
+            {["Android", "iOS", currentLanguage === "zh" ? "鸿蒙" : "HarmonyOS", currentLanguage === "zh" ? "小程序" : "Mini Programs", "Windows", "MacOS", "Linux", "Chrome"].map((platform) => (
               <span
                 key={platform}
                 className="px-3 py-1.5 text-sm font-medium rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 text-foreground"

@@ -4,7 +4,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { PLATFORMS, PLATFORM_CATEGORIES, getPlatformsByCategory } from "@/config/platforms";
 import type { PlatformCategory } from "@/config/platforms";
 import { Badge } from "@/components/ui/badge";
-import { Check, Layers } from "lucide-react";
+import { Check, Layers, Clock } from "lucide-react";
+import { toast } from "sonner";
 
 interface PlatformSelectorProps {
   selectedPlatforms: string[];
@@ -16,7 +17,15 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
 
   const categories: PlatformCategory[] = ["mobile", "miniprogram", "desktop", "browser"];
 
+  // 获取可用平台
+  const availablePlatforms = PLATFORMS.filter(p => p.available);
+
   const togglePlatform = (platformId: string) => {
+    const platform = PLATFORMS.find(p => p.id === platformId);
+    if (platform && !platform.available) {
+      toast.info(currentLanguage === "zh" ? "该平台正在开发中，敬请期待" : "This platform is coming soon");
+      return;
+    }
     if (selectedPlatforms.includes(platformId)) {
       onSelectionChange(selectedPlatforms.filter((id) => id !== platformId));
     } else {
@@ -25,7 +34,7 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   const toggleCategory = (category: PlatformCategory) => {
-    const categoryPlatforms = getPlatformsByCategory(category).map((p) => p.id);
+    const categoryPlatforms = getPlatformsByCategory(category).filter(p => p.available).map((p) => p.id);
     const allSelected = categoryPlatforms.every((id) => selectedPlatforms.includes(id));
 
     if (allSelected) {
@@ -42,10 +51,10 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   const selectAll = () => {
-    if (selectedPlatforms.length === PLATFORMS.length) {
+    if (selectedPlatforms.length === availablePlatforms.length) {
       onSelectionChange([]);
     } else {
-      onSelectionChange(PLATFORMS.map((p) => p.id));
+      onSelectionChange(availablePlatforms.map((p) => p.id));
     }
   };
 
@@ -70,7 +79,7 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
             onClick={selectAll}
             className="text-sm text-cyan-500 hover:text-cyan-400 font-medium transition-colors"
           >
-            {selectedPlatforms.length === PLATFORMS.length
+            {selectedPlatforms.length === availablePlatforms.length
               ? currentLanguage === "zh" ? "取消全选" : "Deselect All"
               : currentLanguage === "zh" ? "全选" : "Select All"}
           </button>
@@ -86,9 +95,10 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
       {/* Platform Categories */}
       {categories.map((category) => {
         const platforms = getPlatformsByCategory(category);
+        const availableInCategory = platforms.filter(p => p.available);
         const categoryInfo = PLATFORM_CATEGORIES[category];
-        const selectedInCategory = platforms.filter((p) => selectedPlatforms.includes(p.id)).length;
-        const allSelected = selectedInCategory === platforms.length;
+        const selectedInCategory = availableInCategory.filter((p) => selectedPlatforms.includes(p.id)).length;
+        const allSelected = availableInCategory.length > 0 && selectedInCategory === availableInCategory.length;
 
         return (
           <div key={category} className="space-y-4">
@@ -117,7 +127,7 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
                 </span>
               </button>
               <span className="text-sm text-muted-foreground px-2.5 py-1 rounded-full bg-muted/50">
-                {selectedInCategory}/{platforms.length}
+                {selectedInCategory}/{availableInCategory.length}
               </span>
             </div>
 
@@ -126,6 +136,7 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
               {platforms.map((platform) => {
                 const Icon = platform.icon;
                 const isSelected = selectedPlatforms.includes(platform.id);
+                const isDisabled = !platform.available;
 
                 return (
                   <button
@@ -133,26 +144,35 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
                     type="button"
                     onClick={() => togglePlatform(platform.id)}
                     className={`relative group text-left p-4 rounded-xl border-2 transition-all duration-300 ${
-                      isSelected
+                      isDisabled
+                        ? "border-border/20 bg-muted/30 cursor-not-allowed opacity-60"
+                        : isSelected
                         ? "border-cyan-500 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shadow-lg shadow-cyan-500/10"
                         : "border-border/30 bg-card/30 hover:border-cyan-500/50 hover:bg-card/50"
                     }`}
                   >
-                    {/* Selection indicator */}
-                    <div
-                      className={`absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 ${
-                        isSelected
-                          ? "bg-gradient-to-br from-cyan-500 to-blue-500 shadow-md shadow-cyan-500/30"
-                          : "border-2 border-border/50 group-hover:border-cyan-500/50"
-                      }`}
-                    >
-                      {isSelected && <Check className="h-3 w-3 text-white" />}
-                    </div>
+                    {/* Selection indicator or Coming Soon badge */}
+                    {isDisabled ? (
+                      <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs">
+                        <Clock className="h-3 w-3" />
+                        <span>{currentLanguage === "zh" ? "开发中" : "Soon"}</span>
+                      </div>
+                    ) : (
+                      <div
+                        className={`absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 ${
+                          isSelected
+                            ? "bg-gradient-to-br from-cyan-500 to-blue-500 shadow-md shadow-cyan-500/30"
+                            : "border-2 border-border/50 group-hover:border-cyan-500/50"
+                        }`}
+                      >
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                    )}
 
                     <div className="flex items-start gap-3">
                       {/* Platform Icon */}
                       <div
-                        className={`w-12 h-12 rounded-xl bg-gradient-to-br ${platform.color} flex items-center justify-center shadow-lg transition-transform duration-200 group-hover:scale-105`}
+                        className={`w-12 h-12 rounded-xl bg-gradient-to-br ${platform.color} flex items-center justify-center shadow-lg transition-transform duration-200 ${isDisabled ? "" : "group-hover:scale-105"}`}
                       >
                         <Icon className="h-6 w-6 text-white" />
                       </div>

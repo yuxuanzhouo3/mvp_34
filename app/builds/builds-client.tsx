@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Layers,
   Download,
@@ -24,6 +25,10 @@ import {
   Chrome,
   Monitor,
   Archive,
+  Terminal,
+  ChevronLeft,
+  ChevronRight,
+  HardDrive,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -64,21 +69,28 @@ function BuildIcon({ build, getPlatformIcon }: {
   }
 
   // Use platform icon with gradient background - using official brand colors
-  const bgClass = build.platform === "android"
-    ? "bg-gradient-to-br from-[#3DDC84]/10 to-[#3DDC84]/20 dark:from-[#3DDC84]/15 dark:to-[#3DDC84]/25 text-[#3DDC84]"
-    : build.platform === "ios"
-    ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
-    : build.platform === "wechat"
-    ? "bg-gradient-to-br from-[#07C160]/10 to-[#07C160]/20 dark:from-[#07C160]/15 dark:to-[#07C160]/25 text-[#07C160]"
-    : build.platform === "harmonyos"
-    ? "bg-gradient-to-br from-[#E52828]/10 to-[#E52828]/20 dark:from-[#E52828]/15 dark:to-[#E52828]/25 text-[#E52828] dark:text-[#FF4D4D]"
-    : build.platform === "chrome"
-    ? "bg-gradient-to-br from-[#4285F4]/10 to-[#4285F4]/20 dark:from-[#4285F4]/15 dark:to-[#4285F4]/25 text-[#4285F4]"
-    : build.platform === "windows"
-    ? "bg-gradient-to-br from-[#0078D4]/10 to-[#0078D4]/20 dark:from-[#0078D4]/15 dark:to-[#0078D4]/25 text-[#0078D4]"
-    : build.platform === "macos"
-    ? "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400"
-    : "bg-gradient-to-br from-purple-500/10 to-purple-600/10 dark:from-purple-500/20 dark:to-purple-600/20 text-purple-600 dark:text-purple-400";
+  const getBgClass = () => {
+    switch (build.platform) {
+      case "android":
+        return "bg-gradient-to-br from-[#3DDC84]/10 to-[#3DDC84]/20 dark:from-[#3DDC84]/15 dark:to-[#3DDC84]/25 text-[#3DDC84]";
+      case "ios":
+      case "macos":
+        return "bg-gradient-to-br from-gray-500/10 to-gray-600/10 dark:from-gray-500/20 dark:to-gray-600/20 text-gray-600 dark:text-gray-400";
+      case "wechat":
+        return "bg-gradient-to-br from-[#07C160]/10 to-[#07C160]/20 dark:from-[#07C160]/15 dark:to-[#07C160]/25 text-[#07C160]";
+      case "harmonyos":
+        return "bg-gradient-to-br from-[#E52828]/10 to-[#E52828]/20 dark:from-[#E52828]/15 dark:to-[#E52828]/25 text-[#E52828] dark:text-[#FF4D4D]";
+      case "chrome":
+        return "bg-gradient-to-br from-[#4285F4]/10 to-[#4285F4]/20 dark:from-[#4285F4]/15 dark:to-[#4285F4]/25 text-[#4285F4]";
+      case "windows":
+        return "bg-gradient-to-br from-[#0078D4]/10 to-[#0078D4]/20 dark:from-[#0078D4]/15 dark:to-[#0078D4]/25 text-[#0078D4]";
+      case "linux":
+        return "bg-gradient-to-br from-orange-500/10 to-orange-600/10 dark:from-orange-500/20 dark:to-orange-600/20 text-orange-600 dark:text-orange-400";
+      default:
+        return "bg-gradient-to-br from-purple-500/10 to-purple-600/10 dark:from-purple-500/20 dark:to-purple-600/20 text-purple-600 dark:text-purple-400";
+    }
+  };
+  const bgClass = getBgClass();
 
   return (
     <div className={`w-full h-full flex items-center justify-center ${bgClass}`}>
@@ -103,7 +115,20 @@ interface BuildItem {
   expires_at: string;
   icon_path: string | null;
   icon_url: string | null;
+  file_size: number | null;
   downloadUrl?: string;
+}
+
+// 每页显示数量
+const PAGE_SIZE = 5;
+
+// 格式化文件大小
+function formatFileSize(bytes: number | null): string {
+  if (bytes === null || bytes === undefined) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 interface BuildStats {
@@ -144,6 +169,9 @@ export default function BuildsClient() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedBuilds, setSelectedBuilds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fetchBuilds = useCallback(async () => {
     if (!user) return;
@@ -266,6 +294,61 @@ export default function BuildsClient() {
     }
   };
 
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedBuilds.size === 0) return;
+
+    if (!confirm(
+      currentLanguage === "zh"
+        ? `确定要删除选中的 ${selectedBuilds.size} 个构建吗？`
+        : `Are you sure you want to delete ${selectedBuilds.size} selected builds?`
+    )) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const deletePromises = Array.from(selectedBuilds).map(id =>
+        fetch(api.builds.delete(id), { method: "DELETE" })
+      );
+      await Promise.all(deletePromises);
+
+      toast.success(
+        currentLanguage === "zh"
+          ? `成功删除 ${selectedBuilds.size} 个构建`
+          : `Successfully deleted ${selectedBuilds.size} builds`
+      );
+      setSelectedBuilds(new Set());
+      fetchBuilds();
+    } catch (error) {
+      console.error("Batch delete error:", error);
+      toast.error(
+        currentLanguage === "zh" ? "批量删除失败" : "Batch delete failed"
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // 切换选中状态
+  const toggleSelect = (buildId: string) => {
+    const newSelected = new Set(selectedBuilds);
+    if (newSelected.has(buildId)) {
+      newSelected.delete(buildId);
+    } else {
+      newSelected.add(buildId);
+    }
+    setSelectedBuilds(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedBuilds.size === filteredBuilds.length && filteredBuilds.length > 0) {
+      setSelectedBuilds(new Set());
+    } else {
+      setSelectedBuilds(new Set(filteredBuilds.map(b => b.id)));
+    }
+  };
+
   const getStatusIcon = (status: BuildStatus) => {
     switch (status) {
       case "pending":
@@ -318,6 +401,8 @@ export default function BuildsClient() {
         return <Monitor className="h-5 w-5" />;
       case "macos":
         return <Apple className="h-5 w-5" />;
+      case "linux":
+        return <Terminal className="h-5 w-5" />;
       default:
         return <Package className="h-5 w-5" />;
     }
@@ -338,7 +423,9 @@ export default function BuildsClient() {
       case "windows":
         return "Windows";
       case "macos":
-        return "macOS";
+        return "MacOS";
+      case "linux":
+        return "Linux";
       default:
         return platform;
     }
@@ -366,6 +453,9 @@ export default function BuildsClient() {
       case "macos":
         // macOS 使用 Apple 灰色
         return "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-500/10 border-gray-200 dark:border-gray-500/20";
+      case "linux":
+        // Linux 使用橙色
+        return "text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 border-orange-200 dark:border-orange-500/20";
       default:
         return "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20";
     }
@@ -438,6 +528,19 @@ export default function BuildsClient() {
     const matchesCategory = categoryFilter === "all" || getBuildCategory(build.platform) === categoryFilter;
     return matchesSearch && matchesCategory;
   });
+
+  // 分页计算
+  const totalPages = Math.ceil(filteredBuilds.length / PAGE_SIZE);
+  const paginatedBuilds = filteredBuilds.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
+  // 当筛选条件变化时重置页码和选中状态
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedBuilds(new Set());
+  }, [searchQuery, categoryFilter]);
 
   if (authLoading || loading) {
     return (
@@ -568,6 +671,41 @@ export default function BuildsClient() {
             />
           </div>
           <div className="flex gap-2">
+            {/* 全选按钮 - 使用 div 避免 button 嵌套 button */}
+            <div
+              role="button"
+              tabIndex={0}
+              className={`inline-flex items-center h-11 px-4 rounded-xl gap-2 border text-sm font-medium transition-colors cursor-pointer ${
+                filteredBuilds.length === 0
+                  ? "opacity-50 cursor-not-allowed pointer-events-none"
+                  : "hover:bg-accent hover:text-accent-foreground"
+              } border-input bg-background`}
+              onClick={toggleSelectAll}
+              onKeyDown={(e) => e.key === "Enter" && toggleSelectAll()}
+            >
+              <Checkbox
+                checked={selectedBuilds.size > 0 && selectedBuilds.size === filteredBuilds.length}
+                className="h-4 w-4"
+              />
+              {currentLanguage === "zh" ? "全选" : "Select All"}
+            </div>
+            {/* 批量删除按钮 */}
+            {selectedBuilds.size > 0 && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-11 px-4 rounded-xl gap-2"
+                onClick={handleBatchDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                {currentLanguage === "zh" ? `删除 (${selectedBuilds.size})` : `Delete (${selectedBuilds.size})`}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -591,14 +729,24 @@ export default function BuildsClient() {
               </p>
             </div>
           ) : (
-            filteredBuilds.map((build) => (
+            paginatedBuilds.map((build) => (
               <div
                 key={build.id}
-                className="p-4 rounded-2xl bg-card border border-border/50 shadow-sm hover:shadow-md hover:border-border transition-all"
+                className={`p-4 rounded-2xl bg-card border shadow-sm hover:shadow-md transition-all ${
+                  selectedBuilds.has(build.id)
+                    ? "border-cyan-500 bg-cyan-500/5"
+                    : "border-border/50 hover:border-border"
+                }`}
               >
                 <div className="flex flex-col md:flex-row gap-4">
-                  {/* Left: Icon & Main Info */}
+                  {/* Left: Checkbox + Icon & Main Info */}
                   <div className="flex items-start gap-3 flex-1 min-w-0">
+                    {/* Checkbox */}
+                    <Checkbox
+                      checked={selectedBuilds.has(build.id)}
+                      onCheckedChange={() => toggleSelect(build.id)}
+                      className="mt-3 h-5 w-5 shrink-0"
+                    />
                     {/* App Icon or Platform Icon */}
                     <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 relative">
                       <BuildIcon build={build} getPlatformIcon={getPlatformIcon} />
@@ -607,10 +755,13 @@ export default function BuildsClient() {
                       {/* Title Row */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold truncate">{build.app_name}</h3>
-                        <span className="text-sm text-muted-foreground">
-                          v{build.version_name || "1.0.0"}
-                          {build.version_code && build.version_code !== "1" && ` · Build ${build.version_code}`}
-                        </span>
+                        {/* 只有当有版本号时才显示 */}
+                        {build.version_name && build.version_name !== "1.0.0" && (
+                          <span className="text-sm text-muted-foreground">
+                            v{build.version_name}
+                            {build.version_code && build.version_code !== "1" && ` · Build ${build.version_code}`}
+                          </span>
+                        )}
                         <Badge
                           variant="outline"
                           className={`shrink-0 text-xs ${getPlatformColor(build.platform)}`}
@@ -624,6 +775,16 @@ export default function BuildsClient() {
                           {getStatusIcon(build.status)}
                           <span className="ml-1">{getStatusText(build.status)}</span>
                         </Badge>
+                        {/* 文件大小显示 */}
+                        {build.file_size && build.status === "completed" && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-500/10 border-slate-200 dark:border-slate-500/20"
+                          >
+                            <HardDrive className="h-3 w-3 mr-1" />
+                            {formatFileSize(build.file_size)}
+                          </Badge>
+                        )}
                       </div>
 
                       {/* Info Row */}
@@ -716,6 +877,59 @@ export default function BuildsClient() {
             ))
           )}
         </div>
+
+        {/* 分页控件 */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-8">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 rounded-xl"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // 显示逻辑：第一页、最后一页、当前页及其前后各1页
+                const showPage = page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
+                const showEllipsis = page === 2 && currentPage > 3 || page === totalPages - 1 && currentPage < totalPages - 2;
+
+                if (showEllipsis && !showPage) {
+                  return <span key={page} className="px-2 text-muted-foreground">...</span>;
+                }
+                if (!showPage) return null;
+
+                return (
+                  <Button
+                    key={page}
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="sm"
+                    className={`h-9 w-9 rounded-xl ${currentPage === page ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white" : ""}`}
+                    onClick={() => setCurrentPage(page)}
+                  >
+                    {page}
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 rounded-xl"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <span className="ml-2 text-sm text-muted-foreground">
+              {currentLanguage === "zh"
+                ? `共 ${filteredBuilds.length} 条`
+                : `${filteredBuilds.length} total`}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -71,20 +71,20 @@ export const PLATFORMS: Platform[] = [
   {
     id: "xiaohongshu",
     name: { zh: "小红书小程序", en: "Xiaohongshu Mini Program" },
-    description: { zh: "小红书生态应用", en: "Xiaohongshu Ecosystem App" },
+    description: { zh: "正在开发中...", en: "Coming soon..." },
     category: "miniprogram",
     icon: Bookmark,
     color: "from-red-400 to-pink-500",
-    available: true,
+    available: false,
   },
   {
     id: "alipay",
     name: { zh: "支付宝小程序", en: "Alipay Mini Program" },
-    description: { zh: "支付宝生态应用", en: "Alipay Ecosystem App" },
+    description: { zh: "正在开发中...", en: "Coming soon..." },
     category: "miniprogram",
     icon: Wallet,
     color: "from-blue-400 to-blue-500",
-    available: true,
+    available: false,
   },
   // 桌面端
   {
@@ -98,7 +98,7 @@ export const PLATFORMS: Platform[] = [
   },
   {
     id: "macos",
-    name: { zh: "macOS", en: "macOS" },
+    name: { zh: "MacOS", en: "MacOS" },
     description: { zh: "Mac桌面应用 (APP)", en: "Mac Desktop App (APP)" },
     category: "desktop",
     icon: Laptop,

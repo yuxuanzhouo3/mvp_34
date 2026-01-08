@@ -114,8 +114,9 @@ export async function GET(request: NextRequest) {
       wechat: counts?.filter((b) => b.platform === "wechat").length || 0,
       harmonyos: counts?.filter((b) => b.platform === "harmonyos").length || 0,
       windows: counts?.filter((b) => b.platform === "windows").length || 0,
+      macos: counts?.filter((b) => b.platform === "macos").length || 0,
+      linux: counts?.filter((b) => b.platform === "linux").length || 0,
       chrome: counts?.filter((b) => b.platform === "chrome").length || 0,
-      other: counts?.filter((b) => !["android", "ios", "wechat", "harmonyos", "windows", "chrome"].includes(b.platform)).length || 0,
     };
 
     return NextResponse.json({

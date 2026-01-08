@@ -176,6 +176,7 @@ export async function processLinuxAppBuild(
         status: "completed",
         progress: 100,
         output_file_path: outputPath,
+        file_size: outputBuffer.length,
       })
       .eq("id", buildId);
 

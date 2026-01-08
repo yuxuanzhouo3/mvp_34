@@ -181,6 +181,7 @@ export async function processiOSBuild(
         status: "completed",
         progress: 100,
         output_file_path: outputPath,
+        file_size: outputBuffer.length,
       })
       .eq("id", buildId);
 
