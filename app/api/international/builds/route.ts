@@ -68,12 +68,11 @@ export async function GET(request: NextRequest) {
           }
 
           // Update build record to mark files as cleaned
-          serviceClient
+          void serviceClient
             .from("builds")
             .update({ output_file_path: null, icon_path: null })
             .eq("id", build.id)
-            .then(() => {})
-            .catch(console.error);
+            .then(() => {});
 
           return { ...build, output_file_path: null, icon_path: null, icon_url: null };
         }
