@@ -1,9 +1,10 @@
 "use client";
 
 import { useLanguage } from "@/context/LanguageContext";
+import { useUploadConfig } from "@/hooks/useUploadConfig";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Package, Image, AlertTriangle, Terminal } from "lucide-react";
+import { Package, Image, AlertTriangle, Terminal, AlertCircle } from "lucide-react";
 import { useState, useRef } from "react";
 
 interface LinuxConfigProps {
@@ -18,8 +19,10 @@ export function LinuxConfig({
   onIconChange,
 }: LinuxConfigProps) {
   const { currentLanguage } = useLanguage();
+  const { iconUploadEnabled, maxImageUploadMB, validateFileSize } = useUploadConfig();
   const [iconPreview, setIconPreview] = useState<string | null>(null);
   const [iconFileName, setIconFileName] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleIconSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,6 +33,23 @@ export function LinuxConfig({
         return;
       }
 
+      // Validate file size
+      const validation = validateFileSize(file);
+      if (!validation.valid) {
+        setUploadError(
+          currentLanguage === "zh"
+            ? `文件大小 (${(file.size / (1024 * 1024)).toFixed(2)}MB) 超过限制 (${maxImageUploadMB}MB)`
+            : validation.error || "File too large"
+        );
+        // 清除之前选择的文件，防止提交无效文件
+        onIconChange(null);
+        setIconPreview(null);
+        setIconFileName(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      setUploadError(null);
       onIconChange(file);
       setIconFileName(file.name);
 
@@ -44,6 +64,7 @@ export function LinuxConfig({
     onIconChange(null);
     setIconPreview(null);
     setIconFileName(null);
+    setUploadError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -101,47 +122,64 @@ export function LinuxConfig({
             ({currentLanguage === "zh" ? "可选" : "Optional"})
           </span>
         </Label>
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-border/50 rounded-xl p-6 text-center cursor-pointer hover:border-orange-500/50 hover:bg-orange-500/5 transition-all duration-200"
-        >
-          {iconPreview ? (
-            <div className="flex flex-col items-center gap-3">
-              <img
-                src={iconPreview}
-                alt="Icon preview"
-                className="w-16 h-16 rounded-lg object-cover shadow-md"
-              />
-              <p className="text-sm text-muted-foreground">{iconFileName}</p>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRemoveIcon();
-                }}
-                className="text-xs text-red-500 hover:text-red-600 transition-colors"
-              >
-                {currentLanguage === "zh" ? "移除图标" : "Remove icon"}
-              </button>
-            </div>
-          ) : (
+        {!iconUploadEnabled ? (
+          <div className="border-2 border-dashed border-border/30 rounded-xl p-6 text-center bg-muted/30">
             <div className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 rounded-xl bg-muted/50 flex items-center justify-center">
-                <Image className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {currentLanguage === "zh"
-                  ? "点击上传图标 (PNG/JPG)"
-                  : "Click to upload icon (PNG/JPG)"}
-              </p>
-              <p className="text-xs text-muted-foreground/70">
-                {currentLanguage === "zh"
-                  ? "推荐尺寸: 512x512 像素"
-                  : "Recommended: 512x512 pixels"}
+              <AlertCircle className="w-6 h-6 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground/50">
+                {currentLanguage === "zh" ? "图标上传已禁用" : "Icon upload disabled"}
               </p>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-border/50 rounded-xl p-6 text-center cursor-pointer hover:border-orange-500/50 hover:bg-orange-500/5 transition-all duration-200"
+          >
+            {iconPreview ? (
+              <div className="flex flex-col items-center gap-3">
+                <img
+                  src={iconPreview}
+                  alt="Icon preview"
+                  className="w-16 h-16 rounded-lg object-cover shadow-md"
+                />
+                <p className="text-sm text-muted-foreground">{iconFileName}</p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveIcon();
+                  }}
+                  className="text-xs text-red-500 hover:text-red-600 transition-colors"
+                >
+                  {currentLanguage === "zh" ? "移除图标" : "Remove icon"}
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-xl bg-muted/50 flex items-center justify-center">
+                  <Image className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {currentLanguage === "zh"
+                    ? "点击上传图标 (PNG/JPG)"
+                    : "Click to upload icon (PNG/JPG)"}
+                </p>
+                <p className="text-xs text-muted-foreground/70">
+                  {currentLanguage === "zh"
+                    ? `推荐尺寸: 512x512 像素 (最大 ${maxImageUploadMB}MB)`
+                    : `Recommended: 512x512 pixels (max ${maxImageUploadMB}MB)`}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        {uploadError && (
+          <p className="text-xs text-red-500 flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {uploadError}
+          </p>
+        )}
         <input
           ref={fileInputRef}
           type="file"

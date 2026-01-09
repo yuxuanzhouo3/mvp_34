@@ -2,10 +2,11 @@
 
 import { useState, useRef } from "react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useUploadConfig } from "@/hooks/useUploadConfig";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, X, Package, Hash, FileText, Apple } from "lucide-react";
+import { Upload, X, Package, Hash, FileText, Apple, AlertCircle } from "lucide-react";
 
 interface iOSConfigProps {
   name: string;
@@ -35,12 +36,28 @@ export function IOSConfig({
   onIconChange,
 }: iOSConfigProps) {
   const { currentLanguage } = useLanguage();
+  const { iconUploadEnabled, maxImageUploadMB, validateFileSize } = useUploadConfig();
   const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const validation = validateFileSize(file);
+      if (!validation.valid) {
+        setUploadError(
+          currentLanguage === "zh"
+            ? `文件大小 (${(file.size / (1024 * 1024)).toFixed(2)}MB) 超过限制 (${maxImageUploadMB}MB)`
+            : validation.error || "File too large"
+        );
+        // 清除之前选择的文件，防止提交无效文件
+        onIconChange(null);
+        setIconPreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+      setUploadError(null);
       onIconChange(file);
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -52,6 +69,7 @@ export function IOSConfig({
 
   const removeIcon = () => {
     setIconPreview(null);
+    setUploadError(null);
     onIconChange(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -92,7 +110,14 @@ export function IOSConfig({
           <Label className="text-base font-medium text-foreground/80 mb-3 block">
             {currentLanguage === "zh" ? "应用图标" : "App Icon"}
           </Label>
-          {iconPreview ? (
+          {!iconUploadEnabled ? (
+            <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-border/30 bg-muted/30 flex flex-col items-center justify-center">
+              <AlertCircle className="h-5 w-5 text-muted-foreground/50 mb-1" />
+              <span className="text-xs text-muted-foreground/50">
+                {currentLanguage === "zh" ? "已禁用" : "Disabled"}
+              </span>
+            </div>
+          ) : iconPreview ? (
             <div className="relative group">
               <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-border/50 shadow-lg ring-4 ring-gray-500/10">
                 <img
@@ -126,9 +151,19 @@ export function IOSConfig({
               />
             </label>
           )}
-          <p className="text-xs text-muted-foreground mt-2">
-            {currentLanguage === "zh" ? "建议 1024x1024 PNG" : "Recommended: 1024x1024 PNG"}
-          </p>
+          {uploadError && (
+            <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              {uploadError}
+            </p>
+          )}
+          {iconUploadEnabled && !uploadError && (
+            <p className="text-xs text-muted-foreground mt-2">
+              {currentLanguage === "zh"
+                ? `建议 1024x1024 PNG (最大 ${maxImageUploadMB}MB)`
+                : `Recommended: 1024x1024 PNG (max ${maxImageUploadMB}MB)`}
+            </p>
+          )}
         </div>
 
         {/* App Name */}

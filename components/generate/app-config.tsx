@@ -2,10 +2,11 @@
 
 import { useState, useRef } from "react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useUploadConfig } from "@/hooks/useUploadConfig";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, X, Package } from "lucide-react";
+import { Upload, X, Package, AlertCircle } from "lucide-react";
 
 interface AppConfigProps {
   name: string;
@@ -23,12 +24,30 @@ export function AppConfig({
   onIconChange,
 }: AppConfigProps) {
   const { t, currentLanguage } = useLanguage();
+  const { iconUploadEnabled, maxImageUploadMB, validateFileSize } = useUploadConfig();
   const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file size
+      const validation = validateFileSize(file);
+      if (!validation.valid) {
+        setUploadError(
+          currentLanguage === "zh"
+            ? `文件大小 (${(file.size / (1024 * 1024)).toFixed(2)}MB) 超过限制 (${maxImageUploadMB}MB)`
+            : validation.error || "File too large"
+        );
+        // 清除之前选择的文件，防止提交无效文件
+        onIconChange(null);
+        setIconPreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      setUploadError(null);
       onIconChange(file);
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -41,6 +60,7 @@ export function AppConfig({
   const removeIcon = () => {
     setIconPreview(null);
     onIconChange(null);
+    setUploadError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -55,7 +75,14 @@ export function AppConfig({
           <Label className="text-base font-medium text-foreground/80 mb-3 block">
             {t("generate.icon.label")}
           </Label>
-          {iconPreview ? (
+          {!iconUploadEnabled ? (
+            <div className="flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 border-dashed border-border/30 bg-muted/30">
+              <AlertCircle className="w-6 h-6 text-muted-foreground/50" />
+              <span className="text-xs text-muted-foreground/50 mt-1">
+                {currentLanguage === "zh" ? "已禁用" : "Disabled"}
+              </span>
+            </div>
+          ) : iconPreview ? (
             <div className="relative group">
               <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-border/50 shadow-lg ring-4 ring-cyan-500/10">
                 <img
@@ -89,8 +116,18 @@ export function AppConfig({
               />
             </label>
           )}
+          {uploadError && (
+            <p className="text-xs text-red-500 flex items-center gap-1 mt-2">
+              <AlertCircle className="h-3 w-3" />
+              {uploadError}
+            </p>
+          )}
           <p className="text-xs text-muted-foreground mt-2">
-            {t("generate.icon.recommend")}
+            {iconUploadEnabled
+              ? (currentLanguage === "zh"
+                  ? `推荐 512x512 像素 (最大 ${maxImageUploadMB}MB)`
+                  : `Recommended 512x512px (max ${maxImageUploadMB}MB)`)
+              : t("generate.icon.recommend")}
           </p>
         </div>
 

@@ -3,6 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
+import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 
 // 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
 export const maxDuration = 120;
@@ -47,9 +48,26 @@ export async function POST(request: NextRequest) {
     // Get service client for database operations
     const serviceClient = createServiceClient();
 
-    // Upload icon if provided
+    // Upload icon if provided and enabled
     let iconPath: string | null = null;
     if (iconFile && iconFile.size > 0) {
+      // Check if icon upload is enabled
+      if (!isIconUploadEnabled()) {
+        return NextResponse.json(
+          { error: "Icon upload disabled", message: "Icon upload is currently disabled" },
+          { status: 400 }
+        );
+      }
+
+      // Validate icon size
+      const sizeValidation = validateImageSize(iconFile.size);
+      if (!sizeValidation.valid) {
+        return NextResponse.json(
+          { error: "Icon too large", message: `Icon size (${sizeValidation.fileSizeMB}MB) exceeds limit (${sizeValidation.maxSizeMB}MB)` },
+          { status: 400 }
+        );
+      }
+
       const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
 
       // 获取文件扩展名，确保使用安全的文件名（避免中文等特殊字符）
