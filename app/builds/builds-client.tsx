@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { getPlanSupportBatchBuild } from "@/utils/plan-limits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -172,6 +174,23 @@ export default function BuildsClient() {
   const [selectedBuilds, setSelectedBuilds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [batchBuildEnabled, setBatchBuildEnabled] = useState(false);
+
+  // 获取用户钱包数据判断是否支持批量构建（根据套餐动态判断）
+  useEffect(() => {
+    if (!user) return;
+    const fetchWallet = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("user_wallets")
+        .select("plan")
+        .eq("user_id", user.id)
+        .single();
+      const plan = data?.plan || "Free";
+      setBatchBuildEnabled(getPlanSupportBatchBuild(plan));
+    };
+    fetchWallet();
+  }, [user]);
 
   const fetchBuilds = useCallback(async () => {
     if (!user) return;
@@ -336,12 +355,21 @@ export default function BuildsClient() {
     if (newSelected.has(buildId)) {
       newSelected.delete(buildId);
     } else {
+      // Free 用户只能选择一个
+      if (!batchBuildEnabled) {
+        newSelected.clear();
+      }
       newSelected.add(buildId);
     }
     setSelectedBuilds(newSelected);
   };
 
   const toggleSelectAll = () => {
+    // Free 用户点击全选时弹出订阅界面
+    if (!batchBuildEnabled) {
+      window.dispatchEvent(new CustomEvent("open-subscription-modal"));
+      return;
+    }
     if (selectedBuilds.size === filteredBuilds.length && filteredBuilds.length > 0) {
       setSelectedBuilds(new Set());
     } else {
@@ -671,7 +699,7 @@ export default function BuildsClient() {
             />
           </div>
           <div className="flex gap-2">
-            {/* 全选按钮 - 使用 div 避免 button 嵌套 button */}
+            {/* 全选按钮 */}
             <div
               role="button"
               tabIndex={0}

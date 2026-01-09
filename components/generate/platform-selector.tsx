@@ -1,11 +1,15 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuth } from "@/context/AuthContext";
 import { PLATFORMS, PLATFORM_CATEGORIES, getPlatformsByCategory } from "@/config/platforms";
 import type { PlatformCategory } from "@/config/platforms";
 import { Badge } from "@/components/ui/badge";
-import { Check, Layers, Clock } from "lucide-react";
+import { Check, Layers, Clock, Lock } from "lucide-react";
 import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
+import { getPlanSupportBatchBuild } from "@/utils/plan-limits";
 
 interface PlatformSelectorProps {
   selectedPlatforms: string[];
@@ -14,6 +18,24 @@ interface PlatformSelectorProps {
 
 export function PlatformSelector({ selectedPlatforms, onSelectionChange }: PlatformSelectorProps) {
   const { t, currentLanguage } = useLanguage();
+  const { user } = useAuth();
+  const [batchBuildEnabled, setBatchBuildEnabled] = useState(false);
+
+  // 获取用户套餐，判断是否支持批量构建（多平台选择）
+  useEffect(() => {
+    if (!user) return;
+    const fetchPlan = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("user_wallets")
+        .select("plan")
+        .eq("user_id", user.id)
+        .single();
+      const plan = data?.plan || "Free";
+      setBatchBuildEnabled(getPlanSupportBatchBuild(plan));
+    };
+    fetchPlan();
+  }, [user]);
 
   const categories: PlatformCategory[] = ["mobile", "miniprogram", "desktop", "browser"];
 
@@ -29,11 +51,21 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
     if (selectedPlatforms.includes(platformId)) {
       onSelectionChange(selectedPlatforms.filter((id) => id !== platformId));
     } else {
-      onSelectionChange([...selectedPlatforms, platformId]);
+      // Free 用户只能选择一个平台
+      if (!batchBuildEnabled) {
+        onSelectionChange([platformId]);
+      } else {
+        onSelectionChange([...selectedPlatforms, platformId]);
+      }
     }
   };
 
   const toggleCategory = (category: PlatformCategory) => {
+    // Free 用户不支持分类全选，弹出订阅界面
+    if (!batchBuildEnabled) {
+      window.dispatchEvent(new CustomEvent("open-subscription-modal"));
+      return;
+    }
     const categoryPlatforms = getPlatformsByCategory(category).filter(p => p.available).map((p) => p.id);
     const allSelected = categoryPlatforms.every((id) => selectedPlatforms.includes(id));
 
@@ -51,6 +83,11 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   const selectAll = () => {
+    // Free 用户不支持全选，弹出订阅界面
+    if (!batchBuildEnabled) {
+      window.dispatchEvent(new CustomEvent("open-subscription-modal"));
+      return;
+    }
     if (selectedPlatforms.length === availablePlatforms.length) {
       onSelectionChange([]);
     } else {

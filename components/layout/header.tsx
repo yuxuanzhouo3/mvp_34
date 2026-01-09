@@ -7,13 +7,22 @@ import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "./language-switcher";
 import { ThemeSwitcher } from "./theme-switcher";
 import { UserMenu } from "@/components/auth";
+import { SubscriptionModal } from "@/components/subscription/subscription-modal";
 import { Menu, X, Box, Crown, LogIn, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function Header() {
   const { t, currentLanguage } = useLanguage();
   const { user, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+
+  // 监听来自 UserMenu 的订阅弹窗事件
+  useEffect(() => {
+    const handleOpenSubscription = () => setSubscriptionOpen(true);
+    window.addEventListener("open-subscription-modal", handleOpenSubscription);
+    return () => window.removeEventListener("open-subscription-modal", handleOpenSubscription);
+  }, []);
 
   const navLinks = [
     { href: "/", label: t("nav.home") },
@@ -22,6 +31,7 @@ export function Header() {
   ];
 
   return (
+    <>
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/90 backdrop-blur-xl shadow-sm">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
         {/* Left: Logo & Navigation */}
@@ -70,6 +80,7 @@ export function Header() {
               variant="ghost"
               size="sm"
               className="h-9 gap-2 text-amber-600 dark:text-amber-400 hover:text-amber-500 hover:bg-amber-500/10"
+              onClick={() => setSubscriptionOpen(true)}
             >
               <Crown className="h-4 w-4" />
               <span className="text-sm font-medium">
@@ -130,6 +141,10 @@ export function Header() {
                 variant="outline"
                 size="sm"
                 className="h-11 gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-xl"
+                onClick={() => {
+                  setSubscriptionOpen(true);
+                  setMobileMenuOpen(false);
+                }}
               >
                 <Crown className="h-4 w-4" />
                 <span>{currentLanguage === "zh" ? "订阅会员" : "Subscribe"}</span>
@@ -160,5 +175,9 @@ export function Header() {
         </div>
       )}
     </header>
+
+    {/* Subscription Modal */}
+    <SubscriptionModal open={subscriptionOpen} onOpenChange={setSubscriptionOpen} />
+    </>
   );
 }
