@@ -58,23 +58,32 @@ export function UserMenu() {
   const isZh = currentLanguage === "zh";
 
   // 获取用户钱包数据
-  useEffect(() => {
+  const fetchWallet = async () => {
     if (!user) return;
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("user_wallets")
+      .select("plan, plan_exp, daily_builds_limit, daily_builds_used, file_retention_days")
+      .eq("user_id", user.id)
+      .single();
 
-    const fetchWallet = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("user_wallets")
-        .select("plan, plan_exp, daily_builds_limit, daily_builds_used, file_retention_days")
-        .eq("user_id", user.id)
-        .single();
+    if (data) {
+      setWallet(data);
+    }
+  };
 
-      if (data) {
-        setWallet(data);
-      }
+  useEffect(() => {
+    fetchWallet();
+  }, [user]);
+
+  // 监听额度刷新事件（构建完成、支付完成等场景）
+  useEffect(() => {
+    const handleQuotaRefresh = () => {
+      fetchWallet();
     };
 
-    fetchWallet();
+    window.addEventListener("quota:refresh", handleQuotaRefresh);
+    return () => window.removeEventListener("quota:refresh", handleQuotaRefresh);
   }, [user]);
 
   const handleSignOut = async () => {

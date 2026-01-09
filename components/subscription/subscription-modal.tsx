@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import {
@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAllPlansConfig } from "@/utils/plan-limits";
+import { toast } from "sonner";
+import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 
 // 从环境变量获取套餐配置
 const PLANS_CONFIG = getAllPlansConfig();
@@ -50,13 +52,13 @@ function generatePlanFeatures(planId: string, isZh: boolean): string[] {
     if (config.supportBatchBuild) {
       features.push(isZh ? "批量构建" : "Batch build");
     }
-    // 分享功能
+    // 分享功能（Pro 和 Team 不同描述）
     if (config.shareExpireDays > 0) {
-      features.push(isZh ? `自定义分享（${config.shareExpireDays}天）` : `Custom sharing (${config.shareExpireDays} days)`);
-    }
-    // Team 专属
-    if (planId === "team") {
-      features.push(isZh ? "团队协作" : "Team collaboration");
+      if (planId === "pro") {
+        features.push(isZh ? `自定义链接分享（${config.shareExpireDays}天）` : `Custom link sharing (${config.shareExpireDays} days)`);
+      } else if (planId === "team") {
+        features.push(isZh ? `自定义多类分享（${config.shareExpireDays}天）` : `Custom multi-type sharing (${config.shareExpireDays} days)`);
+      }
     }
   }
 
@@ -66,6 +68,9 @@ function generatePlanFeatures(planId: string, isZh: boolean): string[] {
 interface SubscriptionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  userId?: string;
+  currentPlan?: string;
+  currentPlanExp?: string;
 }
 
 // 套餐主题配色
@@ -166,7 +171,7 @@ function getPlansWithFeatures(basePlans: { monthly: PlanBase[]; yearly: PlanBase
   };
 }
 
-export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps) {
+export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, currentPlanExp }: SubscriptionModalProps) {
   const { currentLanguage } = useLanguage();
   const isDomestic = IS_DOMESTIC_VERSION;
   const isZh = currentLanguage === "zh";
@@ -182,11 +187,148 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
   const plans = isDomestic ? domesticPlans : internationalPlans;
   const currentPlans = plans[billingCycle];
 
+  // 判断套餐是否为当前套餐
+  const isCurrentPlan = (planId: string) => {
+    if (!currentPlan) return planId === "free";
+    return currentPlan.toLowerCase() === planId.toLowerCase();
+  };
+
+  // 价格计算逻辑
+  const pricingInfo = useMemo(() => {
+    if (!selectedPlan) {
+      return { payable: null, isUpgrade: false, isDowngrade: false, isSameActive: false, remainingDays: 0, convertedDays: 0, freeUpgrade: false, symbol: "" };
+    }
+
+    const symbol = isDomestic ? "¥" : "$";
+    const msPerDay = 1000 * 60 * 60 * 24;
+
+    // 获取套餐价格
+    const getPlanPrice = (planId: string, period: "monthly" | "yearly") => {
+      const planData = isDomestic ? domesticPlansBase : internationalPlansBase;
+      const plan = planData[period].find(p => p.id === planId);
+      if (!plan) return 0;
+      const priceStr = plan.price.replace(/[^0-9.]/g, "");
+      const price = parseFloat(priceStr) || 0;
+      return period === "yearly" ? price * 12 : price;
+    };
+
+    const targetPrice = getPlanPrice(selectedPlan.id, billingCycle);
+    const targetMonthlyPrice = getPlanPrice(selectedPlan.id, "monthly");
+
+    const currentPlanKey = normalizePlanName(currentPlan || "").toLowerCase();
+    const targetPlanKey = selectedPlan.id.toLowerCase();
+    const currentRank = PLAN_RANK[normalizePlanName(currentPlan || "")] || 0;
+    const targetRank = PLAN_RANK[normalizePlanName(selectedPlan.id)] || 0;
+
+    const now = Date.now();
+    const exp = currentPlanExp ? new Date(currentPlanExp).getTime() : null;
+    const currentActive = exp ? exp > now : false;
+
+    const isUpgrade = currentActive && targetRank > currentRank && currentRank > 0;
+    const isDowngrade = currentActive && targetRank < currentRank;
+    const isSameActive = currentActive && targetRank === currentRank && currentRank > 0;
+
+    // 非升级场景：直接返回目标价格
+    if (!isUpgrade) {
+      return { payable: targetPrice, isUpgrade: false, isDowngrade, isSameActive, remainingDays: 0, convertedDays: 0, freeUpgrade: false, symbol };
+    }
+
+    // 升级场景：计算剩余价值折算
+    const remainingDays = Math.max(0, Math.ceil(((exp || now) - now) / msPerDay));
+    const currentMonthlyPrice = getPlanPrice(currentPlanKey, "monthly");
+    const currentDailyPrice = currentMonthlyPrice / 30;
+    const targetDailyPrice = targetMonthlyPrice / 30;
+    const remainingValue = remainingDays * currentDailyPrice;
+    const targetDays = billingCycle === "yearly" ? 365 : 30;
+
+    const freeUpgrade = remainingValue >= targetPrice;
+    let payable: number;
+    let convertedDays: number;
+
+    if (freeUpgrade) {
+      payable = 0.01;
+      convertedDays = Math.floor(remainingValue / targetDailyPrice);
+    } else {
+      payable = Math.max(0.01, targetPrice - remainingValue);
+      convertedDays = targetDays;
+    }
+
+    payable = Math.round(payable * 100) / 100;
+
+    return { payable, isUpgrade: true, isDowngrade: false, isSameActive: false, remainingDays, convertedDays, remainingValue: Math.round(remainingValue * 100) / 100, freeUpgrade, symbol };
+  }, [selectedPlan, billingCycle, currentPlan, currentPlanExp, isDomestic]);
+
   const handleSubscribe = async () => {
-    if (!selectedPlan || selectedPlan.disabled) return;
+    if (!selectedPlan || selectedPlan.disabled || selectedPlan.id === "free") return;
+
+    if (!userId) {
+      toast.error(isZh ? "请先登录" : "Please login first");
+      return;
+    }
+
     setIsProcessing(true);
-    console.log("Subscribe:", selectedPlan.id, billingCycle, selectedPayment);
-    setTimeout(() => setIsProcessing(false), 2000);
+
+    try {
+      const billingPeriod = billingCycle === "yearly" ? "annual" : "monthly";
+
+      if (selectedPayment === "stripe") {
+        // Stripe 支付
+        const response = await fetch("/api/payment/stripe/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            planName: selectedPlan.id,
+            billingPeriod,
+            userId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Failed to create Stripe session");
+        }
+
+        // 跳转到 Stripe 支付页面
+        if (data.url) {
+          window.location.href = data.url;
+        }
+      } else if (selectedPayment === "paypal") {
+        // PayPal 支付
+        const response = await fetch("/api/payment/paypal/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            planName: selectedPlan.id,
+            billingPeriod,
+            userId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Failed to create PayPal order");
+        }
+
+        // 跳转到 PayPal 支付页面
+        if (data.approvalUrl) {
+          window.location.href = data.approvalUrl;
+        }
+      } else if (selectedPayment === "alipay" || selectedPayment === "wechat") {
+        // 国内支付（待实现）
+        toast.info(isZh ? "国内支付功能即将上线" : "Domestic payment coming soon");
+      }
+    } catch (error) {
+      console.error("Payment error:", error);
+      toast.error(
+        isZh
+          ? `支付失败: ${error instanceof Error ? error.message : "未知错误"}`
+          : `Payment failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -251,15 +393,18 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
             {currentPlans.map((plan) => {
               const isSelected = selectedPlan?.id === plan.id;
               const theme = getPlanTheme(plan.id);
+              const isCurrent = isCurrentPlan(plan.id);
+              // 允许同级续费：只禁用 Free 套餐，当前套餐可以选择（续费）
+              const isDisabled = plan.disabled || plan.id === "free";
 
               return (
                 <div
                   key={plan.id}
-                  onClick={() => !plan.disabled && setSelectedPlan(plan)}
+                  onClick={() => !isDisabled && setSelectedPlan(plan)}
                   className={cn(
                     "relative cursor-pointer transition-all duration-300 group",
                     isSelected ? "scale-[1.02]" : "hover:scale-[1.01]",
-                    plan.disabled && "cursor-default"
+                    isDisabled && "cursor-default opacity-60"
                   )}
                 >
                   {/* 选中时的外发光效果 */}
@@ -347,11 +492,15 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
                           "text-[10px] font-medium transition-colors",
                           isSelected ? theme.text : "text-gray-400 dark:text-gray-500"
                         )}>
-                          {plan.disabled
-                            ? (isZh ? "✓ 当前套餐" : "✓ Current")
-                            : isSelected
-                              ? (isZh ? "✓ 已选择" : "✓ Selected")
-                              : (isZh ? "点击选择" : "Select")}
+                          {isDisabled
+                            ? (isZh ? "当前套餐" : "Current")
+                            : isCurrent
+                              ? isSelected
+                                ? (isZh ? "✓ 续费此套餐" : "✓ Renew")
+                                : (isZh ? "点击续费" : "Renew")
+                              : isSelected
+                                ? (isZh ? "✓ 已选择" : "✓ Selected")
+                                : (isZh ? "点击选择" : "Select")}
                         </span>
                       </div>
                     </div>
@@ -364,7 +513,7 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
           {/* 支付区域 */}
           <div className={cn(
             "transition-all duration-300",
-            selectedPlan && !selectedPlan.disabled ? "opacity-100" : "opacity-50 pointer-events-none"
+            selectedPlan && !selectedPlan.disabled && selectedPlan.id !== "free" ? "opacity-100" : "opacity-50 pointer-events-none"
           )}>
             <div className="p-2.5 md:p-3 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-white/10 shadow-lg">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3">
@@ -435,7 +584,7 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
 
                 {/* 订阅按钮 */}
                 <Button
-                  disabled={isProcessing || !selectedPlan || selectedPlan.disabled}
+                  disabled={isProcessing || !selectedPlan || selectedPlan.disabled || selectedPlan.id === "free"}
                   onClick={handleSubscribe}
                   className="h-8 md:h-9 px-4 md:px-6 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold text-xs md:text-sm rounded-lg shadow-lg shadow-indigo-500/30 transition-all duration-300 hover:shadow-xl hover:scale-[1.02]"
                 >
@@ -447,11 +596,51 @@ export function SubscriptionModal({ open, onOpenChange }: SubscriptionModalProps
                   ) : (
                     <>
                       <Rocket className="w-3 h-3 md:w-4 md:h-4 mr-1.5" />
-                      {isZh ? "确认订阅" : "Subscribe"}
+                      {pricingInfo.payable !== null
+                        ? `${pricingInfo.isSameActive ? (isZh ? "续费" : "Renew") : (isZh ? "订阅" : "Subscribe")} ${pricingInfo.symbol}${pricingInfo.payable.toFixed(2)}`
+                        : (isZh ? "确认订阅" : "Subscribe")}
                     </>
                   )}
                 </Button>
               </div>
+
+              {/* 升级折算提示 */}
+              {pricingInfo.isUpgrade && (
+                <div className={cn(
+                  "mt-2 md:mt-3 p-2 rounded-lg border text-center text-[10px] md:text-xs",
+                  pricingInfo.freeUpgrade
+                    ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200/50"
+                    : "bg-blue-50 dark:bg-blue-950/30 border-blue-200/50"
+                )}>
+                  {pricingInfo.freeUpgrade ? (
+                    <span className="text-emerald-700 dark:text-emerald-300">
+                      🎁 {isZh ? `免费升级！剩余 ${pricingInfo.remainingDays} 天折算为 ${pricingInfo.convertedDays} 天新套餐` : `Free upgrade! Your remaining ${pricingInfo.remainingDays} days converted to ${pricingInfo.convertedDays} days on new plan`}
+                    </span>
+                  ) : (
+                    <span className="text-blue-700 dark:text-blue-300">
+                      📊 {isZh ? `剩余 ${pricingInfo.remainingDays} 天已抵扣，仅需支付 ${pricingInfo.symbol}${pricingInfo.payable?.toFixed(2)}` : `Your remaining ${pricingInfo.remainingDays} days deducted. Pay only ${pricingInfo.symbol}${pricingInfo.payable?.toFixed(2)}`}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* 同级续费提示 */}
+              {pricingInfo.isSameActive && (
+                <div className="mt-2 md:mt-3 p-2 rounded-lg border bg-amber-50 dark:bg-amber-950/30 border-amber-200/50 text-center text-[10px] md:text-xs">
+                  <span className="text-amber-700 dark:text-amber-300">
+                    🔄 {isZh ? "续费将在当前套餐到期后自动顺延" : "Renewal will extend from your current expiration date"}
+                  </span>
+                </div>
+              )}
+
+              {/* 降级提示 */}
+              {pricingInfo.isDowngrade && (
+                <div className="mt-2 md:mt-3 p-2 rounded-lg border bg-orange-50 dark:bg-orange-950/30 border-orange-200/50 text-center text-[10px] md:text-xs">
+                  <span className="text-orange-700 dark:text-orange-300">
+                    ⏳ {isZh ? "降级将在当前套餐到期后生效" : "Downgrade will take effect after current plan expires"}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Mail, Lock, Loader2, ArrowRight } from "lucide-react";
+import { trackLoginEventClient } from "@/services/analytics-client";
 
 export function LoginForm() {
   const { currentLanguage } = useLanguage();
@@ -27,12 +28,16 @@ export function LoginForm() {
     setLoading(true);
     setError(null);
 
-    const { error } = await signIn(email, password);
+    const { error, userId } = await signIn(email, password);
 
     if (error) {
       setError(error.message);
       setLoading(false);
     } else {
+      // 登录成功埋点
+      if (userId) {
+        trackLoginEventClient(userId, "email");
+      }
       router.push(redirect);
     }
   };

@@ -287,6 +287,30 @@ function GenerateContent() {
     setIsSubmitting(true);
 
     try {
+      // 计算选中的平台数量
+      const platformCount = selectedPlatforms.length;
+
+      // 批量构建前预检查额度，防止竞态条件
+      const quotaCheckRes = await fetch("/api/international/quota/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: platformCount }),
+      });
+
+      if (!quotaCheckRes.ok) {
+        const quotaError = await quotaCheckRes.json();
+        throw new Error(quotaError.error || "Quota check failed");
+      }
+
+      const quotaData = await quotaCheckRes.json();
+      if (!quotaData.allowed) {
+        throw new Error(
+          currentLanguage === "zh"
+            ? `额度不足：需要 ${platformCount} 次，剩余 ${quotaData.remaining} 次`
+            : `Insufficient quota: need ${platformCount}, remaining ${quotaData.remaining}`
+        );
+      }
+
       const buildPromises: Promise<Response>[] = [];
 
       // Build Android if selected
@@ -454,6 +478,11 @@ function GenerateContent() {
           const error = await response.json();
           throw new Error(error.message || "Build failed");
         }
+      }
+
+      // 触发额度刷新事件（构建请求时已扣减额度）
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("quota:refresh"));
       }
 
       toast.success(

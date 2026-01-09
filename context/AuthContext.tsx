@@ -9,8 +9,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null; needsEmailVerification?: boolean }>;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null; userId?: string }>;
+  signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null; needsEmailVerification?: boolean; userId?: string }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
 }
@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error("Please verify your email first") };
       }
 
-      return { error: null };
+      return { error: null, userId: data.user?.id };
     } catch (err) {
       return { error: err instanceof Error ? err : new Error("Sign in failed") };
     }
@@ -133,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 注册成功后登出（需要验证邮箱）
       await supabase.auth.signOut();
 
-      return { error: null, needsEmailVerification: true };
+      return { error: null, needsEmailVerification: true, userId: data.user?.id };
     } catch (err) {
       return { error: err instanceof Error ? err : new Error("Sign up failed") };
     }

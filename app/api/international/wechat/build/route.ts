@@ -3,6 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processWechatBuild } from "@/lib/services/wechat-builder";
+import { deductBuildQuota, checkBuildQuota } from "@/services/wallet-supabase";
 
 // 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
 export const maxDuration = 120;
@@ -46,6 +47,28 @@ export async function POST(request: NextRequest) {
 
     // Get service client for database operations
     const serviceClient = createServiceClient();
+
+    // Check and deduct build quota
+    const quotaCheck = await checkBuildQuota(user.id, 1);
+    if (!quotaCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: "Quota exceeded",
+          message: `Daily build quota exceeded. Remaining: ${quotaCheck.remaining}/${quotaCheck.limit}`,
+          remaining: quotaCheck.remaining,
+          limit: quotaCheck.limit,
+        },
+        { status: 429 }
+      );
+    }
+
+    const deductResult = await deductBuildQuota(user.id, 1);
+    if (!deductResult.success) {
+      return NextResponse.json(
+        { error: "Quota deduction failed", message: deductResult.error || "Failed to deduct build quota" },
+        { status: 500 }
+      );
+    }
 
     // Create build record
     const { data: build, error: insertError } = await serviceClient

@@ -31,10 +31,12 @@ import {
   ChevronLeft,
   ChevronRight,
   HardDrive,
+  Share2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Image from "next/image";
+import { ShareModal } from "@/components/share/share-modal";
 
 type BuildStatus = "pending" | "processing" | "completed" | "failed";
 type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop" | "browser" | "expired";
@@ -175,6 +177,8 @@ export default function BuildsClient() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [batchBuildEnabled, setBatchBuildEnabled] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareBuild, setShareBuild] = useState<{ id: string; name: string; expiresAt: string } | null>(null);
 
   // 获取用户钱包数据判断是否支持批量构建（根据套餐动态判断）
   useEffect(() => {
@@ -857,14 +861,32 @@ export default function BuildsClient() {
                     {/* Buttons */}
                     <div className="flex items-center gap-2">
                       {build.status === "completed" && build.expires_at && !isExpired(build.expires_at) && (
-                        <Button
-                          size="sm"
-                          className="h-9 px-4 rounded-xl gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
-                          onClick={() => handleDownload(build.id)}
-                        >
-                          <Download className="h-4 w-4" />
-                          {currentLanguage === "zh" ? "下载" : "Download"}
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            className="h-9 px-4 rounded-xl gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
+                            onClick={() => handleDownload(build.id)}
+                          >
+                            <Download className="h-4 w-4" />
+                            {currentLanguage === "zh" ? "下载" : "Download"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-9 px-3 rounded-xl gap-2"
+                            onClick={() => {
+                              setShareBuild({
+                                id: build.id,
+                                name: build.app_name,
+                                expiresAt: build.expires_at,
+                              });
+                              setShareModalOpen(true);
+                            }}
+                          >
+                            <Share2 className="h-4 w-4" />
+                            {currentLanguage === "zh" ? "分享" : "Share"}
+                          </Button>
+                        </>
                       )}
                       {build.expires_at && isExpired(build.expires_at) && (
                         <Badge variant="outline" className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600">
@@ -959,6 +981,17 @@ export default function BuildsClient() {
           </div>
         )}
       </div>
+
+      {/* Share Modal */}
+      {shareBuild && (
+        <ShareModal
+          open={shareModalOpen}
+          onOpenChange={setShareModalOpen}
+          buildId={shareBuild.id}
+          buildName={shareBuild.name}
+          buildExpiresAt={shareBuild.expiresAt}
+        />
+      )}
     </div>
   );
 }

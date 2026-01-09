@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv } from "@/lib/supabase/env";
+import { trackLoginEvent, trackRegisterEvent } from "@/services/analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,6 +112,27 @@ export async function GET(request: NextRequest) {
   }
 
   console.info("[auth/callback] Session established for:", data?.session?.user?.email);
+
+  // OAuth 登录/注册埋点
+  const user = data?.session?.user;
+  if (user) {
+    const provider = user.app_metadata?.provider || "oauth";
+    const createdAt = new Date(user.created_at);
+    const now = new Date();
+    const isNewUser = (now.getTime() - createdAt.getTime()) < 5 * 60 * 1000;
+
+    const trackOptions = {
+      userAgent: request.headers.get("user-agent") || undefined,
+      language: request.headers.get("accept-language")?.split(",")[0] || undefined,
+      referrer: request.headers.get("referer") || undefined,
+    };
+
+    if (isNewUser) {
+      trackRegisterEvent(user.id, { ...trackOptions, registerMethod: provider }).catch(() => {});
+    } else {
+      trackLoginEvent(user.id, { ...trackOptions, loginMethod: provider }).catch(() => {});
+    }
+  }
 
   // 创建成功响应并设置 cookies
   const successUrl = new URL(next, origin);

@@ -10,12 +10,71 @@ import { UserMenu } from "@/components/auth";
 import { SubscriptionModal } from "@/components/subscription/subscription-modal";
 import { Menu, X, Box, Crown, LogIn, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 export function Header() {
   const { t, currentLanguage } = useLanguage();
   const { user, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+  const [userPlan, setUserPlan] = useState<string>("free");
+  const [userPlanExp, setUserPlanExp] = useState<string | undefined>(undefined);
+
+  // 获取用户当前套餐
+  const fetchUserPlan = async () => {
+    if (!user?.id) {
+      setUserPlan("free");
+      setUserPlanExp(undefined);
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      if (!supabase) {
+        setUserPlan("free");
+        setUserPlanExp(undefined);
+        return;
+      }
+
+      const { data } = await supabase
+        .from("user_wallets")
+        .select("plan, plan_exp")
+        .eq("user_id", user.id)
+        .single();
+
+      setUserPlan(data?.plan?.toLowerCase() || "free");
+      setUserPlanExp(data?.plan_exp || undefined);
+    } catch (error) {
+      console.error("Failed to fetch user plan:", error);
+      setUserPlan("free");
+      setUserPlanExp(undefined);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserPlan();
+  }, [user?.id]);
+
+  // 监听支付完成后的刷新事件
+  useEffect(() => {
+    const handleQuotaRefresh = () => {
+      console.log("[Header] quota:refresh event received, refreshing user plan...");
+      fetchUserPlan();
+    };
+
+    window.addEventListener("quota:refresh", handleQuotaRefresh);
+
+    // 检查 sessionStorage 中的支付完成标记
+    if (typeof window !== "undefined") {
+      const paymentCompleted = sessionStorage.getItem("payment_completed");
+      if (paymentCompleted === "true") {
+        sessionStorage.removeItem("payment_completed");
+        fetchUserPlan();
+      }
+    }
+
+    return () => window.removeEventListener("quota:refresh", handleQuotaRefresh);
+  }, [user?.id]);
 
   // 监听来自 UserMenu 的订阅弹窗事件
   useEffect(() => {
@@ -177,7 +236,13 @@ export function Header() {
     </header>
 
     {/* Subscription Modal */}
-    <SubscriptionModal open={subscriptionOpen} onOpenChange={setSubscriptionOpen} />
+    <SubscriptionModal
+      open={subscriptionOpen}
+      onOpenChange={setSubscriptionOpen}
+      userId={user?.id}
+      currentPlan={userPlan}
+      currentPlanExp={userPlanExp}
+    />
     </>
   );
 }

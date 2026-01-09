@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2 } from "lucide-react";
+import { trackRegisterEventClient, trackLoginEventClient } from "@/services/analytics-client";
 
 function AuthCallbackContent() {
   const router = useRouter();
@@ -32,6 +33,21 @@ function AuthCallbackContent() {
 
             if (sessionError) {
               throw sessionError;
+            }
+
+            // 获取用户信息并触发埋点
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const provider = user.app_metadata?.provider || "email";
+              const createdAt = new Date(user.created_at);
+              const now = new Date();
+              const isNewUser = (now.getTime() - createdAt.getTime()) < 5 * 60 * 1000;
+
+              if (isNewUser) {
+                trackRegisterEventClient(user.id, provider);
+              } else {
+                trackLoginEventClient(user.id, provider);
+              }
             }
 
             // 清除hash
