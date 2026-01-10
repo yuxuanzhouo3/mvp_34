@@ -55,9 +55,9 @@ function generatePlanFeatures(planId: string, isZh: boolean): string[] {
     // 分享功能（Pro 和 Team 不同描述）
     if (config.shareExpireDays > 0) {
       if (planId === "pro") {
-        features.push(isZh ? `自定义链接分享（${config.shareExpireDays}天）` : `Custom link sharing (${config.shareExpireDays} days)`);
+        features.push(isZh ? `链接分享（${config.shareExpireDays}天）` : `Link sharing (${config.shareExpireDays} days)`);
       } else if (planId === "team") {
-        features.push(isZh ? `自定义多类分享（${config.shareExpireDays}天）` : `Custom multi-type sharing (${config.shareExpireDays} days)`);
+        features.push(isZh ? `自定义分享（${config.shareExpireDays}天）` : `Custom sharing (${config.shareExpireDays} days)`);
       }
     }
   }
@@ -389,7 +389,7 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
           </div>
 
           {/* 套餐卡片 */}
-          <div className="grid grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-5">
             {currentPlans.map((plan) => {
               const isSelected = selectedPlan?.id === plan.id;
               const theme = getPlanTheme(plan.id);
@@ -404,7 +404,8 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
                   className={cn(
                     "relative cursor-pointer transition-all duration-300 group",
                     isSelected ? "scale-[1.02]" : "hover:scale-[1.01]",
-                    isDisabled && "cursor-default opacity-60"
+                    isDisabled && "cursor-default opacity-60",
+                    plan.id === "free" && "hidden md:block"
                   )}
                 >
                   {/* 选中时的外发光效果 */}
@@ -441,9 +442,9 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
                       </div>
                     )}
 
-                    <div className={cn("relative p-2.5 md:p-3", plan.popular && "pt-5")}>
+                    <div className={cn("relative p-3 md:p-4", plan.popular && "pt-6")}>
                       {/* 套餐图标和名称 */}
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-3">
                         <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br ${theme.gradient} flex items-center justify-center shadow`}>
                           <div className="text-white scale-50 md:scale-75">{theme.icon}</div>
                         </div>
@@ -453,7 +454,7 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
                       </div>
 
                       {/* 价格区域 */}
-                      <div className="mb-2 py-2 border-y border-gray-200/50 dark:border-white/10">
+                      <div className="mb-3 py-2.5 border-y border-gray-200/50 dark:border-white/10">
                         <div className="flex items-baseline gap-0.5">
                           <span className={`text-lg md:text-xl font-extrabold ${theme.text}`}>
                             {plan.price}
@@ -475,7 +476,7 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
                       </div>
 
                       {/* 特性列表 */}
-                      <ul className="space-y-1">
+                      <ul className="space-y-1.5">
                         {(isZh && plan.featuresZh ? plan.featuresZh : plan.features).map((feature, idx) => (
                           <li key={idx} className="flex items-start gap-1.5">
                             <div className={`w-3.5 h-3.5 rounded-full bg-gradient-to-r ${theme.gradient} flex items-center justify-center flex-shrink-0 mt-0.5`}>
@@ -487,7 +488,7 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
                       </ul>
 
                       {/* 选择提示 */}
-                      <div className="mt-2 pt-2 border-t border-gray-200/50 dark:border-white/10 text-center">
+                      <div className="mt-3 pt-2.5 border-t border-gray-200/50 dark:border-white/10 text-center">
                         <span className={cn(
                           "text-[10px] font-medium transition-colors",
                           isSelected ? theme.text : "text-gray-400 dark:text-gray-500"
@@ -515,8 +516,8 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
             "transition-all duration-300",
             selectedPlan && !selectedPlan.disabled && selectedPlan.id !== "free" ? "opacity-100" : "opacity-50 pointer-events-none"
           )}>
-            <div className="p-2.5 md:p-3 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-white/10 shadow-lg">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3">
+            <div className="p-3 md:p-4 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-white/10 shadow-lg">
+              <div className="flex items-center justify-between gap-2">
                 {/* 支付方式选择 */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] md:text-xs font-medium text-gray-600 dark:text-gray-400 flex items-center">
@@ -644,10 +645,6 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
             </div>
           </div>
 
-          {/* 底部说明 */}
-          <p className="text-center text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-            {isZh ? "订阅后可随时取消" : "Cancel anytime"}
-          </p>
         </div>
       </DialogContent>
     </Dialog>

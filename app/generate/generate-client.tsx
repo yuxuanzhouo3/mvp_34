@@ -401,196 +401,109 @@ function GenerateContent() {
         return;
       }
 
-      // 登录用户模式：批量构建前预检查额度，防止竞态条件
-      const quotaCheckRes = await fetch("/api/international/quota/check", {
+      // 登录用户模式：使用批量构建 API（一次请求处理所有平台，立即返回）
+      type PlatformConfig = {
+        platform: string;
+        appName: string;
+        packageName?: string;
+        versionName?: string;
+        versionCode?: string;
+        privacyPolicy?: string;
+        bundleId?: string;
+        versionString?: string;
+        buildNumber?: string;
+        appId?: string;
+        version?: string;
+        bundleName?: string;
+        description?: string;
+        iconBase64?: string;
+        iconType?: string;
+      };
+      const platforms: PlatformConfig[] = [];
+
+      // 辅助函数：将 File 转换为 base64
+      const fileToBase64 = async (file: File | null): Promise<{ base64: string; type: string } | null> => {
+        if (!file) return null;
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            const base64 = result.split(",")[1];
+            resolve({ base64, type: file.type });
+          };
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+      };
+
+      // 构建各平台配置
+      if (hasAndroid) {
+        const iconData = await fileToBase64(appIcon);
+        platforms.push({
+          platform: "android", appName, packageName,
+          versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+      if (hasIOS) {
+        const iconData = await fileToBase64(iosIcon);
+        platforms.push({
+          platform: "ios", appName, bundleId,
+          versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+      if (hasWechat) {
+        platforms.push({ platform: "wechat", appName, appId: wechatAppId, version: wechatVersion });
+      }
+      if (hasHarmonyOS) {
+        const iconData = await fileToBase64(harmonyIcon);
+        platforms.push({
+          platform: "harmonyos", appName, bundleName: harmonyBundleName,
+          versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+      if (hasChrome) {
+        const iconData = await fileToBase64(chromeExtensionIcon);
+        platforms.push({
+          platform: "chrome", appName: chromeExtensionName,
+          versionName: chromeExtensionVersion, description: chromeExtensionDescription,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+      if (hasWindows) {
+        const iconData = await fileToBase64(windowsIcon);
+        platforms.push({
+          platform: "windows", appName: windowsAppName,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+      if (hasMacos) {
+        const iconData = await fileToBase64(macosIcon);
+        platforms.push({
+          platform: "macos", appName: macosAppName,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+      if (hasLinux) {
+        const iconData = await fileToBase64(linuxIcon);
+        platforms.push({
+          platform: "linux", appName: linuxAppName,
+          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+        });
+      }
+
+      // 发送批量构建请求（一次请求，服务端批量创建记录后立即返回）
+      const response = await fetch("/api/international/batch/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count: platformCount }),
+        body: JSON.stringify({ url, platforms }),
       });
 
-      if (!quotaCheckRes.ok) {
-        const quotaError = await quotaCheckRes.json();
-        throw new Error(quotaError.error || "Quota check failed");
-      }
-
-      const quotaData = await quotaCheckRes.json();
-      if (!quotaData.allowed) {
-        throw new Error(
-          currentLanguage === "zh"
-            ? `额度不足：需要 ${platformCount} 次，剩余 ${quotaData.remaining} 次`
-            : `Insufficient quota: need ${platformCount}, remaining ${quotaData.remaining}`
-        );
-      }
-
-      // 先发起构建请求，等待服务器创建数据库记录后再跳转
-      const buildPromises: Promise<Response>[] = [];
-
-      // Build Android if selected
-      if (hasAndroid) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", appName);
-        formData.append("platforms", JSON.stringify(["android"]));
-        formData.append("packageName", packageName);
-        formData.append("versionName", androidVersionName);
-        formData.append("versionCode", androidVersionCode);
-        formData.append("privacyPolicy", privacyPolicy);
-
-        if (appIcon) {
-          formData.append("icon", appIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/android/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build iOS if selected
-      if (hasIOS) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", appName);
-        formData.append("bundleId", bundleId);
-        formData.append("versionString", iosVersionString);
-        formData.append("buildNumber", iosBuildNumber);
-        formData.append("privacyPolicy", iosPrivacyPolicy);
-
-        if (iosIcon) {
-          formData.append("icon", iosIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/ios/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build WeChat if selected
-      if (hasWechat) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", appName);
-        formData.append("appId", wechatAppId);
-        formData.append("version", wechatVersion);
-
-        buildPromises.push(
-          fetch("/api/international/wechat/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build HarmonyOS if selected
-      if (hasHarmonyOS) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", appName);
-        formData.append("bundleName", harmonyBundleName);
-        formData.append("versionName", harmonyVersionName);
-        formData.append("versionCode", harmonyVersionCode);
-        formData.append("privacyPolicy", harmonyPrivacyPolicy);
-
-        if (harmonyIcon) {
-          formData.append("icon", harmonyIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/harmonyos/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build Chrome Extension if selected
-      if (hasChrome) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", chromeExtensionName);
-        formData.append("versionName", chromeExtensionVersion);
-        formData.append("description", chromeExtensionDescription);
-
-        if (chromeExtensionIcon) {
-          formData.append("icon", chromeExtensionIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/chrome/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build Windows if selected
-      if (hasWindows) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", windowsAppName);
-
-        if (windowsIcon) {
-          formData.append("icon", windowsIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/windows/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build macOS if selected
-      if (hasMacos) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", macosAppName);
-
-        if (macosIcon) {
-          formData.append("icon", macosIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/macos/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // Build Linux if selected
-      if (hasLinux) {
-        const formData = new FormData();
-        formData.append("url", url);
-        formData.append("appName", linuxAppName);
-
-        if (linuxIcon) {
-          formData.append("icon", linuxIcon);
-        }
-
-        buildPromises.push(
-          fetch("/api/international/linux/build", {
-            method: "POST",
-            body: formData,
-          })
-        );
-      }
-
-      // 等待所有构建请求返回（服务器会立即返回，构建在后台进行）
-      const responses = await Promise.all(buildPromises);
-
-      // 检查是否有失败的请求
-      for (const response of responses) {
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || error.error || "Build request failed");
-        }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || error.error || "Batch build request failed");
       }
 
       // 触发额度刷新事件
@@ -696,48 +609,42 @@ function GenerateContent() {
 
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
           {/* Step 1: Platform Selection */}
-          <div className="relative">
-            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-cyan-500/30">
+          <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
+            <div className="flex items-center gap-3 mb-4 sm:mb-6">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-lg shadow-cyan-500/30 shrink-0">
                 1
               </div>
-              <div className="w-px h-full bg-gradient-to-b from-cyan-500/50 to-transparent mt-2" />
+              <h2 className="text-base sm:text-lg font-semibold text-foreground/90">选择目标平台</h2>
             </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
-              <PlatformSelector
+            <PlatformSelector
                 selectedPlatforms={selectedPlatforms}
                 onSelectionChange={setSelectedPlatforms}
               />
-            </div>
           </div>
 
           {/* Step 2: URL Input */}
-          <div className="relative">
-            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/30">
+          <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
+            <div className="flex items-center gap-3 mb-4 sm:mb-6">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-lg shadow-blue-500/30 shrink-0">
                 2
               </div>
-              <div className="w-px h-full bg-gradient-to-b from-blue-500/50 to-transparent mt-2" />
-            </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
-              <h2 className="text-lg sm:text-xl font-semibold mb-4 sm:mb-6 flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground/90">
                 {currentLanguage === "zh" ? "输入网站地址" : "Enter Website URL"}
               </h2>
-              <UrlInput value={url} onChange={setUrl} />
             </div>
+            <UrlInput value={url} onChange={setUrl} />
           </div>
 
           {/* Step 3: App Config - Dynamic based on platform */}
-          <div className="relative">
-            <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-purple-500/30">
+          <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
+            <div className="flex items-center gap-3 mb-4 sm:mb-6">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-lg shadow-purple-500/30 shrink-0">
                 3
               </div>
-            </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
-              <h2 className="text-lg sm:text-xl font-semibold mb-4 sm:mb-6">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground/90">
                 {currentLanguage === "zh" ? "配置应用信息" : "Configure App Info"}
               </h2>
+            </div>
 
               {/* Show Android config if Android is selected */}
               {hasAndroid && (
@@ -866,7 +773,6 @@ function GenerateContent() {
                   onIconChange={setAppIcon}
                 />
               )}
-            </div>
           </div>
 
           {/* Submit Button */}

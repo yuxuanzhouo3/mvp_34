@@ -495,13 +495,12 @@ export default function BuildsClient() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString(currentLanguage === "zh" ? "zh-CN" : "en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hour = String(date.getHours()).padStart(2, "0");
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
   };
 
   const getExpiresInfo = (expiresAt: string) => {
@@ -764,29 +763,29 @@ export default function BuildsClient() {
             paginatedBuilds.map((build) => (
               <div
                 key={build.id}
-                className={`p-4 rounded-2xl bg-card border shadow-sm hover:shadow-md transition-all ${
+                className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-card border shadow-sm hover:shadow-md transition-all ${
                   selectedBuilds.has(build.id)
                     ? "border-cyan-500 bg-cyan-500/5"
                     : "border-border/50 hover:border-border"
                 }`}
               >
-                <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex flex-col md:flex-row gap-3 sm:gap-4">
                   {/* Left: Checkbox + Icon & Main Info */}
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
                     {/* Checkbox */}
                     <Checkbox
                       checked={selectedBuilds.has(build.id)}
                       onCheckedChange={() => toggleSelect(build.id)}
-                      className="mt-3 h-5 w-5 shrink-0"
+                      className="mt-2 sm:mt-3 h-4 w-4 sm:h-5 sm:w-5 shrink-0"
                     />
                     {/* App Icon or Platform Icon */}
-                    <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 relative">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl overflow-hidden shrink-0 relative">
                       <BuildIcon build={build} getPlatformIcon={getPlatformIcon} />
                     </div>
                     <div className="flex-1 min-w-0">
                       {/* Title Row */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold truncate">{build.app_name}</h3>
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                        <h3 className="text-sm sm:text-base font-semibold truncate">{build.app_name}</h3>
                         {/* 只有当有版本号时才显示 */}
                         {build.version_name && build.version_name !== "1.0.0" && (
                           <span className="text-sm text-muted-foreground">
@@ -864,7 +863,7 @@ export default function BuildsClient() {
                         <>
                           <Button
                             size="sm"
-                            className="h-9 px-4 rounded-xl gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
+                            className="h-8 sm:h-9 px-3 sm:px-4 rounded-lg sm:rounded-xl gap-1.5 sm:gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
                             onClick={() => handleDownload(build.id)}
                           >
                             <Download className="h-4 w-4" />
@@ -873,7 +872,7 @@ export default function BuildsClient() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-9 px-3 rounded-xl gap-2"
+                            className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl gap-1.5 sm:gap-2"
                             onClick={() => {
                               setShareBuild({
                                 id: build.id,
@@ -897,20 +896,21 @@ export default function BuildsClient() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-9 px-2.5 rounded-xl text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                        className="h-9 px-2.5 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-500/10"
                         onClick={() => handleDelete(build.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                    {/* Time Info */}
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {/* 时间信息 */}
+                    <div className="flex flex-col items-end text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5">
                         <Clock className="h-3 w-3" />
-                        <span>{formatDate(build.created_at)}</span>
+                        <span>{formatDate(build.created_at).date}</span>
+                        <span>{formatDate(build.created_at).time}</span>
                       </div>
                       {build.expires_at && (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        <span className={`mt-1 px-2 py-0.5 rounded-full font-medium ${
                           getExpiresInfo(build.expires_at).urgent
                             ? "bg-red-500/15 text-red-600 dark:text-red-400"
                             : getExpiresInfo(build.expires_at).color === "text-orange-500"

@@ -228,8 +228,8 @@ export function ShareModal({
             </h3>
             <p className="text-muted-foreground text-sm mb-6">
               {isZh
-                ? "Pro 套餐支持自定义链接分享，Team 套餐支持链接和二维码分享"
-                : "Pro plan supports custom link sharing, Team plan supports link and QR code sharing"}
+                ? "Pro 套餐支持链接分享，Team 套餐支持自定义分享"
+                : "Pro plan supports link sharing, Team plan supports custom sharing"}
             </p>
             <Button
               className="bg-gradient-to-r from-violet-500 to-purple-600 text-white"

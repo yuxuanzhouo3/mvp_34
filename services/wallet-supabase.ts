@@ -529,6 +529,45 @@ export async function deductBuildQuota(
 }
 
 /**
+ * 退还构建额度（用于数据库插入失败等回滚场景）
+ */
+export async function refundBuildQuota(
+  userId: string,
+  count: number = 1
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabaseAdmin) return { success: false, error: "supabaseAdmin not available" };
+
+  try {
+    const wallet = await getSupabaseUserWallet(userId);
+    if (!wallet) return { success: false, error: "Wallet not found" };
+
+    const newUsed = Math.max(0, (wallet.daily_builds_used || 0) - count);
+
+    const { error } = await supabaseAdmin
+      .from("user_wallets")
+      .update({
+        daily_builds_used: newUsed,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("[wallet-supabase] refund error:", error);
+      return { success: false, error: error.message };
+    }
+
+    console.log("[wallet-supabase][refund-build]", { userId, count, newUsed });
+    return { success: true };
+  } catch (err) {
+    console.error("[wallet-supabase][refund-error]", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to refund quota",
+    };
+  }
+}
+
+/**
  * 检查构建额度
  */
 export async function checkBuildQuota(

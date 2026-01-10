@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
-import { deductBuildQuota, checkBuildQuota, getSupabaseUserWallet } from "@/services/wallet-supabase";
+import { deductBuildQuota, checkBuildQuota, getSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 // 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error("Database insert error:", insertError);
+      await refundBuildQuota(user.id, 1);
       return NextResponse.json(
         { error: "Database error", message: "Failed to create build record" },
         { status: 500 }
