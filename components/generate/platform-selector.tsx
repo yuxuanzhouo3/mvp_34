@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PLATFORMS, PLATFORM_CATEGORIES, getPlatformsByCategory } from "@/config/platforms";
 import type { PlatformCategory } from "@/config/platforms";
 import { Badge } from "@/components/ui/badge";
-import { Check, Layers, Clock, Lock } from "lucide-react";
+import { Check, Layers, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { getPlanSupportBatchBuild } from "@/utils/plan-limits";
@@ -21,16 +21,11 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   const { user } = useAuth();
   const [batchBuildEnabled, setBatchBuildEnabled] = useState(false);
 
-  // 获取用户套餐，判断是否支持批量构建（多平台选择）
   useEffect(() => {
     if (!user) return;
     const fetchPlan = async () => {
       const supabase = createClient();
-      const { data } = await supabase
-        .from("user_wallets")
-        .select("plan")
-        .eq("user_id", user.id)
-        .single();
+      const { data } = await supabase.from("user_wallets").select("plan").eq("user_id", user.id).single();
       const plan = data?.plan || "Free";
       setBatchBuildEnabled(getPlanSupportBatchBuild(plan));
     };
@@ -38,8 +33,6 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   }, [user]);
 
   const categories: PlatformCategory[] = ["mobile", "miniprogram", "desktop", "browser"];
-
-  // 获取可用平台
   const availablePlatforms = PLATFORMS.filter(p => p.available);
 
   const togglePlatform = (platformId: string) => {
@@ -51,7 +44,6 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
     if (selectedPlatforms.includes(platformId)) {
       onSelectionChange(selectedPlatforms.filter((id) => id !== platformId));
     } else {
-      // Free 用户只能选择一个平台
       if (!batchBuildEnabled) {
         onSelectionChange([platformId]);
       } else {
@@ -61,29 +53,22 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   const toggleCategory = (category: PlatformCategory) => {
-    // Free 用户不支持分类全选，弹出订阅界面
     if (!batchBuildEnabled) {
       window.dispatchEvent(new CustomEvent("open-subscription-modal"));
       return;
     }
     const categoryPlatforms = getPlatformsByCategory(category).filter(p => p.available).map((p) => p.id);
     const allSelected = categoryPlatforms.every((id) => selectedPlatforms.includes(id));
-
     if (allSelected) {
       onSelectionChange(selectedPlatforms.filter((id) => !categoryPlatforms.includes(id)));
     } else {
       const newSelection = [...selectedPlatforms];
-      categoryPlatforms.forEach((id) => {
-        if (!newSelection.includes(id)) {
-          newSelection.push(id);
-        }
-      });
+      categoryPlatforms.forEach((id) => { if (!newSelection.includes(id)) newSelection.push(id); });
       onSelectionChange(newSelection);
     }
   };
 
   const selectAll = () => {
-    // Free 用户不支持全选，弹出订阅界面
     if (!batchBuildEnabled) {
       window.dispatchEvent(new CustomEvent("open-subscription-modal"));
       return;
@@ -96,34 +81,25 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 flex items-center justify-center">
-            <Layers className="h-5 w-5 text-cyan-500" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 flex items-center justify-center">
+            <Layers className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-500" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold">{t("generate.platforms.title")}</h3>
-            <p className="text-sm text-muted-foreground">
+            <h3 className="text-base sm:text-lg font-semibold">{t("generate.platforms.title")}</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {currentLanguage === "zh" ? "选择需要生成的平台" : "Select platforms to generate"}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={selectAll}
-            className="text-sm text-cyan-500 hover:text-cyan-400 font-medium transition-colors"
-          >
-            {selectedPlatforms.length === availablePlatforms.length
-              ? currentLanguage === "zh" ? "取消全选" : "Deselect All"
-              : currentLanguage === "zh" ? "全选" : "Select All"}
+        <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto">
+          <button type="button" onClick={selectAll} className="text-xs sm:text-sm text-cyan-500 hover:text-cyan-400 font-medium transition-colors">
+            {selectedPlatforms.length === availablePlatforms.length ? (currentLanguage === "zh" ? "取消全选" : "Deselect All") : (currentLanguage === "zh" ? "全选" : "Select All")}
           </button>
-          <Badge
-            variant="secondary"
-            className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/20"
-          >
+          <Badge variant="secondary" className="bg-gradient-to-r from-cyan-500/10 to-blue-500/10 text-cyan-400 border border-cyan-500/20 text-xs">
             {t("generate.selected").replace("{count}", selectedPlatforms.length.toString())}
           </Badge>
         </div>
@@ -138,38 +114,24 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
         const allSelected = availableInCategory.length > 0 && selectedInCategory === availableInCategory.length;
 
         return (
-          <div key={category} className="space-y-4">
+          <div key={category} className="space-y-3 sm:space-y-4">
             {/* Category Header */}
             <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => toggleCategory(category)}
-                className="flex items-center gap-3 group"
-              >
-                <div
-                  className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all duration-200 ${
-                    allSelected
-                      ? "bg-gradient-to-br from-cyan-500 to-blue-500 border-cyan-500 shadow-lg shadow-cyan-500/30"
-                      : selectedInCategory > 0
-                      ? "bg-cyan-500/30 border-cyan-500"
-                      : "border-border/50 group-hover:border-cyan-500/50"
-                  }`}
-                >
-                  {(allSelected || selectedInCategory > 0) && (
-                    <Check className={`h-4 w-4 ${allSelected ? "text-white" : "text-cyan-500"}`} />
-                  )}
+              <button type="button" onClick={() => toggleCategory(category)} className="flex items-center gap-2 sm:gap-3 group">
+                <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-md sm:rounded-lg flex items-center justify-center border-2 transition-all duration-200 ${allSelected ? "bg-gradient-to-br from-cyan-500 to-blue-500 border-cyan-500 shadow-lg shadow-cyan-500/30" : selectedInCategory > 0 ? "bg-cyan-500/30 border-cyan-500" : "border-border/50 group-hover:border-cyan-500/50"}`}>
+                  {(allSelected || selectedInCategory > 0) && (<Check className={`h-3 w-3 sm:h-4 sm:w-4 ${allSelected ? "text-white" : "text-cyan-500"}`} />)}
                 </div>
-                <span className="font-semibold text-foreground/90 group-hover:text-cyan-500 transition-colors">
+                <span className="text-sm sm:text-base font-semibold text-foreground/90 group-hover:text-cyan-500 transition-colors">
                   {categoryInfo.name[currentLanguage]}
                 </span>
               </button>
-              <span className="text-sm text-muted-foreground px-2.5 py-1 rounded-full bg-muted/50">
+              <span className="text-xs sm:text-sm text-muted-foreground px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-muted/50">
                 {selectedInCategory}/{availableInCategory.length}
               </span>
             </div>
 
             {/* Platform Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
               {platforms.map((platform) => {
                 const Icon = platform.icon;
                 const isSelected = selectedPlatforms.includes(platform.id);
@@ -180,46 +142,28 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
                     key={platform.id}
                     type="button"
                     onClick={() => togglePlatform(platform.id)}
-                    className={`relative group text-left p-4 rounded-xl border-2 transition-all duration-300 ${
-                      isDisabled
-                        ? "border-border/20 bg-muted/30 cursor-not-allowed opacity-60"
-                        : isSelected
-                        ? "border-cyan-500 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shadow-lg shadow-cyan-500/10"
-                        : "border-border/30 bg-card/30 hover:border-cyan-500/50 hover:bg-card/50"
-                    }`}
+                    className={`relative group text-left p-3 sm:p-4 rounded-lg sm:rounded-xl border-2 transition-all duration-300 active:scale-[0.98] ${isDisabled ? "border-border/20 bg-muted/30 cursor-not-allowed opacity-60" : isSelected ? "border-cyan-500 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shadow-lg shadow-cyan-500/10" : "border-border/30 bg-card/30 hover:border-cyan-500/50 hover:bg-card/50"}`}
                   >
-                    {/* Selection indicator or Coming Soon badge */}
                     {isDisabled ? (
-                      <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs">
-                        <Clock className="h-3 w-3" />
-                        <span>{currentLanguage === "zh" ? "开发中" : "Soon"}</span>
+                      <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full bg-amber-500/10 text-amber-500 text-[10px] sm:text-xs">
+                        <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                        <span>{currentLanguage === "zh" ? "���发中" : "Soon"}</span>
                       </div>
                     ) : (
-                      <div
-                        className={`absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 ${
-                          isSelected
-                            ? "bg-gradient-to-br from-cyan-500 to-blue-500 shadow-md shadow-cyan-500/30"
-                            : "border-2 border-border/50 group-hover:border-cyan-500/50"
-                        }`}
-                      >
-                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      <div className={`absolute top-2 right-2 sm:top-3 sm:right-3 w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center transition-all duration-200 ${isSelected ? "bg-gradient-to-br from-cyan-500 to-blue-500 shadow-md shadow-cyan-500/30" : "border-2 border-border/50 group-hover:border-cyan-500/50"}`}>
+                        {isSelected && <Check className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-white" />}
                       </div>
                     )}
 
-                    <div className="flex items-start gap-3">
-                      {/* Platform Icon */}
-                      <div
-                        className={`w-12 h-12 rounded-xl bg-gradient-to-br ${platform.color} flex items-center justify-center shadow-lg transition-transform duration-200 ${isDisabled ? "" : "group-hover:scale-105"}`}
-                      >
-                        <Icon className="h-6 w-6 text-white" />
+                    <div className="flex items-start gap-2 sm:gap-3">
+                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-gradient-to-br ${platform.color} flex items-center justify-center shadow-lg transition-transform duration-200 ${isDisabled ? "" : "group-hover:scale-105"}`}>
+                        <Icon className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                       </div>
-
-                      {/* Platform Info */}
-                      <div className="flex-1 min-w-0 pr-6">
-                        <p className="font-semibold text-foreground/90 mb-0.5">
+                      <div className="flex-1 min-w-0 pr-5 sm:pr-6">
+                        <p className="text-sm sm:text-base font-semibold text-foreground/90 mb-0.5">
                           {platform.name[currentLanguage]}
                         </p>
-                        <p className="text-xs text-muted-foreground line-clamp-2">
+                        <p className="text-[10px] sm:text-xs text-muted-foreground line-clamp-2">
                           {platform.description[currentLanguage]}
                         </p>
                       </div>

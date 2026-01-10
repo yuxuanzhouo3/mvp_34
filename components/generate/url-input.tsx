@@ -49,7 +49,7 @@ export function UrlInput({ value, onChange }: UrlInputProps) {
           placeholder={t("generate.url.placeholder")}
           value={value}
           onChange={handleChange}
-          className={`h-14 pl-12 pr-12 text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
+          className={`h-12 sm:h-14 pl-10 sm:pl-12 pr-10 sm:pr-12 text-sm sm:text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
             isValid === true
               ? "border-emerald-500 focus:border-emerald-500 focus:ring-emerald-500/20"
               : isValid === false

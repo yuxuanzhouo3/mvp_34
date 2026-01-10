@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Mail, Lock, Loader2, ArrowRight, CheckCircle2 } from "lucide-react";
+import { trackRegisterEventClient } from "@/services/analytics-client";
 
 export function RegisterForm() {
   const { currentLanguage } = useLanguage();

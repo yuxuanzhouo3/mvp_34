@@ -329,8 +329,8 @@ function GenerateContent() {
 
       // 游客模式：使用游客构建 API
       if (isGuestMode) {
-        // 消费游客构建次数
-        if (!guestBuild.consumeBuild()) {
+        // 先检查本地是否有剩余次数（不消费，仅检查）
+        if (!guestBuild.hasRemaining) {
           throw new Error(
             currentLanguage === "zh"
               ? "游客构建次数已用完"
@@ -373,6 +373,9 @@ function GenerateContent() {
           const error = await response.json();
           throw new Error(error.message || error.error || "Guest build failed");
         }
+
+        // API 成功后再消费本地次数
+        guestBuild.consumeBuild();
 
         const result = await response.json();
 
@@ -660,7 +663,7 @@ function GenerateContent() {
   const isValid = selectedPlatforms.length > 0 && isAndroidValid && isIOSValid && isWechatValid && isHarmonyOSValid && isChromeValid && isWindowsValid && isMacosValid && isLinuxValid;
 
   return (
-    <div className="min-h-screen relative overflow-hidden pt-20">
+    <div className="min-h-screen relative overflow-hidden pt-16 sm:pt-20">
       {/* Background Effects */}
       <div className="fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-cyan-950/20" />
@@ -670,28 +673,28 @@ function GenerateContent() {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.03)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_70%)]" />
       </div>
 
-      <div className="container mx-auto px-4 py-8 md:py-12">
+      <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8 md:py-12">
         {/* Header */}
-        <div className="text-center mb-10 md:mb-14">
+        <div className="text-center mb-8 sm:mb-10 md:mb-14">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 text-cyan-400 text-sm font-medium mb-6">
             <Sparkles className="h-4 w-4" />
             <span>
               {currentLanguage === "zh" ? "简单三步，即刻完成" : "Three Simple Steps"}
             </span>
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold mb-5">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 sm:mb-5">
             <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
               {t("generate.title")}
             </span>
           </h1>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-2xl mx-auto">
             {currentLanguage === "zh"
               ? "选择目标平台，填写基本信息，一键生成多平台应用"
               : "Select platforms, fill in basic info, generate multi-platform apps with one click"}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-8">
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
           {/* Step 1: Platform Selection */}
           <div className="relative">
             <div className="absolute -left-4 md:-left-12 top-0 flex flex-col items-center">
@@ -700,7 +703,7 @@ function GenerateContent() {
               </div>
               <div className="w-px h-full bg-gradient-to-b from-cyan-500/50 to-transparent mt-2" />
             </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
+            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
               <PlatformSelector
                 selectedPlatforms={selectedPlatforms}
                 onSelectionChange={setSelectedPlatforms}
@@ -716,8 +719,8 @@ function GenerateContent() {
               </div>
               <div className="w-px h-full bg-gradient-to-b from-blue-500/50 to-transparent mt-2" />
             </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
-              <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
+              <h2 className="text-lg sm:text-xl font-semibold mb-4 sm:mb-6 flex items-center gap-2">
                 {currentLanguage === "zh" ? "输入网站地址" : "Enter Website URL"}
               </h2>
               <UrlInput value={url} onChange={setUrl} />
@@ -731,8 +734,8 @@ function GenerateContent() {
                 3
               </div>
             </div>
-            <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 md:p-8 shadow-xl shadow-black/5">
-              <h2 className="text-xl font-semibold mb-6">
+            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
+              <h2 className="text-lg sm:text-xl font-semibold mb-4 sm:mb-6">
                 {currentLanguage === "zh" ? "配置应用信息" : "Configure App Info"}
               </h2>
 
@@ -867,7 +870,7 @@ function GenerateContent() {
           </div>
 
           {/* Submit Button */}
-          <div className="flex flex-col items-center gap-4 pt-6 pb-12">
+          <div className="flex flex-col items-center gap-3 sm:gap-4 pt-4 sm:pt-6 pb-8 sm:pb-12">
             {/* Guest Mode Notice */}
             {isGuestMode && (
               <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 max-w-lg">
@@ -896,7 +899,7 @@ function GenerateContent() {
               type="submit"
               size="lg"
               disabled={!isValid || isSubmitting}
-              className="group h-14 px-10 text-lg rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 hover:from-cyan-400 hover:via-blue-400 hover:to-purple-500 text-white font-semibold shadow-xl shadow-cyan-500/25 hover:shadow-2xl hover:shadow-cyan-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+              className="group h-12 sm:h-14 px-6 sm:px-10 text-base sm:text-lg rounded-xl sm:rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 hover:from-cyan-400 hover:via-blue-400 hover:to-purple-500 text-white font-semibold shadow-xl shadow-cyan-500/25 hover:shadow-2xl hover:shadow-cyan-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               {isSubmitting ? (
                 <Loader2 className="h-5 w-5 animate-spin" />

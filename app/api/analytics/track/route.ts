@@ -5,7 +5,8 @@ export const runtime = "nodejs";
 
 const VALID_EVENT_TYPES: AnalyticsEventType[] = [
   "session_start", "session_end", "register", "page_view",
-  "feature_use", "payment", "subscription", "error"
+  "feature_use", "build_start", "build_complete", "build_download",
+  "payment", "subscription", "error"
 ];
 
 // 简单的内存 rate limiting（生产环境建议使用 Redis）

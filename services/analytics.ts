@@ -17,6 +17,9 @@ export type AnalyticsEventType =
   | "register"           // 用户注册
   | "page_view"          // 页面访问
   | "feature_use"        // 功能使用
+  | "build_start"        // 开始构建
+  | "build_complete"     // 构建完成
+  | "build_download"     // 下载构建
   | "payment"            // 支付行为
   | "subscription"       // 订阅变更
   | "error";             // 错误上报
@@ -327,5 +330,60 @@ export async function trackSubscriptionEvent(
     userId,
     eventType: "subscription",
     eventData: subscriptionData,
+  });
+}
+
+/**
+ * 记录构建开始事件
+ */
+export async function trackBuildStartEvent(
+  userId: string,
+  buildData: {
+    buildId: string;
+    platform: string;
+    appName?: string;
+  }
+): Promise<TrackResult> {
+  return trackAnalyticsEvent({
+    userId,
+    eventType: "build_start",
+    eventData: buildData,
+  });
+}
+
+/**
+ * 记录构建完成事件
+ */
+export async function trackBuildCompleteEvent(
+  userId: string,
+  buildData: {
+    buildId: string;
+    platform: string;
+    success: boolean;
+    durationMs?: number;
+    errorMessage?: string;
+  }
+): Promise<TrackResult> {
+  return trackAnalyticsEvent({
+    userId,
+    eventType: "build_complete",
+    eventData: buildData,
+  });
+}
+
+/**
+ * 记录构建下载事件
+ */
+export async function trackBuildDownloadEvent(
+  userId: string,
+  downloadData: {
+    buildId: string;
+    platform: string;
+  }
+): Promise<TrackResult> {
+  return trackAnalyticsEvent({
+    userId,
+    eventType: "build_download",
+    eventData: downloadData,
   });
 }

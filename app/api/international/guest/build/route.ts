@@ -165,14 +165,48 @@ function isValidUrl(url: string): boolean {
     if (!["http:", "https:"].includes(parsed.protocol)) {
       return false;
     }
-    // 禁止本地地址
+    // 禁止本地地址和私有 IP
     const hostname = parsed.hostname.toLowerCase();
+
+    // 检查 IPv6 本地地址
+    if (
+      hostname === "[::1]" ||
+      hostname === "::1" ||
+      hostname.startsWith("[fe80:") ||
+      hostname.startsWith("fe80:") ||
+      hostname.startsWith("[fc") ||
+      hostname.startsWith("[fd") ||
+      hostname.startsWith("fc") ||
+      hostname.startsWith("fd")
+    ) {
+      return false;
+    }
+
+    // 检查 IPv4 本地地址和私有 IP
     if (
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
       hostname.startsWith("192.168.") ||
       hostname.startsWith("10.") ||
-      hostname.endsWith(".local")
+      hostname.startsWith("172.16.") ||
+      hostname.startsWith("172.17.") ||
+      hostname.startsWith("172.18.") ||
+      hostname.startsWith("172.19.") ||
+      hostname.startsWith("172.20.") ||
+      hostname.startsWith("172.21.") ||
+      hostname.startsWith("172.22.") ||
+      hostname.startsWith("172.23.") ||
+      hostname.startsWith("172.24.") ||
+      hostname.startsWith("172.25.") ||
+      hostname.startsWith("172.26.") ||
+      hostname.startsWith("172.27.") ||
+      hostname.startsWith("172.28.") ||
+      hostname.startsWith("172.29.") ||
+      hostname.startsWith("172.30.") ||
+      hostname.startsWith("172.31.") ||
+      hostname.endsWith(".local") ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("169.254.") // 链路本地地址
     ) {
       return false;
     }

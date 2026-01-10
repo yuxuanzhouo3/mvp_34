@@ -33,14 +33,14 @@ export function WechatConfig({
   const appIdValid = validateAppId(appId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-400/20 to-green-500/20 flex items-center justify-center">
-          <MessageCircle className="h-5 w-5 text-green-500" />
+        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-green-400/20 to-green-500/20 flex items-center justify-center">
+          <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold">
+          <h3 className="text-base sm:text-lg font-semibold">
             {currentLanguage === "zh" ? "微信小程序配置" : "WeChat Mini Program Configuration"}
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -66,7 +66,7 @@ export function WechatConfig({
             placeholder={currentLanguage === "zh" ? "输入小程序名称" : "Enter mini program name"}
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
+            className="h-12 sm:h-14 pl-10 sm:pl-12 text-sm sm:text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
           />
         </div>
       </div>
@@ -86,7 +86,7 @@ export function WechatConfig({
             placeholder="wx1234567890abcdef"
             value={appId}
             onChange={(e) => onAppIdChange(e.target.value)}
-            className={`h-14 pl-12 text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
+            className={`h-12 sm:h-14 pl-10 sm:pl-12 text-sm sm:text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
               appIdValid
                 ? "border-border/50 focus:border-green-500 focus:ring-4 focus:ring-green-500/20"
                 : "border-red-500 focus:border-red-500 focus:ring-4 focus:ring-red-500/20"
@@ -122,7 +122,7 @@ export function WechatConfig({
             placeholder="1.0.0"
             value={version}
             onChange={(e) => onVersionChange(e.target.value)}
-            className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
+            className="h-12 sm:h-14 pl-10 sm:pl-12 text-sm sm:text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-green-500 focus:ring-4 focus:ring-green-500/20 transition-all duration-200"
           />
         </div>
         <p className="text-xs text-muted-foreground">

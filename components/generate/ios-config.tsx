@@ -85,14 +85,14 @@ export function IOSConfig({
   const bundleIdValid = !bundleId || validateBundleId(bundleId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-500/20 to-gray-600/20 flex items-center justify-center">
-          <Apple className="h-5 w-5 text-gray-500" />
+        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-gray-500/20 to-gray-600/20 flex items-center justify-center">
+          <Apple className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold">
+          <h3 className="text-base sm:text-lg font-semibold">
             {currentLanguage === "zh" ? "iOS 应用配置" : "iOS App Configuration"}
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -104,7 +104,7 @@ export function IOSConfig({
       </div>
 
       {/* App Name & Icon Row */}
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
         {/* App Icon */}
         <div className="shrink-0">
           <Label className="text-base font-medium text-foreground/80 mb-3 block">
@@ -112,7 +112,7 @@ export function IOSConfig({
           </Label>
           {!iconUploadEnabled ? (
             <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-border/30 bg-muted/30 flex flex-col items-center justify-center">
-              <AlertCircle className="h-5 w-5 text-muted-foreground/50 mb-1" />
+              <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground/50 mb-1" />
               <span className="text-xs text-muted-foreground/50">
                 {currentLanguage === "zh" ? "已禁用" : "Disabled"}
               </span>
@@ -136,8 +136,8 @@ export function IOSConfig({
             </div>
           ) : (
             <label className="flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 border-dashed border-border/50 hover:border-gray-500 cursor-pointer transition-all duration-200 bg-background/50 hover:bg-gray-500/5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-500/20 to-gray-600/20 flex items-center justify-center mb-1 group-hover:from-gray-500/30 group-hover:to-gray-600/30 transition-colors">
-                <Upload className="h-5 w-5 text-gray-500" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-gray-500/20 to-gray-600/20 flex items-center justify-center mb-1 group-hover:from-gray-500/30 group-hover:to-gray-600/30 transition-colors">
+                <Upload className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />
               </div>
               <span className="text-xs text-muted-foreground group-hover:text-gray-500 transition-colors">
                 {currentLanguage === "zh" ? "上传" : "Upload"}
@@ -181,7 +181,7 @@ export function IOSConfig({
               placeholder={currentLanguage === "zh" ? "输入应用名称" : "Enter app name"}
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
+              className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
             />
           </div>
         </div>
@@ -202,7 +202,7 @@ export function IOSConfig({
             placeholder="com.example.myapp"
             value={bundleId}
             onChange={(e) => onBundleIdChange(e.target.value)}
-            className={`h-14 pl-12 text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
+            className={`h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 bg-background/50 backdrop-blur-sm transition-all duration-200 ${
               bundleIdValid
                 ? "border-border/50 focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20"
                 : "border-red-500 focus:border-red-500 focus:ring-4 focus:ring-red-500/20"
@@ -224,7 +224,7 @@ export function IOSConfig({
       </div>
 
       {/* Version String & Build Number Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* Version String */}
         <div className="space-y-3">
           <Label htmlFor="versionString" className="text-base font-medium text-foreground/80">
@@ -240,7 +240,7 @@ export function IOSConfig({
               placeholder="1.0.0"
               value={versionString}
               onChange={(e) => onVersionStringChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
+              className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
             />
           </div>
           <p className="text-xs text-muted-foreground">
@@ -266,7 +266,7 @@ export function IOSConfig({
               placeholder={currentLanguage === "zh" ? "例如: 1, 2, 3" : "e.g. 1, 2, 3"}
               value={buildNumber}
               onChange={(e) => onBuildNumberChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
+              className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-gray-500 focus:ring-4 focus:ring-gray-500/20 transition-all duration-200"
             />
           </div>
           <p className="text-xs text-muted-foreground">

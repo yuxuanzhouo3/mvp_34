@@ -68,14 +68,14 @@ export function ChromeExtensionConfig({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-green-500/20 flex items-center justify-center">
-          <Chrome className="h-5 w-5 text-blue-500" />
+        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500/20 to-green-500/20 flex items-center justify-center">
+          <Chrome className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold">
+          <h3 className="text-base sm:text-lg font-semibold">
             {currentLanguage === "zh" ? "Chrome 扩展配置" : "Chrome Extension Configuration"}
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -87,7 +87,7 @@ export function ChromeExtensionConfig({
       </div>
 
       {/* App Name & Icon Row */}
-      <div className="flex flex-col md:flex-row gap-6">
+      <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
         {/* App Icon */}
         <div className="shrink-0">
           <Label className="text-base font-medium text-foreground/80 mb-3 block">
@@ -95,7 +95,7 @@ export function ChromeExtensionConfig({
           </Label>
           {!iconUploadEnabled ? (
             <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-border/30 bg-muted/30 flex flex-col items-center justify-center">
-              <AlertCircle className="h-5 w-5 text-muted-foreground/50 mb-1" />
+              <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground/50 mb-1" />
               <span className="text-xs text-muted-foreground/50">
                 {currentLanguage === "zh" ? "已禁用" : "Disabled"}
               </span>
@@ -119,8 +119,8 @@ export function ChromeExtensionConfig({
             </div>
           ) : (
             <label className="flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 border-dashed border-border/50 hover:border-blue-500 cursor-pointer transition-all duration-200 bg-background/50 hover:bg-blue-500/5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-green-500/20 flex items-center justify-center mb-1 group-hover:from-blue-500/30 group-hover:to-green-500/30 transition-colors">
-                <Upload className="h-5 w-5 text-blue-500" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500/20 to-green-500/20 flex items-center justify-center mb-1 group-hover:from-blue-500/30 group-hover:to-green-500/30 transition-colors">
+                <Upload className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
               </div>
               <span className="text-xs text-muted-foreground group-hover:text-blue-500 transition-colors">
                 {currentLanguage === "zh" ? "上传" : "Upload"}
@@ -164,7 +164,7 @@ export function ChromeExtensionConfig({
               placeholder={currentLanguage === "zh" ? "输入扩展名称" : "Enter extension name"}
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
-              className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200"
+              className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200"
             />
           </div>
         </div>
@@ -185,7 +185,7 @@ export function ChromeExtensionConfig({
             placeholder="1.0.0"
             value={versionName}
             onChange={(e) => onVersionNameChange(e.target.value)}
-            className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200"
+            className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200"
           />
         </div>
         <p className="text-xs text-muted-foreground">
@@ -210,7 +210,7 @@ export function ChromeExtensionConfig({
             placeholder={currentLanguage === "zh" ? "输入扩展描述" : "Enter extension description"}
             value={description}
             onChange={(e) => onDescriptionChange(e.target.value)}
-            className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200"
+            className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200"
           />
         </div>
         <p className="text-xs text-muted-foreground">

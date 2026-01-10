@@ -71,14 +71,14 @@ export function LinuxConfig({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400/20 to-orange-500/20 flex items-center justify-center">
-          <Terminal className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-orange-400/20 to-orange-500/20 flex items-center justify-center">
+          <Terminal className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600 dark:text-orange-400" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold">
+          <h3 className="text-base sm:text-lg font-semibold">
             {currentLanguage === "zh" ? "Linux 应用配置" : "Linux App Configuration"}
           </h3>
           <p className="text-sm text-muted-foreground">
@@ -104,7 +104,7 @@ export function LinuxConfig({
             placeholder={currentLanguage === "zh" ? "输入应用名称" : "Enter app name"}
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            className="h-14 pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all duration-200"
+            className="h-12 sm:h-14 pl-10 sm:pl-12 text-base rounded-xl border-2 border-border/50 bg-background/50 backdrop-blur-sm focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20 transition-all duration-200"
           />
         </div>
         <p className="text-xs text-muted-foreground">
@@ -192,7 +192,7 @@ export function LinuxConfig({
       {/* Info Box - Usage Guide */}
       <div className="rounded-xl bg-orange-500/10 border border-orange-500/20 p-4">
         <div className="flex items-start gap-3">
-          <Terminal className="h-5 w-5 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+          <Terminal className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
           <div>
             <h4 className="font-medium text-orange-700 dark:text-orange-300 mb-2">
               {currentLanguage === "zh" ? "使用说明" : "Usage Guide"}
@@ -221,7 +221,7 @@ export function LinuxConfig({
       {/* Warning Box */}
       <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-4">
         <div className="flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
+          <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-amber-500 mt-0.5 flex-shrink-0" />
           <div>
             <h4 className="font-medium text-amber-600 mb-2">
               {currentLanguage === "zh" ? "运行提示" : "Runtime Notice"}

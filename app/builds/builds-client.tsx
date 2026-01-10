@@ -576,7 +576,7 @@ export default function BuildsClient() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen pt-20 pb-12 flex items-center justify-center">
+      <div className="min-h-screen pt-16 sm:pt-20 pb-8 sm:pb-12 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
       </div>
     );
@@ -584,7 +584,7 @@ export default function BuildsClient() {
 
   if (!user) {
     return (
-      <div className="min-h-screen pt-20 pb-12">
+      <div className="min-h-screen pt-16 sm:pt-20 pb-8 sm:pb-12">
         <div className="container mx-auto px-4 md:px-6">
           <div className="text-center py-16 bg-card rounded-2xl border border-border/50">
             <Layers className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
@@ -604,13 +604,13 @@ export default function BuildsClient() {
   }
 
   return (
-    <div className="min-h-screen pt-20 pb-12">
+    <div className="min-h-screen pt-16 sm:pt-20 pb-8 sm:pb-12">
       <div className="container mx-auto px-4 md:px-6">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <Layers className="h-6 w-6 text-white" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+              <Layers className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl md:text-3xl font-bold">
@@ -626,7 +626,7 @@ export default function BuildsClient() {
         </div>
 
         {/* Category Filter Tabs */}
-        <div className="flex flex-wrap gap-2 mb-6">
+        <div className="flex flex-nowrap sm:flex-wrap gap-2 mb-6 overflow-x-auto pb-2 sm:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
           <Button
             variant={categoryFilter === "all" ? "default" : "outline"}
             size="sm"
