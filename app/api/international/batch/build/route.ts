@@ -8,7 +8,7 @@ import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 // 导入各平台的构建处理器
 import { processAndroidBuild } from "@/lib/services/android-builder";
-import { processIOSBuild } from "@/lib/services/ios-builder";
+import { processiOSBuild } from "@/lib/services/ios-builder";
 import { processChromeExtensionBuild } from "@/lib/services/chrome-extension-builder";
 import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
 import { processMacOSAppBuild } from "@/lib/services/macos-app-builder";
@@ -272,7 +272,7 @@ async function startPlatformBuild(
       break;
 
     case "ios":
-      await processIOSBuild(buildId, {
+      await processiOSBuild(buildId, {
         url,
         appName: config.appName,
         bundleId: config.bundleId || "",
