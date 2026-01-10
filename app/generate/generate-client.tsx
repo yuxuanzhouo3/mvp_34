@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
+import { useGuestBuild } from "@/hooks/useGuestBuild";
 import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig, HarmonyOSConfig } from "@/components/generate";
 import { WechatConfig } from "@/components/generate/wechat-config";
 import { ChromeExtensionConfig } from "@/components/generate/chrome-extension-config";
@@ -11,14 +12,18 @@ import { WindowsConfig } from "@/components/generate/windows-config";
 import { MacOSConfig } from "@/components/generate/macos-config";
 import { LinuxConfig } from "@/components/generate/linux-config";
 import { Button } from "@/components/ui/button";
-import { Rocket, Sparkles, ArrowRight, Loader2 } from "lucide-react";
+import { Rocket, Sparkles, ArrowRight, Loader2, UserX } from "lucide-react";
 import { toast } from "sonner";
 
 function GenerateContent() {
   const { t, currentLanguage } = useLanguage();
   const { user } = useAuth();
+  const guestBuild = useGuestBuild();
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // 是否为游客模式
+  const isGuestMode = !user;
 
   // Step 1: Platform selection
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -139,9 +144,41 @@ function GenerateContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!user) {
-      router.push("/auth/login?redirect=/generate");
-      return;
+    // 游客模式检查
+    if (isGuestMode) {
+      // 检查游客是否支持批量构建
+      if (selectedPlatforms.length > 1 && !guestBuild.supportBatchBuild) {
+        toast.error(
+          currentLanguage === "zh"
+            ? "游客模式仅支持单平台构建，请登录后使用批量构建"
+            : "Guest mode only supports single platform. Please login for batch builds."
+        );
+        return;
+      }
+
+      // 检查游客剩余构建次数
+      if (!guestBuild.hasRemaining) {
+        toast.error(
+          currentLanguage === "zh"
+            ? `今日游客构建次数已用完（${guestBuild.limit}次/天），请登录后继续使用`
+            : `Daily guest build limit reached (${guestBuild.limit}/day). Please login to continue.`
+        );
+        router.push("/auth/login?redirect=/generate");
+        return;
+      }
+
+      // 游客模式仅支持部分平台（不支持 iOS、WeChat、HarmonyOS）
+      const unsupportedPlatforms = selectedPlatforms.filter(p =>
+        ["ios", "wechat", "harmonyos"].includes(p)
+      );
+      if (unsupportedPlatforms.length > 0) {
+        toast.error(
+          currentLanguage === "zh"
+            ? `游客模式不支持 ${unsupportedPlatforms.join(", ")} 平台，请登录后使用`
+            : `Guest mode doesn't support ${unsupportedPlatforms.join(", ")}. Please login.`
+        );
+        return;
+      }
     }
 
     // Validate Android specific fields if Android is selected
@@ -290,7 +327,78 @@ function GenerateContent() {
       // 计算选中的平台数量
       const platformCount = selectedPlatforms.length;
 
-      // 批量构建前预检查额度，防止竞态条件
+      // 游客模式：使用游客构建 API
+      if (isGuestMode) {
+        // 消费游客构建次数
+        if (!guestBuild.consumeBuild()) {
+          throw new Error(
+            currentLanguage === "zh"
+              ? "游客构建次数已用完"
+              : "Guest build limit reached"
+          );
+        }
+
+        // 游客只能构建一个平台
+        const platform = selectedPlatforms[0];
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("platform", platform);
+        formData.append("platformCount", "1");
+
+        // 根据平台设置应用名称
+        if (platform === "android") {
+          formData.append("appName", appName);
+        } else if (platform === "chrome") {
+          formData.append("appName", chromeExtensionName);
+        } else if (platform === "windows") {
+          formData.append("appName", windowsAppName);
+        } else if (platform === "macos") {
+          formData.append("appName", macosAppName);
+        } else if (platform === "linux") {
+          formData.append("appName", linuxAppName);
+        }
+
+        toast.info(
+          currentLanguage === "zh"
+            ? "游客模式构建中，请稍候..."
+            : "Building in guest mode, please wait..."
+        );
+
+        const response = await fetch("/api/international/guest/build", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || error.error || "Guest build failed");
+        }
+
+        const result = await response.json();
+
+        // 下载构建结果
+        const binaryData = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
+        const blob = new Blob([binaryData], { type: "application/zip" });
+        const downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = result.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(downloadUrl);
+
+        toast.success(
+          currentLanguage === "zh"
+            ? `构建完成！剩余 ${result.remaining}/${result.limit} 次`
+            : `Build completed! ${result.remaining}/${result.limit} remaining`
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 登录用户模式：批量构建前预检查额度，防止竞态条件
       const quotaCheckRes = await fetch("/api/international/quota/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -759,7 +867,31 @@ function GenerateContent() {
           </div>
 
           {/* Submit Button */}
-          <div className="flex justify-center pt-6 pb-12">
+          <div className="flex flex-col items-center gap-4 pt-6 pb-12">
+            {/* Guest Mode Notice */}
+            {isGuestMode && (
+              <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 max-w-lg">
+                <UserX className="h-5 w-5 flex-shrink-0" />
+                <div className="text-sm">
+                  <span className="font-medium">
+                    {currentLanguage === "zh" ? "游客模式" : "Guest Mode"}
+                  </span>
+                  <span className="mx-1.5">·</span>
+                  <span>
+                    {currentLanguage === "zh"
+                      ? `今日剩余 ${guestBuild.remaining}/${guestBuild.limit} 次`
+                      : `${guestBuild.remaining}/${guestBuild.limit} builds remaining today`}
+                  </span>
+                  <span className="mx-1.5">·</span>
+                  <span className="text-muted-foreground">
+                    {currentLanguage === "zh"
+                      ? "仅支持单平台构建"
+                      : "Single platform only"}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <Button
               type="submit"
               size="lg"

@@ -3,7 +3,8 @@ import { waitUntil } from "@vercel/functions";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { processLinuxAppBuild } from "@/lib/services/linux-app-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
-import { deductBuildQuota, checkBuildQuota } from "@/services/wallet-supabase";
+import { deductBuildQuota, checkBuildQuota, getSupabaseUserWallet } from "@/services/wallet-supabase";
+import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 // 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
 export const maxDuration = 120;
@@ -113,6 +114,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Get user's subscription plan to calculate expires_at
+    const wallet = await getSupabaseUserWallet(user.id);
+    const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
+    const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
+
     // Create build record
     const { data: build, error: insertError } = await serviceClient
       .from("builds")
@@ -127,6 +133,7 @@ export async function POST(request: NextRequest) {
         version_name: "1.0.0",
         version_code: "1",
         icon_path: iconPath,
+        expires_at: expiresAt,
       })
       .select()
       .single();

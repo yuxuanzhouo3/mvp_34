@@ -134,18 +134,20 @@ export function Header() {
 
           {/* Auth Group - Desktop */}
           <div className="hidden md:flex items-center gap-2">
-            {/* Subscription Button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 gap-2 text-amber-600 dark:text-amber-400 hover:text-amber-500 hover:bg-amber-500/10"
-              onClick={() => setSubscriptionOpen(true)}
-            >
-              <Crown className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                {currentLanguage === "zh" ? "订阅" : "Subscribe"}
-              </span>
-            </Button>
+            {/* Subscription Button - Only show when logged in */}
+            {user && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 gap-2 text-amber-600 dark:text-amber-400 hover:text-amber-500 hover:bg-amber-500/10"
+                onClick={() => setSubscriptionOpen(true)}
+              >
+                <Crown className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  {currentLanguage === "zh" ? "订阅" : "Subscribe"}
+                </span>
+              </Button>
+            )}
 
             {/* Auth State */}
             {loading ? (
@@ -195,19 +197,21 @@ export function Header() {
             ))}
 
             <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border/50">
-              {/* Subscription Button - Mobile */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-11 gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-xl"
-                onClick={() => {
-                  setSubscriptionOpen(true);
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <Crown className="h-4 w-4" />
-                <span>{currentLanguage === "zh" ? "订阅会员" : "Subscribe"}</span>
-              </Button>
+              {/* Subscription Button - Mobile - Only show when logged in */}
+              {user && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded-xl"
+                  onClick={() => {
+                    setSubscriptionOpen(true);
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <Crown className="h-4 w-4" />
+                  <span>{currentLanguage === "zh" ? "订阅会员" : "Subscribe"}</span>
+                </Button>
+              )}
 
               {/* Auth State - Mobile */}
               {loading ? (
