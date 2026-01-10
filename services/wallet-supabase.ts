@@ -467,7 +467,7 @@ export async function renewSupabaseQuota(
 }
 
 /**
- * 扣减构建额度
+ * 扣减构建额度（使用原子操作防止竞态条件）
  */
 export async function deductBuildQuota(
   userId: string,
@@ -476,67 +476,49 @@ export async function deductBuildQuota(
   if (!supabaseAdmin) return { success: false, error: "supabaseAdmin not available" };
 
   try {
-    const today = getTodayString();
-    let wallet = await getSupabaseUserWallet(userId);
-
+    // 确保用户钱包存在
+    const wallet = await getSupabaseUserWallet(userId);
     if (!wallet) {
-      wallet = await ensureSupabaseUserWallet(userId);
-      if (!wallet) return { success: false, error: "Failed to create wallet" };
+      const created = await ensureSupabaseUserWallet(userId);
+      if (!created) return { success: false, error: "Failed to create wallet" };
     }
 
-    // 检查是否需要重置（新的一天）
-    if (wallet.daily_builds_reset_at !== today) {
-      const { error: resetError } = await supabaseAdmin
-        .from("user_wallets")
-        .update({
-          daily_builds_used: 0,
-          daily_builds_reset_at: today,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId);
+    const today = getTodayString();
 
-      if (resetError) {
-        console.error("[wallet-supabase] Error resetting daily quota:", resetError);
-      }
-
-      wallet.daily_builds_used = 0;
-    }
-
-    const currentUsed = wallet.daily_builds_used || 0;
-    const limit = wallet.daily_builds_limit || getPlanDailyLimit(wallet.plan);
-    const remaining = limit - currentUsed;
-
-    if (remaining < count) {
-      return {
-        success: false,
-        remaining: Math.max(0, remaining),
-        error: "Insufficient daily build quota"
-      };
-    }
-
-    const newUsed = currentUsed + count;
-    const { error } = await supabaseAdmin
-      .from("user_wallets")
-      .update({
-        daily_builds_used: newUsed,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", userId);
+    // 使用 RPC 函数进行原子扣减
+    const { data, error } = await supabaseAdmin.rpc("deduct_build_quota", {
+      p_user_id: userId,
+      p_count: count,
+      p_today: today,
+    });
 
     if (error) {
-      console.error("[wallet-supabase] Error deducting quota:", error);
+      console.error("[wallet-supabase] RPC deduct_build_quota error:", error);
       return { success: false, error: error.message };
+    }
+
+    const result = data?.[0];
+    if (!result) {
+      return { success: false, error: "No result from deduct_build_quota" };
     }
 
     console.log("[wallet-supabase][deduct-build]", {
       userId,
       count,
-      usedBefore: currentUsed,
-      usedAfter: newUsed,
-      remaining: limit - newUsed,
+      success: result.success,
+      remaining: result.remaining,
+      error: result.error_message,
     });
 
-    return { success: true, remaining: limit - newUsed };
+    if (!result.success) {
+      return {
+        success: false,
+        remaining: result.remaining,
+        error: result.error_message || "Insufficient daily build quota",
+      };
+    }
+
+    return { success: true, remaining: result.remaining };
   } catch (err) {
     console.error("[wallet-supabase][deduct-build-error]", err);
     return {

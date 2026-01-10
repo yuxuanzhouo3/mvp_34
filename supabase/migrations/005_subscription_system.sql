@@ -428,7 +428,7 @@ SELECT
   AVG(amount) as avg_amount,
   currency
 FROM public.payments
-WHERE status = 'success'
+WHERE UPPER(status) IN ('SUCCESS', 'COMPLETED')
 GROUP BY source, DATE(created_at), currency
 ORDER BY stat_date DESC;
 

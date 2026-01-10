@@ -311,6 +311,7 @@ function GenerateContent() {
         );
       }
 
+      // 先发起构建请求，等待服务器创建数据库记录后再跳转
       const buildPromises: Promise<Response>[] = [];
 
       // Build Android if selected
@@ -470,17 +471,18 @@ function GenerateContent() {
         );
       }
 
+      // 等待所有构建请求返回（服务器会立即返回，构建在后台进行）
       const responses = await Promise.all(buildPromises);
 
-      // Check if any response failed
+      // 检查是否有失败的请求
       for (const response of responses) {
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.message || "Build failed");
+          throw new Error(error.message || error.error || "Build request failed");
         }
       }
 
-      // 触发额度刷新事件（构建请求时已扣减额度）
+      // 触发额度刷新事件
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("quota:refresh"));
       }
@@ -490,6 +492,8 @@ function GenerateContent() {
           ? "构建任务已创建，正在处理中..."
           : "Build task created, processing..."
       );
+
+      // 构建记录已创建，现在跳转到构建列表页面
       router.push(`/builds`);
     } catch (error) {
       console.error("Build error:", error);
