@@ -536,6 +536,7 @@ function GenerateContent() {
       );
 
       // 构建记录已创建，现在跳转到构建列表页面
+      // 注意：不在这里重置 isSubmitting，保持按钮禁用直到页面跳转完成
       router.push(`/builds`);
     } catch (error) {
       console.error("Build error:", error);
@@ -546,7 +547,7 @@ function GenerateContent() {
           ? "构建失败，请重试"
           : "Build failed, please try again"
       );
-    } finally {
+      // 只在出错时重置 isSubmitting，允许用户重试
       setIsSubmitting(false);
     }
   };

@@ -901,15 +901,15 @@ export default function BuildsClient() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                    {/* 时间信息 */}
-                    <div className="flex flex-col items-end text-xs text-muted-foreground">
+                    {/* 时间信息 - 移动端垂直排列，桌面端水平排列 */}
+                    <div className="flex flex-col md:flex-row md:items-center md:gap-3 items-end text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5">
                         <Clock className="h-3 w-3" />
                         <span>{formatDate(build.created_at).date}</span>
                         <span>{formatDate(build.created_at).time}</span>
                       </div>
                       {build.expires_at && (
-                        <span className={`mt-1 px-2 py-0.5 rounded-full font-medium ${
+                        <span className={`mt-1 md:mt-0 px-2 py-0.5 rounded-full font-medium ${
                           getExpiresInfo(build.expires_at).urgent
                             ? "bg-red-500/15 text-red-600 dark:text-red-400"
                             : getExpiresInfo(build.expires_at).color === "text-orange-500"
