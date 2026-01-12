@@ -14,6 +14,7 @@ import { LinuxConfig } from "@/components/generate/linux-config";
 import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2, UserX } from "lucide-react";
 import { toast } from "sonner";
+import { IS_DOMESTIC_VERSION } from "@/config";
 
 function GenerateContent() {
   const { t, currentLanguage } = useLanguage();
@@ -494,31 +495,22 @@ function GenerateContent() {
         });
       }
 
-      // 发送批量构建请求（一次请求，服务端批量创建记录后立即返回）
-      const response = await fetch("/api/international/batch/build", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, platforms }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || error.error || "Batch build request failed");
-      }
-
-      // 触发额度刷新事件
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("quota:refresh"));
-      }
+      // 乐观跳转：先存储构建数据，立即跳转，在 builds 页面发起 API 请求
+      const pendingBuildData = {
+        url,
+        platforms,
+        timestamp: Date.now(),
+      };
+      sessionStorage.setItem("pendingBuild", JSON.stringify(pendingBuildData));
 
       toast.success(
         currentLanguage === "zh"
-          ? "构建任务已创建，正在处理中..."
-          : "Build task created, processing..."
+          ? "正在创建构建任务..."
+          : "Creating build task..."
       );
 
-      // 构建记录已创建，现在跳转到构建列表页面
-      router.push(`/builds`);
+      // 立即跳转到构建列表页面（带 pending 参数）
+      router.push(`/builds?pending=true`);
     } catch (error) {
       console.error("Build error:", error);
       toast.error(

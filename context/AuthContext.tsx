@@ -4,9 +4,24 @@ import { createContext, useContext, useEffect, useState, useCallback, useMemo, u
 import { User, Session, AuthChangeEvent } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { IS_DOMESTIC_VERSION } from "@/config";
+
+// 国内版用户类型（兼容 Supabase User 接口的关键字段）
+interface DomesticUser {
+  id: string;
+  email?: string;
+  name?: string;
+  avatar?: string;
+  wechatOpenId?: string;
+  created_at?: string;
+  // 兼容 Supabase User 接口
+  user_metadata?: Record<string, unknown>;
+  app_metadata?: Record<string, unknown>;
+  aud?: string;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: User | DomesticUser | null;
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null; userId?: string }>;
@@ -18,7 +33,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | DomesticUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -27,8 +42,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 使用useMemo缓存supabase客户端（SSR时可能为null）
   const supabase = useMemo(() => createClient(), []);
 
+  // 国内版：从 API 获取用户信息
+  const fetchDomesticUser = useCallback(async () => {
+    try {
+      const res = await fetch("/api/domestic/auth/me", {
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.user as DomesticUser;
+      }
+      return null;
+    } catch (error) {
+      console.error("[AuthContext] Failed to fetch domestic user:", error);
+      return null;
+    }
+  }, []);
+
   const refreshSession = useCallback(async () => {
-    // 如果supabase为null（SSR时），直接返回
+    if (IS_DOMESTIC_VERSION) {
+      // 国内版：从 API 获取用户
+      try {
+        const domesticUser = await fetchDomesticUser();
+        setUser(domesticUser);
+        setSession(null); // 国内版不使用 Supabase session
+      } catch (error) {
+        console.error("[AuthContext] Failed to refresh domestic session:", error);
+        setUser(null);
+        setSession(null);
+      }
+      return;
+    }
+
+    // 国际版：使�� Supabase
     if (!supabase) {
       setLoading(false);
       return;
@@ -43,14 +89,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null);
       setUser(null);
     }
-  }, [supabase]);
+  }, [supabase, fetchDomesticUser]);
 
   useEffect(() => {
     // 防止重复初始化
     if (initializedRef.current) return;
     initializedRef.current = true;
 
-    // 如果supabase为null（SSR时），直接设置loading为false
+    if (IS_DOMESTIC_VERSION) {
+      // 国内版：直接获取用户信息
+      fetchDomesticUser()
+        .then((domesticUser) => {
+          setUser(domesticUser);
+          setSession(null);
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    // 国际版：使用 Supabase
     if (!supabase) {
       setLoading(false);
       return;
@@ -69,7 +126,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // 处理特定事件
       if (event === "SIGNED_OUT") {
-        // 清除状态并重定向
         router.refresh();
       } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         router.refresh();
@@ -77,9 +133,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase, refreshSession, router]);
+  }, [supabase, refreshSession, router, fetchDomesticUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    if (IS_DOMESTIC_VERSION) {
+      // 国内版：调用 CloudBase API
+      try {
+        const res = await fetch("/api/domestic/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return { error: new Error(data.error || "登录失败") };
+        }
+        // 登录成功后刷新用户状态
+        const domesticUser = await fetchDomesticUser();
+        setUser(domesticUser);
+        return { error: null, userId: data.user?.id };
+      } catch (err) {
+        return { error: err instanceof Error ? err : new Error("登录失败") };
+      }
+    }
+
+    // 国际版：使用 Supabase
     if (!supabase) {
       return { error: new Error("Auth service not available") };
     }
@@ -104,9 +183,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       return { error: err instanceof Error ? err : new Error("Sign in failed") };
     }
-  }, [supabase]);
+  }, [supabase, fetchDomesticUser]);
 
   const signUp = useCallback(async (email: string, password: string, name?: string) => {
+    if (IS_DOMESTIC_VERSION) {
+      // 国内版：调用 CloudBase API
+      try {
+        const res = await fetch("/api/domestic/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, password, name }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return { error: new Error(data.error || "注册失败") };
+        }
+        // 注册成功，不自动登录，让用户手动登录
+        return { error: null, userId: data.user?.id };
+      } catch (err) {
+        return { error: err instanceof Error ? err : new Error("注册失败") };
+      }
+    }
+
+    // 国际版：使用 Supabase
     if (!supabase) {
       return { error: new Error("Auth service not available") };
     }
@@ -140,6 +240,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   const signOut = useCallback(async () => {
+    if (IS_DOMESTIC_VERSION) {
+      // 国内版：调用登出 API
+      try {
+        await fetch("/api/domestic/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch (error) {
+        console.error("[AuthContext] Domestic logout error:", error);
+      }
+      setUser(null);
+      setSession(null);
+      router.refresh();
+      return;
+    }
+
+    // 国际版：使用 Supabase
     if (!supabase) {
       setUser(null);
       setSession(null);
@@ -149,7 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
-  }, [supabase]);
+  }, [supabase, router]);
 
   const value = useMemo(() => ({
     user,

@@ -316,8 +316,55 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
           window.location.href = data.approvalUrl;
         }
       } else if (selectedPayment === "alipay" || selectedPayment === "wechat") {
-        // 国内支付（待实现）
-        toast.info(isZh ? "国内支付功能即将上线" : "Domestic payment coming soon");
+        // 国内支付
+        const apiEndpoint = selectedPayment === "alipay"
+          ? "/api/domestic/payment/alipay/create"
+          : "/api/domestic/payment/wechat/create";
+
+        const response = await fetch(apiEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            planName: selectedPlan.id,
+            billingPeriod,
+            userId,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "创建支付失败");
+        }
+
+        if (selectedPayment === "alipay" && data.formHtml) {
+          // 支付宝：保存订单号到 sessionStorage，用于支付成功页面确认
+          if (data.paymentId || data.orderId) {
+            sessionStorage.setItem("alipay_order_id", data.paymentId || data.orderId);
+          }
+          // 使用 HTML 表单提交
+          const div = document.createElement("div");
+          div.innerHTML = data.formHtml;
+          document.body.appendChild(div);
+          const form = div.querySelector("form");
+          if (form) {
+            form.submit();
+          } else {
+            throw new Error("支付宝表单解析失败");
+          }
+        } else if (selectedPayment === "wechat" && data.code_url) {
+          // 微信支付：显示二维码弹窗
+          // 存储订单信息到 sessionStorage，跳转到支付页面
+          sessionStorage.setItem("wechat_pay_order", JSON.stringify({
+            out_trade_no: data.out_trade_no,
+            code_url: data.code_url,
+            amount: data.amount,
+            planName: selectedPlan.id,
+            billingPeriod,
+          }));
+          window.location.href = "/payment/wechat";
+        }
       }
     } catch (error) {
       console.error("Payment error:", error);

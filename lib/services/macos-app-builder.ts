@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { BuildProgressHelper } from "@/lib/build-progress";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -26,10 +27,11 @@ export async function processMacOSAppBuild(
   config: MacOSBuildConfig
 ): Promise<void> {
   const supabase = createServiceClient();
+  const progressHelper = new BuildProgressHelper("macos");
   let tempDir: string | null = null;
 
   try {
-    await updateBuildStatus(supabase, buildId, "processing", 5);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
     // Step 1: 下载预构建的 macOS App 模板 (ZIP 格式)
     console.log("[macOS Build] Downloading template...");
@@ -41,7 +43,7 @@ export async function processMacOSAppBuild(
       throw new Error(`Failed to download macOS template: ${downloadError?.message || "No data"}`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 25);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("downloading"));
 
     // Step 2: 创建临时目录
     tempDir = path.join(os.tmpdir(), `macos-build-${buildId}`);
@@ -54,7 +56,7 @@ export async function processMacOSAppBuild(
     const zip = new AdmZip(templateBuffer);
     zip.extractAllTo(tempDir, true);
 
-    await updateBuildStatus(supabase, buildId, "processing", 40);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("extracting"));
 
     // Step 4: 查找 .app 目录
     const appDir = findAppDirectory(tempDir);
@@ -74,13 +76,11 @@ export async function processMacOSAppBuild(
     const configPath = path.join(resourcesDir, "app-config.json");
     fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 
-    await updateBuildStatus(supabase, buildId, "processing", 55);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("configuring"));
 
     // Step 6: 修改 Info.plist（应用名称）
     console.log("[macOS Build] Updating Info.plist...");
     await updateInfoPlist(appDir, config.appName);
-
-    await updateBuildStatus(supabase, buildId, "processing", 65);
 
     // Step 7: 替换图标（如果提供）
     if (config.iconPath) {
@@ -88,7 +88,7 @@ export async function processMacOSAppBuild(
       await replaceAppIcon(supabase, appDir, config.iconPath);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 75);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
 
     // Step 8: 重命名 .app 目录
     const safeAppName = config.appName.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\s]/g, "").trim() || "App";
@@ -138,7 +138,7 @@ export async function processMacOSAppBuild(
       archive.finalize();
     });
 
-    await updateBuildStatus(supabase, buildId, "processing", 85);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("packaging"));
 
     // Step 10: 上传结果
     console.log("[macOS Build] Uploading result...");
@@ -154,14 +154,14 @@ export async function processMacOSAppBuild(
       throw new Error(`Failed to upload result: ${uploadError.message}`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 95);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
     // Step 11: 更新构建记录
     const { error: updateError } = await supabase
       .from("builds")
       .update({
         status: "completed",
-        progress: 100,
+        progress: progressHelper.getProgressForStage("completed"),
         output_file_path: outputPath,
         file_size: outputBuffer.length,
       })

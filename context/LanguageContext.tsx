@@ -9,6 +9,7 @@ interface LanguageContextType {
   currentLanguage: Language;
   setCurrentLanguage: (lang: Language) => void;
   t: (key: string) => string;
+  isDomesticVersion: boolean;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -175,6 +176,9 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
   const storageKey = `mornclient-language`;
   const [currentLanguage, setCurrentLanguageState] = useState<Language>(DEFAULT_LANGUAGE as Language);
 
+  // 版本判断：基于环境变量的默认语言
+  const isDomesticVersion = DEFAULT_LANGUAGE === "zh";
+
   useEffect(() => {
     const savedLanguage = localStorage.getItem(storageKey);
     if (savedLanguage === "zh" || savedLanguage === "en") {
@@ -193,7 +197,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   return (
-    <LanguageContext.Provider value={{ currentLanguage, setCurrentLanguage, t }}>
+    <LanguageContext.Provider value={{ currentLanguage, setCurrentLanguage, t, isDomesticVersion }}>
       {children}
     </LanguageContext.Provider>
   );

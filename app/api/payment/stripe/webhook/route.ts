@@ -86,6 +86,10 @@ export async function POST(req: Request) {
 
   // 幂等性检查
   const existingPayment = await checkPaymentExists("stripe", session.id);
+  if (existingPayment) {
+    console.log(`[Stripe][SUBSCRIPTION] already processed, skipping: ${session.id}`);
+    return new Response(null, { status: 200 });
+  }
 
   // 订阅处理
   const plan = normalizePlanName(metadata.planName || "Pro");
@@ -130,18 +134,16 @@ export async function POST(req: Request) {
     }
 
     // 插入支付记录
-    if (!existingPayment) {
-      await insertPaymentRecord({
-        userId,
-        provider: "stripe",
-        providerOrderId: session.id,
-        amount,
-        currency,
-        type: "SUBSCRIPTION",
-        plan,
-        period,
-      });
-    }
+    await insertPaymentRecord({
+      userId,
+      provider: "stripe",
+      providerOrderId: session.id,
+      amount,
+      currency,
+      type: "SUBSCRIPTION",
+      plan,
+      period,
+    });
 
     // 降级处理：延迟生效
     if (isDowngrade) {

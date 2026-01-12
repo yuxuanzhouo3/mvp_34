@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { getPlanShareExpireDays } from "@/utils/plan-limits";
+import { IS_DOMESTIC_VERSION } from "@/config";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import {
   Trash2,
   Crown,
   Download,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
@@ -61,7 +63,7 @@ export function ShareModal({
   const { user } = useAuth();
   const isZh = currentLanguage === "zh";
 
-  const [plan, setPlan] = useState<string>("Free");
+  const [plan, setPlan] = useState<string | null>(null); // null = loading
   const [maxShareDays, setMaxShareDays] = useState(0);
   const [buildRemainingDays, setBuildRemainingDays] = useState(0);
   const [expireDays, setExpireDays] = useState(1);
@@ -73,20 +75,51 @@ export function ShareModal({
   const [newShareUrl, setNewShareUrl] = useState<string | null>(null);
   const [newShareExpiresAt, setNewShareExpiresAt] = useState<string | null>(null);
   const [viewQrShare, setViewQrShare] = useState<ShareItem | null>(null);
+  const [planError, setPlanError] = useState(false); // API 请求失败
 
   // 获取用户套餐和计算限制
   useEffect(() => {
     if (!user || !open) return;
 
-    const fetchPlan = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("user_wallets")
-        .select("plan")
-        .eq("user_id", user.id)
-        .single();
+    // 重置状态
+    setPlan(null);
+    setPlanError(false);
 
-      const userPlan = data?.plan || "Free";
+    const fetchPlan = async () => {
+      let userPlan: string | null = null;
+
+      // 国内版：从国内 API 获取
+      if (IS_DOMESTIC_VERSION) {
+        try {
+          const res = await fetch("/api/domestic/auth/me", { credentials: "include" });
+          if (res.ok) {
+            const data = await res.json();
+            userPlan = data.user?.metadata?.plan || data.user?.plan || data.user?.subscriptionTier || "free";
+          } else {
+            // API 返回错误（如 401），标记为错误状态
+            setPlanError(true);
+            return;
+          }
+        } catch {
+          // 网络错误，标记为错误状态
+          setPlanError(true);
+          return;
+        }
+      } else {
+        // 国际版：使用 Supabase
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("user_wallets")
+          .select("plan")
+          .eq("user_id", user.id)
+          .single();
+        if (error) {
+          setPlanError(true);
+          return;
+        }
+        userPlan = data?.plan || "Free";
+      }
+
       setPlan(userPlan);
 
       const maxDays = getPlanShareExpireDays(userPlan);
@@ -114,7 +147,8 @@ export function ShareModal({
     const fetchShares = async () => {
       setLoadingShares(true);
       try {
-        const res = await fetch(`/api/international/share?buildId=${buildId}`);
+        const apiPath = IS_DOMESTIC_VERSION ? "/api/domestic/share" : "/api/international/share";
+        const res = await fetch(`${apiPath}?buildId=${buildId}`, { credentials: "include" });
         if (res.ok) {
           const data = await res.json();
           setShares(data.shares || []);
@@ -141,9 +175,11 @@ export function ShareModal({
     setNewShareExpiresAt(null);
 
     try {
-      const res = await fetch("/api/international/share", {
+      const apiPath = IS_DOMESTIC_VERSION ? "/api/domestic/share" : "/api/international/share";
+      const res = await fetch(apiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           buildId,
           expireDays,
@@ -162,7 +198,7 @@ export function ShareModal({
       toast.success(isZh ? "分享链接已创建" : "Share link created");
 
       // 刷新分享列表
-      const listRes = await fetch(`/api/international/share?buildId=${buildId}`);
+      const listRes = await fetch(`${apiPath}?buildId=${buildId}`, { credentials: "include" });
       if (listRes.ok) {
         const listData = await listRes.json();
         setShares(listData.shares || []);
@@ -190,8 +226,10 @@ export function ShareModal({
   // 删除分享
   const handleDelete = async (shareId: string) => {
     try {
-      const res = await fetch(`/api/international/share?id=${shareId}`, {
+      const apiPath = IS_DOMESTIC_VERSION ? "/api/domestic/share" : "/api/international/share";
+      const res = await fetch(`${apiPath}?id=${shareId}`, {
         method: "DELETE",
+        credentials: "include",
       });
 
       if (!res.ok) {
@@ -208,7 +246,65 @@ export function ShareModal({
 
   // 计算实际可用的最大天数
   const actualMaxDays = Math.min(maxShareDays, buildRemainingDays);
-  const isTeam = plan.toLowerCase() === "team";
+  const isTeam = (plan || "").toLowerCase() === "team";
+
+  // 加载中状态
+  if (plan === null && !planError) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5" />
+              {isZh ? "分享构建" : "Share Build"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center py-8 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-sm">
+              {isZh ? "正在加载..." : "Loading..."}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // API 请求失败状态（网络超时等）
+  if (planError) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5" />
+              {isZh ? "分享构建" : "Share Build"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center py-8 text-center">
+            <AlertCircle className="h-12 w-12 text-amber-500 mb-4" />
+            <h3 className="font-semibold text-lg mb-2">
+              {isZh ? "网络连接失败" : "Connection Failed"}
+            </h3>
+            <p className="text-muted-foreground text-sm mb-6">
+              {isZh
+                ? "无法获取套餐信息，请检查网络后重试"
+                : "Failed to load plan info. Please check your network and try again."}
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPlanError(false);
+                setPlan(null);
+              }}
+            >
+              {isZh ? "重试" : "Retry"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   // Free 用户提示升级
   if (maxShareDays === 0) {

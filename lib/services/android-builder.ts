@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { BuildProgressHelper } from "@/lib/build-progress";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
 import * as fs from "fs";
@@ -92,11 +93,12 @@ export async function processAndroidBuild(
   config: BuildConfig
 ): Promise<void> {
   const supabase = createServiceClient();
+  const progressHelper = new BuildProgressHelper("android");
   let tempDir: string | null = null;
 
   try {
     // Update status to processing
-    await updateBuildStatus(supabase, buildId, "processing", 5);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
     // Step 1: Download android.zip from Storage
     console.log(`[Build ${buildId}] Downloading android.zip...`);
@@ -108,7 +110,7 @@ export async function processAndroidBuild(
       throw new Error(`Failed to download android.zip: ${downloadError?.message || "No data"}`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 15);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("downloading"));
 
     // Step 2: Extract zip to temp directory
     console.log(`[Build ${buildId}] Extracting zip...`);
@@ -119,7 +121,7 @@ export async function processAndroidBuild(
     const zip = new AdmZip(zipBuffer);
     zip.extractAllTo(tempDir, true);
 
-    await updateBuildStatus(supabase, buildId, "processing", 30);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("extracting"));
 
     // Step 2.5: Find the actual project root (folder containing 'app' directory)
     const projectRoot = findProjectRoot(tempDir);
@@ -152,7 +154,7 @@ export async function processAndroidBuild(
       console.warn(`[Build ${buildId}] AndroidManifest.xml not found, skipping version update`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 45);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("configuring"));
 
     // Step 4: Update privacy policy (Markdown 格式)
     console.log(`[Build ${buildId}] Updating privacy policy...`);
@@ -163,7 +165,7 @@ export async function processAndroidBuild(
       console.log(`[Build ${buildId}] No privacy policy provided, keeping existing file`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 55);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_privacy"));
 
     // Step 5: Process icons if provided
     if (config.iconPath) {
@@ -191,7 +193,7 @@ export async function processAndroidBuild(
       console.log(`[Build ${buildId}] No icon provided, skipping icon processing`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 75);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
 
     // Step 6: Repack zip (pack from tempDir to preserve original structure)
     console.log(`[Build ${buildId}] Repacking zip...`);
@@ -199,7 +201,7 @@ export async function processAndroidBuild(
     addFolderToZip(newZip, tempDir, "");
     const outputBuffer = newZip.toBuffer();
 
-    await updateBuildStatus(supabase, buildId, "processing", 85);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("packaging"));
 
     // Step 7: Upload result
     console.log(`[Build ${buildId}] Uploading result...`);
@@ -215,14 +217,14 @@ export async function processAndroidBuild(
       throw new Error(`Failed to upload result: ${uploadError.message}`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 95);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
     // Step 8: Update build record with output path and file size
     const { error: updateError } = await supabase
       .from("builds")
       .update({
         status: "completed",
-        progress: 100,
+        progress: progressHelper.getProgressForStage("completed"),
         output_file_path: outputPath,
         file_size: outputBuffer.length,
       })

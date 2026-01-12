@@ -42,13 +42,18 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // 检查国内版 CloudBase token
+  const domesticToken = request.cookies.get("auth-token")?.value;
+  const hasDomesticAuth = !!domesticToken;
+
   // Protected routes - 需要登录的路由
   const protectedPaths = ["/generate", "/builds"];
   const isProtectedPath = protectedPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   );
 
-  if (isProtectedPath && !user) {
+  // 只有在既没有 Supabase user 也没有国内版 token 时才重定向
+  if (isProtectedPath && !user && !hasDomesticAuth) {
     // Redirect to login page with next parameter
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
@@ -62,7 +67,7 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith(path)
   );
 
-  if (isAuthPath && user) {
+  if (isAuthPath && (user || hasDomesticAuth)) {
     const next = request.nextUrl.searchParams.get("next") || "/";
     const url = request.nextUrl.clone();
     url.pathname = next;

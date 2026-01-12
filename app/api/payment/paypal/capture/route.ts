@@ -200,6 +200,23 @@ export async function POST(request: NextRequest) {
 
     // 幂等性检查
     const existingPayment = await checkPaymentExists("paypal", orderId);
+    if (existingPayment) {
+      // 已处理过，返回当前订阅状态
+      const { data: subscription } = await supabaseAdmin
+        .from("subscriptions")
+        .select("user_id, plan, period, expires_at")
+        .eq("provider_order_id", orderId)
+        .maybeSingle();
+
+      console.log(`[PayPal][SUBSCRIPTION] already processed, skipping: ${orderId}`);
+      return NextResponse.json({
+        success: true,
+        status: "already_processed",
+        plan: subscription?.plan || plan,
+        period: subscription?.period || period,
+        expiresAt: subscription?.expires_at,
+      });
+    }
 
     // 获取用户当前钱包
     const { data: walletRow } = await supabaseAdmin
@@ -233,19 +250,17 @@ export async function POST(request: NextRequest) {
     }
 
     // 插入支付记录
-    if (!existingPayment) {
-      await insertPaymentRecord({
-        userId,
-        provider: "paypal",
-        providerOrderId: orderId,
-        amount: amountValue,
-        currency,
-        status: status || "COMPLETED",
-        type: "SUBSCRIPTION",
-        plan,
-        period,
-      });
-    }
+    await insertPaymentRecord({
+      userId,
+      provider: "paypal",
+      providerOrderId: orderId,
+      amount: amountValue,
+      currency,
+      status: status || "COMPLETED",
+      type: "SUBSCRIPTION",
+      plan,
+      period,
+    });
 
     // 降级处理：延迟生效
     if (isDowngrade) {

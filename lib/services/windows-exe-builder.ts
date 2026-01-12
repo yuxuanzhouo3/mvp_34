@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { BuildProgressHelper } from "@/lib/build-progress";
 import sharp from "sharp";
 import * as fs from "fs";
 import * as path from "path";
@@ -19,10 +20,11 @@ export async function processWindowsExeBuild(
   config: WindowsBuildConfig
 ): Promise<void> {
   const supabase = createServiceClient();
+  const progressHelper = new BuildProgressHelper("windows");
   let tempDir: string | null = null;
 
   try {
-    await updateBuildStatus(supabase, buildId, "processing", 5);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
     // Step 1: Download pre-built Tauri EXE
     console.log("[Windows Build] Downloading template...");
@@ -34,7 +36,7 @@ export async function processWindowsExeBuild(
       throw new Error(`Failed to download Windows template: ${downloadError?.message || "No data"}`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 30);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("downloading"));
 
     // Step 2: Create temp directory
     tempDir = path.join(os.tmpdir(), `windows-build-${buildId}`);
@@ -46,13 +48,13 @@ export async function processWindowsExeBuild(
     const exeBuffer = Buffer.from(await exeData.arrayBuffer());
     fs.writeFileSync(exePath, exeBuffer);
 
-    await updateBuildStatus(supabase, buildId, "processing", 45);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("configuring"));
 
     // Step 4: Modify EXE resources (icon and metadata)
     console.log("[Windows Build] Modifying resources...");
     await modifyExeResources(supabase, exePath, config);
 
-    await updateBuildStatus(supabase, buildId, "processing", 65);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
 
     // Step 5: Write app-config.json
     console.log("[Windows Build] Writing config...");
@@ -60,7 +62,7 @@ export async function processWindowsExeBuild(
     const appConfig = { url: config.url, title: config.appName };
     fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
 
-    await updateBuildStatus(supabase, buildId, "processing", 75);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("packaging"));
 
     // Step 6: Package as ZIP (EXE + config)
     console.log("[Windows Build] Creating ZIP archive...");
@@ -70,7 +72,7 @@ export async function processWindowsExeBuild(
     zip.addLocalFile(configPath);
     const outputBuffer = zip.toBuffer();
 
-    await updateBuildStatus(supabase, buildId, "processing", 85);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
     // Step 7: Upload result
     console.log("[Windows Build] Uploading result...");
@@ -86,14 +88,14 @@ export async function processWindowsExeBuild(
       throw new Error(`Failed to upload result: ${uploadError.message}`);
     }
 
-    await updateBuildStatus(supabase, buildId, "processing", 95);
+    await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("finalizing"));
 
     // Step 8: Update build record
     const { error: updateError } = await supabase
       .from("builds")
       .update({
         status: "completed",
-        progress: 100,
+        progress: progressHelper.getProgressForStage("completed"),
         output_file_path: outputPath,
         file_size: outputBuffer.length,
       })

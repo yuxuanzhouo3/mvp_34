@@ -1,10 +1,12 @@
 /**
- * 用户分析服务 - 国际版 (Supabase)
+ * 用户分析服务 - 统一支持国内版 (CloudBase) 和国际版 (Supabase)
  * 用于记录用户行为、登录、注册、支付等事件
  *
  * 优化：使用内存批量聚合，减少数据库写入次数
  */
 
+import { IS_DOMESTIC_VERSION } from "@/config";
+import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 // =============================================================================
@@ -27,7 +29,7 @@ export type AnalyticsEventType =
 export interface AnalyticsEventParams {
   userId: string;
   eventType: AnalyticsEventType;
-  source?: "global";
+  source?: "global" | "cn";
   deviceType?: string;       // 'desktop', 'mobile', 'tablet'
   os?: string;               // 'Windows', 'macOS', 'iOS', 'Android', 'Linux'
   browser?: string;          // 'Chrome', 'Safari', 'Firefox', 'Edge', 'App'
@@ -77,7 +79,22 @@ async function flushEvents(): Promise<void> {
   if (eventBuffer.length === 0) return;
 
   const batch = eventBuffer.splice(0, eventBuffer.length);
-  await flushSupabaseBatch(batch);
+
+  // 按 source 分组
+  const globalEvents = batch.filter(e => e.source === "global");
+  const cnEvents = batch.filter(e => e.source === "cn");
+
+  // 并行写入
+  const promises: Promise<void>[] = [];
+
+  if (globalEvents.length > 0) {
+    promises.push(flushSupabaseBatch(globalEvents));
+  }
+  if (cnEvents.length > 0) {
+    promises.push(flushCloudBaseBatch(cnEvents));
+  }
+
+  await Promise.allSettled(promises);
 }
 
 /**
@@ -112,6 +129,43 @@ async function flushSupabaseBatch(events: Array<AnalyticsEventParams & { created
     }
   } catch (error) {
     console.error("[analytics] Supabase batch flush error:", error);
+  }
+}
+
+/**
+ * 批量写入 CloudBase
+ */
+async function flushCloudBaseBatch(events: Array<AnalyticsEventParams & { created_at: string }>): Promise<void> {
+  if (events.length === 0) return;
+
+  try {
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+
+    // CloudBase 使用循环插入（不支持原生批量）
+    for (const params of events) {
+      await db.collection("user_analytics").add({
+        user_id: params.userId,
+        source: params.source || "cn",
+        event_type: params.eventType,
+        device_type: params.deviceType || null,
+        os: params.os || null,
+        browser: params.browser || null,
+        app_version: params.appVersion || null,
+        screen_resolution: params.screenResolution || null,
+        language: params.language || null,
+        country: params.country || null,
+        region: params.region || null,
+        city: params.city || null,
+        event_data: params.eventData || {},
+        session_id: params.sessionId || null,
+        referrer: params.referrer || null,
+        created_at: params.created_at,
+      });
+    }
+  } catch (error) {
+    console.error("[analytics] CloudBase batch flush error:", error);
   }
 }
 
@@ -171,13 +225,17 @@ export function generateSessionId(): string {
 
 /**
  * 记录用户分析事件
+ * 自动根据版本选择 CloudBase 或 Supabase
  *
  * 优化策略：
  * - 重要事件（注册、支付、订阅）立即写入
  * - 普通事件（页面访问、功能使用等）批量聚合后写入
  */
 export async function trackAnalyticsEvent(params: AnalyticsEventParams): Promise<TrackResult> {
-  params.source = "global";
+  // 根据版本自动设置 source
+  if (!params.source) {
+    params.source = IS_DOMESTIC_VERSION ? "cn" : "global";
+  }
 
   const eventWithTimestamp = {
     ...params,
@@ -186,7 +244,11 @@ export async function trackAnalyticsEvent(params: AnalyticsEventParams): Promise
 
   // 重要事件立即写入
   if (IMMEDIATE_EVENT_TYPES.includes(params.eventType)) {
-    return trackSupabaseEventDirect(eventWithTimestamp);
+    if (IS_DOMESTIC_VERSION) {
+      return trackCloudBaseEventDirect(eventWithTimestamp);
+    } else {
+      return trackSupabaseEventDirect(eventWithTimestamp);
+    }
   }
 
   // 普通事件加入缓冲区
@@ -241,6 +303,41 @@ async function trackSupabaseEventDirect(params: AnalyticsEventParams & { created
 }
 
 /**
+ * 直接写入 CloudBase（用于重要事件）
+ */
+async function trackCloudBaseEventDirect(params: AnalyticsEventParams & { created_at: string }): Promise<TrackResult> {
+  try {
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+
+    await db.collection("user_analytics").add({
+      user_id: params.userId,
+      source: params.source || "cn",
+      event_type: params.eventType,
+      device_type: params.deviceType || null,
+      os: params.os || null,
+      browser: params.browser || null,
+      app_version: params.appVersion || null,
+      screen_resolution: params.screenResolution || null,
+      language: params.language || null,
+      country: params.country || null,
+      region: params.region || null,
+      city: params.city || null,
+      event_data: params.eventData || {},
+      session_id: params.sessionId || null,
+      referrer: params.referrer || null,
+      created_at: params.created_at,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("[analytics] CloudBase track error:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Track event failed" };
+  }
+}
+
+/**
  * 记录用户登录事件
  */
 export async function trackLoginEvent(
@@ -290,6 +387,32 @@ export async function trackRegisterEvent(
     sessionId: generateSessionId(),
     eventData: {
       registerMethod: options?.registerMethod || "email",
+    },
+  });
+}
+
+/**
+ * 记录微信登录事件
+ */
+export async function trackWechatLoginEvent(
+  userId: string,
+  options?: {
+    userAgent?: string;
+    language?: string;
+    isNewUser?: boolean;
+  }
+): Promise<TrackResult> {
+  const deviceInfo = parseUserAgent(options?.userAgent);
+
+  return trackAnalyticsEvent({
+    userId,
+    eventType: options?.isNewUser ? "register" : "session_start",
+    ...deviceInfo,
+    language: options?.language,
+    sessionId: generateSessionId(),
+    eventData: {
+      loginMethod: "wechat",
+      isNewUser: options?.isNewUser || false,
     },
   });
 }

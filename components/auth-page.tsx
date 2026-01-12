@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
@@ -11,6 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail, Lock, User, Eye, EyeOff, Layers } from "lucide-react";
 import { toast } from "sonner";
+import {
+  isMiniProgram,
+  parseWxMpLoginCallback,
+  clearWxMpLoginParams,
+  exchangeCodeForToken,
+} from "@/lib/wechat-mp";
 
 type Mode = "login" | "signup";
 
@@ -42,18 +48,27 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
+// 微信图标组件
+function WechatIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M5.5 4C2.46 4 0 6.24 0 8.99c0 2 1.33 3.74 3.3 4.62-.12.45-.76 2.8-.79 3.02 0 0-.02.17.09.24.11.07.24.02.24.02.32-.05 3.04-1.99 3.47-2.31.4.06.8.09 1.19.09 3.04 0 5.5-2.23 5.5-4.99C13 6.24 10.54 4 7.5 4h-2Zm12 4c-2.49 0-4.5 1.8-4.5 4.02 0 1.34.7 2.53 1.78 3.31-.09.36-.53 2.04-.55 2.2 0 0-.02.13.07.19.09.06.2.02.2.02.26-.04 2.45-1.6 2.8-1.85.32.05.65.07.97.07 2.49 0 4.5-1.8 4.5-4.02C22 9.8 19.99 8 17.5 8Z" />
+    </svg>
+  );
+}
+
 export function AuthPage({ mode }: AuthPageProps) {
-  const { currentLanguage } = useLanguage();
+  const { currentLanguage, isDomesticVersion } = useLanguage();
   const isZhText = currentLanguage === "zh";
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || searchParams.get("redirect") || "/";
 
-  const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isInMiniProgram, setIsInMiniProgram] = useState(false);
 
   const [form, setForm] = useState({
     email: "",
@@ -61,6 +76,87 @@ export function AuthPage({ mode }: AuthPageProps) {
     confirmPassword: "",
     name: "",
   });
+
+  // 检测小程序环境
+  useEffect(() => {
+    if (isDomesticVersion) {
+      const inMp = isMiniProgram();
+      setIsInMiniProgram(inMp);
+      console.log("[AuthPage] Mini program environment:", inMp);
+    }
+  }, [isDomesticVersion]);
+
+  // 处理小程序登录回调
+  const handleMpLoginCallback = useCallback(async () => {
+    if (!isDomesticVersion) return;
+
+    const callback = parseWxMpLoginCallback();
+    if (!callback) return;
+
+    console.log("[AuthPage] Processing mini program login callback:", callback);
+    setIsLoading(true);
+
+    try {
+      // 如果直接收到 token，直接使用
+      if (callback.token && callback.openid) {
+        console.log("[AuthPage] Direct token received from mini program");
+        const res = await fetch("/api/domestic/auth/mp-callback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: callback.token,
+            openid: callback.openid,
+            expiresIn: callback.expiresIn,
+            nickName: callback.nickName,
+            avatarUrl: callback.avatarUrl,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || (isZhText ? "登录失败" : "Login failed"));
+        }
+
+        clearWxMpLoginParams();
+        router.push(next);
+        return;
+      }
+
+      // 如果收到 code，需要换取 token
+      if (callback.code) {
+        console.log("[AuthPage] Exchanging code for token");
+        const result = await exchangeCodeForToken(
+          callback.code,
+          callback.nickName,
+          callback.avatarUrl
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || (isZhText ? "登录失败" : "Login failed"));
+        }
+
+        clearWxMpLoginParams();
+        router.push(next);
+        return;
+      }
+    } catch (err) {
+      console.error("[AuthPage] Mini program login callback error:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : isZhText
+            ? "微信登录失败，请重试"
+            : "WeChat login failed. Please try again."
+      );
+      clearWxMpLoginParams();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isDomesticVersion, isZhText, next, router]);
+
+  useEffect(() => {
+    handleMpLoginCallback();
+  }, [handleMpLoginCallback]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -82,59 +178,86 @@ export function AuthPage({ mode }: AuthPageProps) {
           throw new Error(isZhText ? "密码至少需要6个字符" : "Password must be at least 6 characters");
         }
 
-        // 构建确认链接的重定向URL
-        const confirmRedirectTo = new URL("/auth/confirm", window.location.origin);
-        confirmRedirectTo.searchParams.set("next", next || "/");
+        if (isDomesticVersion) {
+          // 国内版：使用 CloudBase 注册
+          const res = await fetch("/api/domestic/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: form.email, password: form.password, name: form.name }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || (isZhText ? "注册失败" : "Sign up failed"));
+          }
+          toast.success(isZhText ? "注册成功！" : "Registration successful!");
+          router.push("/auth/login");
+        } else {
+          // 国际版：使用 Supabase 注册
+          const confirmRedirectTo = new URL("/auth/confirm", window.location.origin);
+          confirmRedirectTo.searchParams.set("next", next || "/");
 
-        console.log("emailRedirectTo:", confirmRedirectTo.toString());
+          const { data, error } = await supabase.auth.signUp({
+            email: form.email,
+            password: form.password,
+            options: {
+              data: { full_name: form.name },
+              emailRedirectTo: confirmRedirectTo.toString(),
+            },
+          });
 
-        const { data, error } = await supabase.auth.signUp({
-          email: form.email,
-          password: form.password,
-          options: {
-            data: { full_name: form.name },
-            emailRedirectTo: confirmRedirectTo.toString(),
-          },
-        });
+          if (error) {
+            throw error;
+          }
 
-        if (error) {
-          throw error;
+          // 检查邮箱是否已被注册
+          if (data.user && (!data.user.identities || data.user.identities.length === 0)) {
+            throw new Error(isZhText ? "该邮箱已被注册，请直接登录" : "This email is already registered. Please sign in.");
+          }
+
+          // 注册成功后立即登出（防止未验证邮箱访问）
+          await supabase.auth.signOut();
+
+          toast.success(
+            isZhText ? "注册成功！请查看邮箱完成验证" : "Registration successful! Please check your email to verify."
+          );
+
+          router.push("/auth/sign-up-success");
         }
-
-        // 检查邮箱是否已被注册
-        if (data.user && (!data.user.identities || data.user.identities.length === 0)) {
-          throw new Error(isZhText ? "该邮箱已被注册，请直接登录" : "This email is already registered. Please sign in.");
-        }
-
-        // 注册成功后立即登出（防止未验证邮箱访问）
-        await supabase.auth.signOut();
-
-        toast.success(
-          isZhText ? "注册成功！请查看邮箱完成验证" : "Registration successful! Please check your email to verify."
-        );
-
-        router.push("/auth/sign-up-success");
       } else {
         // 登录流程
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: form.email,
-          password: form.password,
-        });
+        if (isDomesticVersion) {
+          // 国内版：使用 CloudBase 登录
+          const res = await fetch("/api/domestic/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: form.email, password: form.password }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || (isZhText ? "登录失败" : "Login failed"));
+          }
+          toast.success(isZhText ? "登录成功" : "Login successful");
+          window.location.href = next;
+        } else {
+          // 国际版：使用 Supabase 登录
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: form.email,
+            password: form.password,
+          });
 
-        if (error) {
-          throw error;
+          if (error) {
+            throw error;
+          }
+
+          // 检查邮箱是否已验证
+          if (!data.user?.email_confirmed_at) {
+            await supabase.auth.signOut();
+            throw new Error(isZhText ? "请先验证您的邮箱" : "Please verify your email first");
+          }
+
+          toast.success(isZhText ? "登录成功" : "Login successful");
+          window.location.href = next;
         }
-
-        // 检查邮箱是否已验证
-        if (!data.user?.email_confirmed_at) {
-          await supabase.auth.signOut();
-          throw new Error(isZhText ? "请先验证您的邮箱" : "Please verify your email first");
-        }
-
-        toast.success(isZhText ? "登录成功" : "Login successful");
-
-        // 使用硬导航确保 session cookie 正确同步
-        window.location.href = next;
       }
     } catch (error) {
       console.error("Auth error:", error);
@@ -144,19 +267,70 @@ export function AuthPage({ mode }: AuthPageProps) {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    startTransition(async () => {
-      try {
-        await signInWithGoogle(next);
-      } catch (error) {
-        console.error("Google sign in error:", error);
-        toast.error(isZhText ? "Google登录失败" : "Google sign in failed");
+  const handleGoogleSignIn = async () => {
+    if (isDomesticVersion) return;
+    setIsLoading(true);
+    try {
+      await signInWithGoogle(next);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) {
+        return;
       }
-    });
+      console.error("Google sign in error:", error);
+      toast.error(isZhText ? "Google登录失败" : "Google sign in failed");
+      setIsLoading(false);
+    }
+  };
+
+  const handleWechatSignIn = async () => {
+    if (!isDomesticVersion) return;
+    setIsLoading(true);
+
+    try {
+      // 检测是否在小程序环境中
+      const ua = navigator.userAgent.toLowerCase();
+      const inMiniProgram = ua.includes("miniprogram") ||
+        (window as any).__wxjs_environment === "miniprogram";
+
+      if (inMiniProgram) {
+        // 小程序环境：使用原生登录
+        const wx = (window as any).wx;
+        const mp = wx?.miniProgram;
+
+        if (mp && typeof mp.navigateTo === "function") {
+          console.log("[AuthPage] In MiniProgram environment, using native login");
+          const returnUrl = window.location.href;
+          const loginUrl = `/pages/webshell/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+          mp.navigateTo({ url: loginUrl });
+          return;
+        }
+      }
+
+      // PC/手机浏览器环境：使用扫码登录
+      console.log("[AuthPage] Using QR code login");
+      const qs = next ? `?next=${encodeURIComponent(next)}` : "";
+      const res = await fetch(`/api/domestic/auth/wechat/qrcode${qs}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.qrcodeUrl) {
+        throw new Error(data.error || (isZhText ? "微信登录失败" : "WeChat login failed"));
+      }
+
+      window.location.href = data.qrcodeUrl;
+    } catch (err) {
+      console.error("[AuthPage] WeChat login error:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : isZhText
+            ? "微信登录失败，请稍后再试"
+            : "WeChat login failed. Please try again."
+      );
+      setIsLoading(false);
+    }
   };
 
   const isLoginMode = mode === "login";
-  const isSubmitting = isLoading || isPending;
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
@@ -193,23 +367,41 @@ export function AuthPage({ mode }: AuthPageProps) {
               : isZhText ? "注册以开始使用" : "Sign up to get started"}
           </p>
 
-          {/* Google登录按钮 - 仅在登录模式显示 */}
+          {/* 第三方登录按钮 - 仅在登录模式显示 */}
           {isLoginMode && (
             <>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full h-11 rounded-xl gap-3 mb-6"
-                onClick={handleGoogleSignIn}
-                disabled={isSubmitting}
-              >
-                {isPending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <GoogleIcon className="h-5 w-5" />
-                )}
-                {isZhText ? "使用 Google 登录" : "Sign in with Google"}
-              </Button>
+              {isDomesticVersion ? (
+                // 国内版：微信登录
+                <Button
+                  type="button"
+                  className="w-full h-11 rounded-xl gap-3 mb-6 bg-[#00c060] hover:bg-[#00a654] text-white"
+                  onClick={handleWechatSignIn}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <WechatIcon className="h-5 w-5" />
+                  )}
+                  {isZhText ? "使用微信登录" : "Sign in with WeChat"}
+                </Button>
+              ) : (
+                // 国际版：Google登录
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-11 rounded-xl gap-3 mb-6"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <GoogleIcon className="h-5 w-5" />
+                  )}
+                  {isZhText ? "使用 Google 登录" : "Sign in with Google"}
+                </Button>
+              )}
 
               {/* 分割线 */}
               <div className="relative mb-6">
@@ -328,7 +520,7 @@ export function AuthPage({ mode }: AuthPageProps) {
             )}
 
             {/* 登录时显示忘记密码链接 */}
-            {isLoginMode && (
+            {isLoginMode && !isDomesticVersion && (
               <div className="flex justify-end">
                 <Link
                   href="/auth/forgot-password"
@@ -343,7 +535,7 @@ export function AuthPage({ mode }: AuthPageProps) {
             <Button
               type="submit"
               className="w-full h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium"
-              disabled={isSubmitting}
+              disabled={isLoading}
             >
               {isLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -354,6 +546,53 @@ export function AuthPage({ mode }: AuthPageProps) {
               )}
             </Button>
           </form>
+
+          {/* 注册页面也显示第三方登录 */}
+          {!isLoginMode && (
+            <>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border"></div>
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">
+                    {isZhText ? "或" : "or"}
+                  </span>
+                </div>
+              </div>
+
+              {isDomesticVersion ? (
+                <Button
+                  type="button"
+                  className="w-full h-11 rounded-xl gap-3 bg-[#00c060] hover:bg-[#00a654] text-white"
+                  onClick={handleWechatSignIn}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <WechatIcon className="h-5 w-5" />
+                  )}
+                  {isZhText ? "使用微信登录" : "Sign up with WeChat"}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-11 rounded-xl gap-3"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <GoogleIcon className="h-5 w-5" />
+                  )}
+                  {isZhText ? "使用 Google 登录" : "Sign up with Google"}
+                </Button>
+              )}
+            </>
+          )}
 
           {/* 切换登录/注册 */}
           <p className="text-center text-sm text-muted-foreground mt-6">

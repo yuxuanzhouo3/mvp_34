@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { BuildProgressHelper } from "@/lib/build-progress";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
 import * as fs from "fs";
@@ -60,8 +61,10 @@ async function buildChromeExtension(
   buildId: string,
   config: BuildConfig
 ): Promise<string> {
+  const progressHelper = new BuildProgressHelper("chrome");
+
   // Update status to processing
-  await updateBuildStatus(supabase, buildId, "processing", 5);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
   // Step 1: Download googleplugin.zip from Storage
   console.log(`[Build ${buildId}] Downloading googleplugin.zip...`);
@@ -73,7 +76,7 @@ async function buildChromeExtension(
     throw new Error(`Failed to download googleplugin.zip: ${downloadError?.message || "No data"}`);
   }
 
-  await updateBuildStatus(supabase, buildId, "processing", 15);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("downloading"));
 
   // Step 2: Extract zip to temp directory
   console.log(`[Build ${buildId}] Extracting zip...`);
@@ -84,7 +87,7 @@ async function buildChromeExtension(
   const zip = new AdmZip(zipBuffer);
   zip.extractAllTo(tempDir, true);
 
-  await updateBuildStatus(supabase, buildId, "processing", 30);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("extracting"));
 
   // Step 2.5: Find the actual project root (folder containing manifest.json)
   const projectRoot = findProjectRoot(tempDir);
@@ -101,14 +104,14 @@ async function buildChromeExtension(
   }
 
   await updateManifest(manifestPath, config);
-  await updateBuildStatus(supabase, buildId, "processing", 50);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("configuring"));
 
   // Step 4: Process icons if provided
   if (config.iconPath) {
     console.log(`[Build ${buildId}] Processing icons...`);
     await processIcons(supabase, projectRoot, config.iconPath);
   }
-  await updateBuildStatus(supabase, buildId, "processing", 70);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
 
   // Step 5: Create new zip (包裹在 googleplugin 文件夹内)
   console.log(`[Build ${buildId}] Creating output zip...`);
@@ -116,7 +119,7 @@ async function buildChromeExtension(
   addDirectoryToZip(outputZip, projectRoot, "googleplugin");
 
   const outputBuffer = outputZip.toBuffer();
-  await updateBuildStatus(supabase, buildId, "processing", 85);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("packaging"));
 
   // Step 6: Upload result
   console.log(`[Build ${buildId}] Uploading result...`);
@@ -132,14 +135,14 @@ async function buildChromeExtension(
     throw new Error(`Failed to upload result: ${uploadError.message}`);
   }
 
-  await updateBuildStatus(supabase, buildId, "processing", 95);
+  await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
   // Step 7: Update build record with success
   const { error: updateError } = await supabase
     .from("builds")
     .update({
       status: "completed",
-      progress: 100,
+      progress: progressHelper.getProgressForStage("completed"),
       output_file_path: outputPath,
       file_size: outputBuffer.length,
     })

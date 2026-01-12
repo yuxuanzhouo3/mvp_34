@@ -10,6 +10,7 @@ import { Check, Layers, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { getPlanSupportBatchBuild } from "@/utils/plan-limits";
+import { IS_DOMESTIC_VERSION } from "@/config";
 
 interface PlatformSelectorProps {
   selectedPlatforms: string[];
@@ -24,6 +25,24 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   useEffect(() => {
     if (!user) return;
     const fetchPlan = async () => {
+      // 国内版：从国内 API 获取
+      if (IS_DOMESTIC_VERSION) {
+        try {
+          const res = await fetch("/api/domestic/auth/me", { credentials: "include" });
+          if (res.ok) {
+            const data = await res.json();
+            // 兼容多种数据结构
+            const plan = data.user?.metadata?.plan || data.user?.plan || "free";
+            console.log("[PlatformSelector] User plan:", plan, "Full user data:", data.user);
+            setBatchBuildEnabled(getPlanSupportBatchBuild(plan));
+          } else {
+            setBatchBuildEnabled(false);
+          }
+        } catch { setBatchBuildEnabled(false); }
+        return;
+      }
+
+      // 国际版：使用 Supabase
       const supabase = createClient();
       const { data } = await supabase.from("user_wallets").select("plan").eq("user_id", user.id).single();
       const plan = data?.plan || "Free";
@@ -147,7 +166,7 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
                     {isDisabled ? (
                       <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full bg-amber-500/10 text-amber-500 text-[10px] sm:text-xs">
                         <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-                        <span>{currentLanguage === "zh" ? "���发中" : "Soon"}</span>
+                        <span>{currentLanguage === "zh" ? "开发中" : "Soon"}</span>
                       </div>
                     ) : (
                       <div className={`absolute top-2 right-2 sm:top-3 sm:right-3 w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center transition-all duration-200 ${isSelected ? "bg-gradient-to-br from-cyan-500 to-blue-500 shadow-md shadow-cyan-500/30" : "border-2 border-border/50 group-hover:border-cyan-500/50"}`}>

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
@@ -147,13 +146,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. 立即返回 buildIds，让前端跳转
+    // 7. 获取 buildIds
     const buildIds = builds.map((b) => b.id);
 
-    // 8. 后台异步处理：上传图标 + 启动构建
-    waitUntil(
-      processBuildsInBackground(serviceClient, user.id, url, platforms, builds)
-    );
+    // 8. 同步处理构建（等待模式）
+    await processBuildsSync(serviceClient, user.id, url, platforms, builds);
 
     return NextResponse.json({
       success: true,
@@ -191,20 +188,26 @@ function getPackageName(config: PlatformConfig): string {
   }
 }
 
-// 后台处理构建任务
-async function processBuildsInBackground(
+// 同步处理构建任务（等待模式）
+async function processBuildsSync(
   serviceClient: ReturnType<typeof createServiceClient>,
   userId: string,
   url: string,
   platforms: PlatformConfig[],
   builds: Array<{ id: string; platform: string }>
 ) {
-  // 并行处理所有平台的图标上传和构建启动
-  const tasks = builds.map(async (build, index) => {
-    const config = platforms[index];
+  for (let i = 0; i < builds.length; i++) {
+    const build = builds[i];
+    const config = platforms[i];
     let iconPath: string | null = null;
 
     try {
+      // 更新状态为处理中
+      await serviceClient
+        .from("builds")
+        .update({ status: "processing", updated_at: new Date().toISOString() })
+        .eq("id", build.id);
+
       // 上传图标（如果有）
       if (config.iconBase64 && isIconUploadEnabled()) {
         const iconBuffer = Buffer.from(config.iconBase64, "base64");
@@ -212,7 +215,7 @@ async function processBuildsInBackground(
 
         if (sizeValidation.valid) {
           const fileExt = config.iconType?.split("/")[1] || "png";
-          const safeFileName = `icon_${Date.now()}_${index}.${fileExt}`;
+          const safeFileName = `icon_${Date.now()}_${i}.${fileExt}`;
           const iconFileName = `icons/${userId}/${safeFileName}`;
 
           const { error: uploadError } = await serviceClient.storage
@@ -224,7 +227,6 @@ async function processBuildsInBackground(
 
           if (!uploadError) {
             iconPath = iconFileName;
-            // 更新数据库中的图标路径
             await serviceClient
               .from("builds")
               .update({ icon_path: iconPath })
@@ -245,9 +247,7 @@ async function processBuildsInBackground(
         .update({ status: "failed", error_message: err instanceof Error ? err.message : "Build failed" })
         .eq("id", build.id);
     }
-  });
-
-  await Promise.allSettled(tasks);
+  }
 }
 
 // 启动对应平台的构建

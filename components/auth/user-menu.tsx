@@ -18,6 +18,7 @@ import {
 import { LogOut, Crown, Zap, Calendar, Hammer } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getAllPlansConfig } from "@/utils/plan-limits";
+import { IS_DOMESTIC_VERSION } from "@/config";
 
 // 套餐样式配置
 const PLAN_STYLE = {
@@ -60,6 +61,45 @@ export function UserMenu() {
   // 获取用户钱包数据
   const fetchWallet = async () => {
     if (!user) return;
+
+    // 国内版从 API 获取钱包数据
+    if (IS_DOMESTIC_VERSION) {
+      try {
+        const res = await fetch("/api/domestic/wallet", {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setWallet({
+            plan: data.plan || "Free",
+            plan_exp: data.plan_exp || null,
+            daily_builds_limit: data.daily_builds_limit || 3,
+            daily_builds_used: data.daily_builds_used || 0,
+            file_retention_days: data.file_retention_days || 3,
+          });
+        } else {
+          // API 失败时使用默认值
+          setWallet({
+            plan: "Free",
+            plan_exp: null,
+            daily_builds_limit: 3,
+            daily_builds_used: 0,
+            file_retention_days: 3,
+          });
+        }
+      } catch (error) {
+        console.error("[UserMenu] Failed to fetch wallet:", error);
+        setWallet({
+          plan: "Free",
+          plan_exp: null,
+          daily_builds_limit: 3,
+          daily_builds_used: 0,
+          file_retention_days: 3,
+        });
+      }
+      return;
+    }
+
     const supabase = createClient();
     const { data } = await supabase
       .from("user_wallets")
@@ -96,10 +136,16 @@ export function UserMenu() {
 
   if (!user) return null;
 
-  // 用户信息
-  const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
-  const displayName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0];
-  const avatarLetter = (displayName || user.email || "U").charAt(0).toUpperCase();
+  // 用户信息 - 兼容国内版和国际版
+  const userAny = user as any;
+  const avatarUrl = IS_DOMESTIC_VERSION
+    ? userAny.avatar
+    : userAny.user_metadata?.avatar_url || userAny.user_metadata?.picture;
+  const displayName = IS_DOMESTIC_VERSION
+    ? userAny.name || userAny.email?.split("@")[0]
+    : userAny.user_metadata?.full_name || userAny.user_metadata?.name || userAny.email?.split("@")[0];
+  const userEmail = userAny.email;
+  const avatarLetter = (displayName || userEmail || "U").charAt(0).toUpperCase();
 
   // 套餐信息
   const plan = wallet?.plan || "Free";
@@ -159,7 +205,7 @@ export function UserMenu() {
             {displayName && (
               <p className="text-sm font-medium truncate">{displayName}</p>
             )}
-            <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+            <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
           </div>
         </div>
 

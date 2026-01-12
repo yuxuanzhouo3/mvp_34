@@ -12,6 +12,7 @@ import { Menu, X, Box, Crown, LogIn, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { IS_DOMESTIC_VERSION } from "@/config";
 
 export function Header() {
   const { t, currentLanguage } = useLanguage();
@@ -24,6 +25,23 @@ export function Header() {
 
   const fetchUserPlan = async () => {
     if (!user?.id) { setUserPlan("free"); setUserPlanExp(undefined); return; }
+
+    // 国内版：从国内 API 获取
+    if (IS_DOMESTIC_VERSION) {
+      try {
+        const res = await fetch("/api/domestic/auth/me", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setUserPlan(data.user?.metadata?.plan?.toLowerCase() || "free");
+          setUserPlanExp(data.user?.metadata?.plan_exp || undefined);
+        } else {
+          setUserPlan("free"); setUserPlanExp(undefined);
+        }
+      } catch { setUserPlan("free"); setUserPlanExp(undefined); }
+      return;
+    }
+
+    // 国际版：使用 Supabase
     try {
       const supabase = createClient();
       if (!supabase) { setUserPlan("free"); setUserPlanExp(undefined); return; }
