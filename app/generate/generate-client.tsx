@@ -23,6 +23,11 @@ function GenerateContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // 预加载构建列表页面（优化跳转速度）
+  useEffect(() => {
+    router.prefetch("/builds");
+  }, [router]);
+
   // 是否为游客模式
   const isGuestMode = !user;
 
@@ -437,61 +442,73 @@ function GenerateContent() {
         });
       };
 
+      // 并行转换所有图标（优化响应速度）
+      const [
+        androidIconData,
+        iosIconData,
+        harmonyIconData,
+        chromeIconData,
+        windowsIconData,
+        macosIconData,
+        linuxIconData,
+      ] = await Promise.all([
+        hasAndroid ? fileToBase64(appIcon) : null,
+        hasIOS ? fileToBase64(iosIcon) : null,
+        hasHarmonyOS ? fileToBase64(harmonyIcon) : null,
+        hasChrome ? fileToBase64(chromeExtensionIcon) : null,
+        hasWindows ? fileToBase64(windowsIcon) : null,
+        hasMacos ? fileToBase64(macosIcon) : null,
+        hasLinux ? fileToBase64(linuxIcon) : null,
+      ]);
+
       // 构建各平台配置
       if (hasAndroid) {
-        const iconData = await fileToBase64(appIcon);
         platforms.push({
           platform: "android", appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(androidIconData && { iconBase64: androidIconData.base64, iconType: androidIconData.type }),
         });
       }
       if (hasIOS) {
-        const iconData = await fileToBase64(iosIcon);
         platforms.push({
           platform: "ios", appName, bundleId,
           versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(iosIconData && { iconBase64: iosIconData.base64, iconType: iosIconData.type }),
         });
       }
       if (hasWechat) {
         platforms.push({ platform: "wechat", appName, appId: wechatAppId, version: wechatVersion });
       }
       if (hasHarmonyOS) {
-        const iconData = await fileToBase64(harmonyIcon);
         platforms.push({
           platform: "harmonyos", appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(harmonyIconData && { iconBase64: harmonyIconData.base64, iconType: harmonyIconData.type }),
         });
       }
       if (hasChrome) {
-        const iconData = await fileToBase64(chromeExtensionIcon);
         platforms.push({
           platform: "chrome", appName: chromeExtensionName,
           versionName: chromeExtensionVersion, description: chromeExtensionDescription,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(chromeIconData && { iconBase64: chromeIconData.base64, iconType: chromeIconData.type }),
         });
       }
       if (hasWindows) {
-        const iconData = await fileToBase64(windowsIcon);
         platforms.push({
           platform: "windows", appName: windowsAppName,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(windowsIconData && { iconBase64: windowsIconData.base64, iconType: windowsIconData.type }),
         });
       }
       if (hasMacos) {
-        const iconData = await fileToBase64(macosIcon);
         platforms.push({
           platform: "macos", appName: macosAppName,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(macosIconData && { iconBase64: macosIconData.base64, iconType: macosIconData.type }),
         });
       }
       if (hasLinux) {
-        const iconData = await fileToBase64(linuxIcon);
         platforms.push({
           platform: "linux", appName: linuxAppName,
-          ...(iconData && { iconBase64: iconData.base64, iconType: iconData.type }),
+          ...(linuxIconData && { iconBase64: linuxIconData.base64, iconType: linuxIconData.type }),
         });
       }
 

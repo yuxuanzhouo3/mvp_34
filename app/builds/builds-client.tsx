@@ -242,14 +242,15 @@ export default function BuildsClient() {
     }
   }, [authLoading, user, fetchBuilds]);
 
-  // Polling for processing builds
+  // Polling for processing builds（优化轮询策略）
   useEffect(() => {
     const hasProcessingBuilds = builds.some(
       (b) => b.status === "pending" || b.status === "processing"
     );
 
     if (hasProcessingBuilds) {
-      const interval = setInterval(fetchBuilds, 1000);
+      // 有正在处理的构建时，使用更快的轮询间隔
+      const interval = setInterval(fetchBuilds, 800);
       return () => clearInterval(interval);
     }
   }, [builds, fetchBuilds]);
