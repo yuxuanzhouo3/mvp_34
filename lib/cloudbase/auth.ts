@@ -198,11 +198,11 @@ export class CloudBaseAuthService {
       const sessions = await this.db.collection("sessions").where({ token }).limit(1).get();
       const session = sessions?.data?.[0] as { userId: string; expiresAt: number } | undefined;
       if (!session) {
-        console.warn("[cloudbase] validateToken: session not found for token", token);
+        console.warn("[cloudbase] validateToken: session not found");
         return null;
       }
       if (session.expiresAt < Date.now()) {
-        console.warn("[cloudbase] validateToken: session expired", session);
+        console.warn("[cloudbase] validateToken: session expired");
         return null;
       }
 
