@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processChromeExtensionBuild } from "@/lib/services/chrome-extension-builder";
@@ -141,24 +142,23 @@ export async function POST(request: NextRequest) {
 
     const buildId = build.id;
 
-    // 同步执行构建过程（Chrome 扩展构建较快，不需要后台执行）
-    try {
-      await processChromeExtensionBuild(buildId, {
+    // 后台异步执行构建过程
+    waitUntil(
+      processChromeExtensionBuild(buildId, {
         url,
         appName,
         versionName,
         description,
         iconPath,
-      });
-    } catch (err) {
-      console.error(`[API] Build process error for ${buildId}:`, err);
-      // 构建失败时，processChromeExtensionBuild 内部已经更新了状态
-    }
+      }).catch((err) => {
+        console.error(`[API] Build process error for ${buildId}:`, err);
+      })
+    );
 
     return NextResponse.json({
       success: true,
       buildId: buildId,
-      message: "Build task completed",
+      message: "Build task created successfully",
     });
   } catch (error) {
     console.error("Build API error:", error);

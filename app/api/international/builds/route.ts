@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 // Check if a build is expired
@@ -64,15 +65,20 @@ export async function GET(request: NextRequest) {
           if (build.icon_path) filesToDelete.push(build.icon_path);
 
           if (filesToDelete.length > 0) {
-            serviceClient.storage.from("user-builds").remove(filesToDelete).catch(console.error);
+            // 使用 waitUntil 确保清理任务完成
+            waitUntil(
+              serviceClient.storage.from("user-builds").remove(filesToDelete).catch(console.error)
+            );
           }
 
           // Update build record to mark files as cleaned
-          void serviceClient
-            .from("builds")
-            .update({ output_file_path: null, icon_path: null })
-            .eq("id", build.id)
-            .then(() => {});
+          waitUntil(
+            serviceClient
+              .from("builds")
+              .update({ output_file_path: null, icon_path: null })
+              .eq("id", build.id)
+              .then(() => {})
+          );
 
           return { ...build, output_file_path: null, icon_path: null, icon_url: null };
         }

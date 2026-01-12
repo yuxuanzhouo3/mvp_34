@@ -157,8 +157,8 @@ export async function POST(request: NextRequest) {
       return wechatSuccess();
     }
 
-    // 9. 幂等性检查
-    const webhookEventId = `wechat_${paymentData.transaction_id}`;
+    // 9. 幂等性检查（使用 out_trade_no 而非 transaction_id，确保一致性）
+    const webhookEventId = `wechat_${paymentData.out_trade_no}`;
     const eventProcessed = await isWebhookEventProcessed(webhookEventId);
 
     if (eventProcessed) {
@@ -176,8 +176,8 @@ export async function POST(request: NextRequest) {
       created_at: new Date().toISOString(),
     });
 
-    // 11. 获取支付订单信息
-    const amount = paymentData.amount?.total ? paymentData.amount.total / 100 : 0;
+    // 11. 获取支付订单信息（使用 Math.round 避免浮点数精度问题）
+    const amount = paymentData.amount?.total ? Math.round(paymentData.amount.total) / 100 : 0;
     const userId = paymentData.attach || "";
 
     const paymentRecord = await queryPaymentRecord("wechat", paymentData.out_trade_no);

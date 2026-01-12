@@ -124,8 +124,8 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ [Alipay Webhook] 支付成功，开始处理");
 
-    // 幂等性检查
-    const webhookEventId = `alipay_${params.trade_no}`;
+    // 幂等性检查（使用 out_trade_no 而非 trade_no，确保一致性）
+    const webhookEventId = `alipay_${params.out_trade_no}`;
     const eventProcessed = await isWebhookEventProcessed(webhookEventId);
 
     if (eventProcessed) {
