@@ -44,14 +44,15 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# 设���文件权限
+# 设置文件权限
 RUN chown -R nextjs:nodejs /app
 USER nextjs
 
-# 腾讯云云托管默认使用 80 端口，通过 PORT 环境变量动态配置
-ENV PORT=80
+# 使用 3000 端口（非 root 用户无法监听 80 端口）
+# 腾讯云云托管会自动将外部流量映射到此端口
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
-EXPOSE 80
+EXPOSE 3000
 
 # 启动应用（standalone 模式使用 server.js）
 CMD ["node", "server.js"]
