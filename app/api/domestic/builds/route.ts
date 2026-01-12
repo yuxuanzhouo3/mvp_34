@@ -45,8 +45,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const platform = searchParams.get("platform");
-    const limit = parseInt(searchParams.get("limit") || "50");
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const rawLimit = searchParams.get("limit");
+    const rawOffset = searchParams.get("offset");
+    const limit = rawLimit ? parseInt(rawLimit, 10) : 50;
+    const offset = rawOffset ? parseInt(rawOffset, 10) : 0;
+
+    // 验证数值有效性
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 50;
+    const safeOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
 
     // Build query
     let query = db
@@ -72,8 +78,8 @@ export async function GET(request: NextRequest) {
       .collection("builds")
       .where(whereConditions)
       .orderBy("created_at", "desc")
-      .skip(offset)
-      .limit(limit)
+      .skip(safeOffset)
+      .limit(safeLimit)
       .get();
 
     // Process builds: mark expired ones and map _id to id

@@ -55,6 +55,7 @@ export interface TrackResult {
 
 const FLUSH_INTERVAL = 5000;  // 5秒刷新一次
 const FLUSH_SIZE = 50;        // 达到50条立即刷新
+const MAX_BUFFER_SIZE = 500;  // 缓冲区最大容量，防止内存溢出
 const eventBuffer: Array<AnalyticsEventParams & { created_at: string }> = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -252,6 +253,11 @@ export async function trackAnalyticsEvent(params: AnalyticsEventParams): Promise
   }
 
   // 普通事件加入缓冲区
+  // 缓冲区溢出保护：超过最大容量时丢弃最旧事件
+  if (eventBuffer.length >= MAX_BUFFER_SIZE) {
+    console.warn("[analytics] Buffer overflow, dropping oldest events");
+    eventBuffer.splice(0, Math.floor(MAX_BUFFER_SIZE * 0.2));
+  }
   eventBuffer.push(eventWithTimestamp);
   ensureFlushTimer();
 

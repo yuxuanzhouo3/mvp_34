@@ -85,7 +85,7 @@ export class CloudBaseAuthService {
     try {
       await this.ensureReady();
       const result = await this.db.collection("users").where({ email }).get();
-      let user = result.data[0] as CloudBaseUser | undefined;
+      let user = result?.data?.[0] as CloudBaseUser | undefined;
       if (!user || !user.password) {
         return { user: null, error: new Error("User not found") };
       }
@@ -196,7 +196,7 @@ export class CloudBaseAuthService {
       }
 
       const sessions = await this.db.collection("sessions").where({ token }).limit(1).get();
-      const session = sessions.data[0] as { userId: string; expiresAt: number } | undefined;
+      const session = sessions?.data?.[0] as { userId: string; expiresAt: number } | undefined;
       if (!session) {
         console.warn("[cloudbase] validateToken: session not found for token", token);
         return null;
@@ -207,7 +207,7 @@ export class CloudBaseAuthService {
       }
 
       const users = await this.db.collection("users").doc(session.userId).get();
-      let user = users.data[0] as CloudBaseUser | undefined;
+      let user = users?.data?.[0] as CloudBaseUser | undefined;
       if (!user || !user._id) {
         console.warn("[cloudbase] validateToken: user not found for session", session);
         return null;
@@ -353,7 +353,10 @@ export class CloudBaseAuthService {
     });
 
     const users = await this.db.collection("users").doc(userId).get();
-    const user = users.data[0] as CloudBaseUser;
+    const user = users?.data?.[0] as CloudBaseUser | undefined;
+    if (!user) {
+      throw new Error("User not found when creating session");
+    }
     const authUser = this.mapUser(userId, user);
 
     return {

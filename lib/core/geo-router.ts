@@ -21,6 +21,7 @@ export class GeoRouter {
   private cache = new Map<string, { result: GeoResult; timestamp: number }>();
   private pendingRequests = new Map<string, Promise<GeoResult>>();
   private readonly CACHE_TTL = 1000 * 60 * 60; // 1小时缓存
+  private readonly MAX_CACHE_SIZE = 10000; // 最大缓存条目数
   private readonly REQUEST_TIMEOUT = 5000; // 5秒超时
   private readonly MAX_RETRIES = 2;
   private readonly FAIL_CLOSED =
@@ -48,6 +49,10 @@ export class GeoRouter {
 
     try {
       const result = await requestPromise;
+      // 缓存大小限制：超过阈值时清理过期条目
+      if (this.cache.size >= this.MAX_CACHE_SIZE) {
+        this.pruneExpiredCache();
+      }
       this.cache.set(ip, { result, timestamp: Date.now() });
       return result;
     } catch (error) {
@@ -277,6 +282,25 @@ export class GeoRouter {
    */
   clearCache(): void {
     this.cache.clear();
+  }
+
+  /**
+   * 清理过期缓存条目
+   */
+  private pruneExpiredCache(): void {
+    const now = Date.now();
+    for (const [key, value] of this.cache) {
+      if (now - value.timestamp >= this.CACHE_TTL) {
+        this.cache.delete(key);
+      }
+    }
+    // 如果清理后仍超过限制，删除最旧的条目
+    if (this.cache.size >= this.MAX_CACHE_SIZE) {
+      const entries = Array.from(this.cache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const toDelete = entries.slice(0, Math.floor(this.MAX_CACHE_SIZE * 0.2));
+      toDelete.forEach(([key]) => this.cache.delete(key));
+    }
   }
 }
 
