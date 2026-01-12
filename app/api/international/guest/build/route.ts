@@ -231,14 +231,18 @@ function isValidUrl(url: string): boolean {
 }
 
 /**
- * 验证应用名称（防止注入）
+ * 验证应用名称（防止注入和路径遍历）
  */
 function sanitizeAppName(name: string): string {
+  // 检查路径遍历攻击
+  if (name.includes("..") || name.includes("./")) {
+    return "App";
+  }
   // 移除危险字符，只保留字母、数字、空格、中文
   return name
     .replace(/[<>\"'`\\\/\{\}\[\]\(\)]/g, "")
     .substring(0, 50)
-    .trim();
+    .trim() || "App";
 }
 
 /**

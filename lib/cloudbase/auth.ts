@@ -4,6 +4,7 @@
  */
 
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { CloudBaseConnector } from "./connector";
 import { seedWalletForPlan } from "@/services/wallet";
 
@@ -209,7 +210,7 @@ export class CloudBaseAuthService {
       const users = await this.db.collection("users").doc(session.userId).get();
       let user = users?.data?.[0] as CloudBaseUser | undefined;
       if (!user || !user._id) {
-        console.warn("[cloudbase] validateToken: user not found for session", session);
+        console.warn("[cloudbase] validateToken: user not found for session");
         return null;
       }
 
@@ -338,7 +339,8 @@ export class CloudBaseAuthService {
   }
 
   private generateToken(): string {
-    return Buffer.from(`${Date.now()}-${Math.random().toString(36).slice(2)}`).toString("base64");
+    // 使用加密安全的随机数生成器
+    return crypto.randomBytes(32).toString("base64url");
   }
 
   private async createSession(userId: string): Promise<CloudBaseSession> {
