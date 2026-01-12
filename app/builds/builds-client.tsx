@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Image from "next/image";
 import { ShareModal } from "@/components/share/share-modal";
+import { BuildProgressBarCompact } from "@/components/build/build-progress-bar";
 
 type BuildStatus = "pending" | "processing" | "completed" | "failed";
 type CategoryFilter = "all" | "mobile" | "miniprogram" | "desktop" | "browser" | "expired";
@@ -834,15 +835,12 @@ export default function BuildsClient() {
                       {/* Progress bar for processing status */}
                       {(build.status === "pending" || build.status === "processing") && (
                         <div className="mt-3">
-                          <div className="h-1.5 w-full max-w-xs rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300"
-                              style={{ width: `${build.progress || 0}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {build.progress || 0}% {currentLanguage === "zh" ? "已完成" : "completed"}
-                          </p>
+                          <BuildProgressBarCompact
+                            progress={build.progress || 0}
+                            platform={build.platform}
+                            status={build.status}
+                            language={currentLanguage as "zh" | "en"}
+                          />
                         </div>
                       )}
 

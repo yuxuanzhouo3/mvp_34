@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
@@ -115,8 +116,10 @@ export async function POST(request: NextRequest) {
     const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
     const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
 
-    // 6. 批量创建构建记录
-    const buildRecords = platforms.map((config) => ({
+    // 6. 批量创建构建记录（按顺序设置时间戳，确保显示顺序正确）
+    const now = Date.now();
+    const totalPlatforms = platforms.length;
+    const buildRecords = platforms.map((config, index) => ({
       user_id: user.id,
       app_name: config.appName,
       package_name: getPackageName(config),
@@ -127,8 +130,10 @@ export async function POST(request: NextRequest) {
       platform: config.platform,
       status: "pending",
       progress: 0,
-      icon_path: null, // 图标稍后异步上传
+      icon_path: null,
       expires_at: expiresAt,
+      // 第一个平台时间戳最大，这样按 created_at 降序时显示在最前面
+      created_at: new Date(now + (totalPlatforms - index)).toISOString(),
     }));
 
     const { data: builds, error: insertError } = await serviceClient
@@ -149,8 +154,10 @@ export async function POST(request: NextRequest) {
     // 7. 获取 buildIds
     const buildIds = builds.map((b) => b.id);
 
-    // 8. 同步处理构建（等待模式）
-    await processBuildsSync(serviceClient, user.id, url, platforms, builds);
+    // 8. 后台异步处理：上传图标 + 启动构建（立即返回，不等待构建完成）
+    waitUntil(
+      processBuildsInBackground(serviceClient, user.id, url, platforms, builds)
+    );
 
     return NextResponse.json({
       success: true,
@@ -188,14 +195,15 @@ function getPackageName(config: PlatformConfig): string {
   }
 }
 
-// 同步处理构建任务（等待模式）
-async function processBuildsSync(
+// 后台异步处理构建任务
+async function processBuildsInBackground(
   serviceClient: ReturnType<typeof createServiceClient>,
   userId: string,
   url: string,
   platforms: PlatformConfig[],
   builds: Array<{ id: string; platform: string }>
 ) {
+  // 按顺序处理构建任务
   for (let i = 0; i < builds.length; i++) {
     const build = builds[i];
     const config = platforms[i];
