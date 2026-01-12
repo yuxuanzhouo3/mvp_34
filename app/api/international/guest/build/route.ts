@@ -108,15 +108,29 @@ function checkBurstLimit(fingerprint: string): boolean {
 }
 
 /**
- * 检查每日 IP 限流
+ * 获取 UTC 时区的今日结束时间戳
+ */
+function getUTCDayEndTimestamp(): number {
+  const now = new Date();
+  const tomorrow = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0, 0
+  ));
+  return tomorrow.getTime();
+}
+
+/**
+ * 检查每日 IP 限流（使用 UTC 时区，每日 00:00 UTC 重置）
  */
 function checkIpRateLimit(fingerprint: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
-  const todayEnd = new Date().setHours(23, 59, 59, 999);
+  const utcDayEnd = getUTCDayEndTimestamp();
   const record = ipRateLimitCache.get(fingerprint);
 
   if (!record || record.resetTime < now) {
-    ipRateLimitCache.set(fingerprint, { count: 1, resetTime: todayEnd });
+    ipRateLimitCache.set(fingerprint, { count: 1, resetTime: utcDayEnd });
     return { allowed: true, remaining: GUEST_DAILY_LIMIT - 1 };
   }
 

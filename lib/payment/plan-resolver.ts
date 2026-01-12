@@ -2,6 +2,13 @@
  * 套餐价格配置
  */
 
+import {
+  getPlanDailyLimit,
+  getPlanBuildExpireDays,
+  getPlanShareExpireDays,
+  getPlanSupportBatchBuild,
+} from "@/utils/plan-limits";
+
 export interface PlanPricing {
   id: string;
   name: string;
@@ -75,6 +82,7 @@ export function extractPlanAmount(
 
 /**
  * 获取套餐的每日构建限额配置
+ * 统一使用 utils/plan-limits.ts 中的配置，支持环境变量动态调整
  */
 export function getPlanLimits(planName: string): {
   dailyLimit: number;
@@ -82,31 +90,10 @@ export function getPlanLimits(planName: string): {
   shareExpireDays: number;
   batchBuildEnabled: boolean;
 } {
-  const lower = (planName || "").toLowerCase();
-
-  switch (lower) {
-    case "team":
-    case "团队版":
-      return {
-        dailyLimit: 500,
-        buildExpireDays: 90,
-        shareExpireDays: 30,
-        batchBuildEnabled: true,
-      };
-    case "pro":
-    case "专业版":
-      return {
-        dailyLimit: 50,
-        buildExpireDays: 14,
-        shareExpireDays: 7,
-        batchBuildEnabled: true,
-      };
-    default:
-      return {
-        dailyLimit: 5,
-        buildExpireDays: 3,
-        shareExpireDays: 0,
-        batchBuildEnabled: false,
-      };
-  }
+  return {
+    dailyLimit: getPlanDailyLimit(planName),
+    buildExpireDays: getPlanBuildExpireDays(planName),
+    shareExpireDays: getPlanShareExpireDays(planName),
+    batchBuildEnabled: getPlanSupportBatchBuild(planName),
+  };
 }
