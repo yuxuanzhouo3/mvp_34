@@ -18,6 +18,7 @@ import {
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
 import { trackPaymentAndSubscription } from "@/lib/payment/analytics-helper";
+import { assessPaymentRisk } from "@/services/orders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,8 +156,20 @@ export async function POST(req: Request) {
     // 确定订单类型
     const productType = isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
 
+    // 风控评估
+    const riskAssess = assessPaymentRisk({
+      userId,
+      userEmail,
+      amount,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      country: metadata.country,
+    });
+
+    console.log(`[Stripe][WEBHOOK] Risk assessment: score=${riskAssess.riskScore}, level=${riskAssess.riskLevel}, factors=${riskAssess.riskFactors.join(",")}`);
+
     // 插入订单记录
-    await supabaseAdmin.from("orders").insert({
+    const { error: orderInsertError } = await supabaseAdmin.from("orders").insert({
       order_no: orderNo,
       user_id: userId,
       user_email: userEmail,
@@ -166,12 +179,32 @@ export async function POST(req: Request) {
       period,
       amount,
       currency,
+      original_amount: amount,
+      discount_amount: 0,
       payment_method: "stripe",
       payment_status: "paid",
       paid_at: nowIso,
       provider_order_id: session.id,
+      provider_transaction_id: typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : (session.payment_intent?.id || null),
+      risk_score: riskAssess.riskScore,
+      risk_level: riskAssess.riskLevel,
+      risk_factors: riskAssess.riskFactors,
+      ip_address: metadata.ipAddress || null,
+      user_agent: metadata.userAgent || null,
+      country: metadata.country || null,
       source: "global",
+      created_at: nowIso,
+      updated_at: nowIso,
     });
+
+    if (orderInsertError) {
+      console.error("[Stripe][WEBHOOK] Order insert failed:", orderInsertError);
+      // 订单插入失败不应阻止订阅处理，但需要记录错误
+    } else {
+      console.log(`[Stripe][WEBHOOK] Order created: ${orderNo}`);
+    }
 
     // 降级处理：延迟生效
     if (isDowngrade) {

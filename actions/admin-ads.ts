@@ -8,6 +8,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { revalidatePath } from "next/cache";
+import { verifyAdminSession } from "@/utils/session";
 
 export interface Ad {
   id: string;
@@ -114,7 +115,6 @@ async function getCloudBaseAds(status?: string): Promise<Ad[]> {
     const connector = new CloudBaseConnector();
     await connector.initialize();
     const db = connector.getClient();
-    const _ = db.command;
 
     let query = db.collection("ads");
 
@@ -218,6 +218,12 @@ async function deleteCloudBaseAd(id: string): Promise<{ success: boolean; error?
  * @param status - 状态筛选
  */
 export async function getAds(region?: string, status?: string): Promise<Ad[]> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getAds] Unauthorized access attempt");
+    return [];
+  }
+
   try {
     if (region === "cn") {
       return await getCloudBaseAds(status);
@@ -245,6 +251,12 @@ export async function getAds(region?: string, status?: string): Promise<Ad[]> {
  * 获取单个广告
  */
 export async function getAd(id: string, region?: string): Promise<Ad | null> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getAd] Unauthorized access attempt");
+    return null;
+  }
+
   try {
     // 如果指定了区域，直接查询对应数据库
     if (region === "cn") {
@@ -286,6 +298,12 @@ export async function getAd(id: string, region?: string): Promise<Ad | null> {
 export async function createAd(
   formData: AdFormData
 ): Promise<{ success: boolean; error?: string; id?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[createAd] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版存储到 CloudBase
     if (formData.region === "cn") {
@@ -346,6 +364,12 @@ export async function updateAd(
   formData: Partial<AdFormData>,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[updateAd] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版更新 CloudBase
     if (region === "cn") {
@@ -391,6 +415,12 @@ export async function deleteAd(
   id: string,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[deleteAd] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版删除 CloudBase
     if (region === "cn") {
@@ -429,5 +459,6 @@ export async function toggleAdStatus(
   status: "active" | "inactive",
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证（通过 updateAd 内部验证）
   return updateAd(id, { status }, region);
 }

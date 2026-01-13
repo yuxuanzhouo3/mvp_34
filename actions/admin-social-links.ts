@@ -8,6 +8,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { revalidatePath } from "next/cache";
+import { verifyAdminSession } from "@/utils/session";
 
 export interface SocialLink {
   id: string;
@@ -179,6 +180,12 @@ async function deleteCloudBaseSocialLink(id: string): Promise<{ success: boolean
  * @param region - 区域筛选: global(国际版/Supabase), cn(国内版/CloudBase), all(全部)
  */
 export async function getSocialLinks(region?: string): Promise<SocialLink[]> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getSocialLinks] Unauthorized access attempt");
+    return [];
+  }
+
   try {
     if (region === "cn") {
       return await getCloudBaseSocialLinks();
@@ -209,6 +216,12 @@ export async function getSocialLinks(region?: string): Promise<SocialLink[]> {
 export async function createSocialLink(
   formData: SocialLinkFormData
 ): Promise<{ success: boolean; error?: string; id?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[createSocialLink] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版存储到 CloudBase
     if (formData.region === "cn") {
@@ -264,6 +277,12 @@ export async function updateSocialLink(
   formData: Partial<SocialLinkFormData>,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[updateSocialLink] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版更新 CloudBase
     if (region === "cn") {
@@ -309,6 +328,12 @@ export async function deleteSocialLink(
   id: string,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[deleteSocialLink] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版删除 CloudBase
     if (region === "cn") {

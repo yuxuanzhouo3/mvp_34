@@ -7,6 +7,7 @@
 
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { verifyAdminSession } from "@/utils/session";
 
 export interface DashboardStats {
   users: {
@@ -281,7 +282,6 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
     const connector = new CloudBaseConnector();
     await connector.initialize();
     const db = connector.getClient();
-    const _ = db.command;
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -561,6 +561,12 @@ function mergeRevenueStats(a: RevenueStats[], b: RevenueStats[]): RevenueStats[]
 export async function getDashboardStats(
   source: "all" | "global" | "cn" = "all"
 ): Promise<DashboardStats | null> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getDashboardStats] Unauthorized access attempt");
+    return null;
+  }
+
   try {
     if (source === "cn") {
       // 仅查询 CloudBase
@@ -589,6 +595,12 @@ export async function getDailyActiveUsers(
   source: "all" | "global" | "cn" = "all",
   days: number = 30
 ): Promise<DailyStats[]> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getDailyActiveUsers] Unauthorized access attempt");
+    return [];
+  }
+
   try {
     if (source === "cn") {
       return await getCloudBaseDailyUsers(days);
@@ -614,6 +626,12 @@ export async function getDailyRevenue(
   source: "all" | "global" | "cn" = "all",
   days: number = 30
 ): Promise<RevenueStats[]> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getDailyRevenue] Unauthorized access attempt");
+    return [];
+  }
+
   try {
     if (source === "cn") {
       return await getCloudBaseDailyRevenue(days);

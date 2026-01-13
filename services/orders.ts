@@ -113,8 +113,197 @@ function generateOrderNo(): string {
 // 风控评估
 // =============================================================================
 
+// 用于追踪用户短时间内的订单（内存缓存，生产环境建议使用 Redis）
+const recentOrdersCache = new Map<string, { count: number; lastOrderTime: number }>();
+const RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5分钟窗口
+const MAX_ORDERS_PER_WINDOW = 3; // 5分钟内最多3个订单
+
+// 已知的高风险IP段（示例，实际应从数据库或配置加载）
+const HIGH_RISK_IP_PREFIXES = [
+  "10.0.0.",    // 私有网络（不应出现在生产环境）
+  "192.168.",   // 私有网络
+  "172.16.",    // 私有网络
+];
+
+// 已知的代理/VPN特征
+const PROXY_USER_AGENT_KEYWORDS = [
+  "proxy", "vpn", "tor", "anonymizer", "hide"
+];
+
 /**
- * 简单风控评估
+ * 检查IP是否为未知或可疑
+ */
+function isUnknownOrSuspiciousIP(ip?: string): { suspicious: boolean; reason?: string } {
+  if (!ip) {
+    return { suspicious: true, reason: "missing_ip" };
+  }
+
+  // 检查是否为私有IP（不应出现在生产环境的订单中）
+  for (const prefix of HIGH_RISK_IP_PREFIXES) {
+    if (ip.startsWith(prefix)) {
+      return { suspicious: true, reason: "private_ip" };
+    }
+  }
+
+  // 检查是否为本地回环地址
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost") {
+    return { suspicious: true, reason: "localhost_ip" };
+  }
+
+  return { suspicious: false };
+}
+
+/**
+ * 检查用户是否在短时间内创建了过多订单
+ */
+function checkRateLimit(userId: string): { exceeded: boolean; orderCount: number } {
+  const now = Date.now();
+  const userRecord = recentOrdersCache.get(userId);
+
+  if (!userRecord) {
+    // 首次订单，记录
+    recentOrdersCache.set(userId, { count: 1, lastOrderTime: now });
+    return { exceeded: false, orderCount: 1 };
+  }
+
+  // 检查是否在时间窗口内
+  if (now - userRecord.lastOrderTime > RATE_LIMIT_WINDOW) {
+    // 超出窗口，重置计数
+    recentOrdersCache.set(userId, { count: 1, lastOrderTime: now });
+    return { exceeded: false, orderCount: 1 };
+  }
+
+  // 在窗口内，增加计数
+  const newCount = userRecord.count + 1;
+  recentOrdersCache.set(userId, { count: newCount, lastOrderTime: now });
+
+  return {
+    exceeded: newCount > MAX_ORDERS_PER_WINDOW,
+    orderCount: newCount,
+  };
+}
+
+/**
+ * 检查User-Agent是否可疑
+ */
+function isSuspiciousUserAgent(userAgent?: string): { suspicious: boolean; reason?: string } {
+  if (!userAgent) {
+    return { suspicious: true, reason: "missing_user_agent" };
+  }
+
+  const ua = userAgent.toLowerCase();
+
+  // 检查是否包含代理/VPN关键词
+  for (const keyword of PROXY_USER_AGENT_KEYWORDS) {
+    if (ua.includes(keyword)) {
+      return { suspicious: true, reason: "proxy_detected" };
+    }
+  }
+
+  // 检查是否为空或过短的User-Agent（可能是机器人）
+  if (ua.length < 20) {
+    return { suspicious: true, reason: "short_user_agent" };
+  }
+
+  // 检查是否缺少常见浏览器标识
+  const hasCommonBrowser = ["chrome", "firefox", "safari", "edge", "opera", "mozilla"].some(
+    browser => ua.includes(browser)
+  );
+  if (!hasCommonBrowser) {
+    return { suspicious: true, reason: "unknown_browser" };
+  }
+
+  return { suspicious: false };
+}
+
+/** 风控评估参数（简化版，用于支付回调） */
+export interface RiskAssessParams {
+  userId: string;
+  userEmail?: string;
+  amount: number;
+  ipAddress?: string;
+  userAgent?: string;
+  country?: string;
+}
+
+/** 风控评估结果 */
+export interface RiskAssessResult {
+  riskScore: number;
+  riskLevel: string;
+  riskFactors: string[];
+}
+
+/**
+ * 综合风控评估（导出版本，供支付回调使用）
+ * 返回风险评分 (0-100) 和风险等级
+ */
+export function assessPaymentRisk(params: RiskAssessParams): RiskAssessResult {
+  const factors: string[] = [];
+  let score = 0;
+
+  // 1. 金额风险评估
+  if (params.amount > 1000) {
+    score += 25;
+    factors.push("very_high_amount");
+  } else if (params.amount > 500) {
+    score += 20;
+    factors.push("high_amount");
+  } else if (params.amount > 200) {
+    score += 10;
+    factors.push("medium_amount");
+  }
+
+  // 2. 用户信息完整性
+  if (!params.userEmail) {
+    score += 15;
+    factors.push("missing_email");
+  }
+
+  // 3. IP地址风险评估
+  const ipCheck = isUnknownOrSuspiciousIP(params.ipAddress);
+  if (ipCheck.suspicious) {
+    score += 20;
+    factors.push(ipCheck.reason || "suspicious_ip");
+  }
+
+  // 4. User-Agent风险评估
+  const uaCheck = isSuspiciousUserAgent(params.userAgent);
+  if (uaCheck.suspicious) {
+    score += 15;
+    factors.push(uaCheck.reason || "suspicious_user_agent");
+  }
+
+  // 5. 频率限制检查
+  const rateCheck = checkRateLimit(params.userId);
+  if (rateCheck.exceeded) {
+    score += 30;
+    factors.push(`rate_limit_exceeded:${rateCheck.orderCount}_orders`);
+  } else if (rateCheck.orderCount > 1) {
+    score += 10;
+    factors.push(`multiple_orders:${rateCheck.orderCount}`);
+  }
+
+  // 6. 地理位置风险
+  if (!params.country) {
+    score += 10;
+    factors.push("missing_geo_info");
+  }
+
+  // 确定风险等级
+  let level = "low";
+  if (score >= 70) {
+    level = "blocked";
+  } else if (score >= 50) {
+    level = "high";
+  } else if (score >= 30) {
+    level = "medium";
+  }
+
+  return { riskScore: Math.min(score, 100), riskLevel: level, riskFactors: factors };
+}
+
+/**
+ * 综合风控评估（内部版本）
  * 返回风险评分 (0-100) 和风险等级
  */
 function assessRisk(params: CreateOrderParams): {
@@ -125,8 +314,11 @@ function assessRisk(params: CreateOrderParams): {
   const factors: string[] = [];
   let score = 0;
 
-  // 高金额订单
-  if (params.amount > 500) {
+  // 1. 金额风险评估
+  if (params.amount > 1000) {
+    score += 25;
+    factors.push("very_high_amount");
+  } else if (params.amount > 500) {
     score += 20;
     factors.push("high_amount");
   } else if (params.amount > 200) {
@@ -134,27 +326,56 @@ function assessRisk(params: CreateOrderParams): {
     factors.push("medium_amount");
   }
 
-  // 缺少用户信息
+  // 2. 用户信息完整性
   if (!params.userEmail) {
     score += 15;
     factors.push("missing_email");
   }
 
-  // 缺少 IP 地址
-  if (!params.ipAddress) {
-    score += 10;
-    factors.push("missing_ip");
+  // 3. IP地址风险评估
+  const ipCheck = isUnknownOrSuspiciousIP(params.ipAddress);
+  if (ipCheck.suspicious) {
+    score += 20;
+    factors.push(ipCheck.reason || "suspicious_ip");
   }
+
+  // 4. User-Agent风险评估
+  const uaCheck = isSuspiciousUserAgent(params.userAgent);
+  if (uaCheck.suspicious) {
+    score += 15;
+    factors.push(uaCheck.reason || "suspicious_user_agent");
+  }
+
+  // 5. 频率限制检查（同一用户短时间内多次下单）
+  const rateCheck = checkRateLimit(params.userId);
+  if (rateCheck.exceeded) {
+    score += 30;
+    factors.push(`rate_limit_exceeded:${rateCheck.orderCount}_orders`);
+  } else if (rateCheck.orderCount > 1) {
+    score += 10;
+    factors.push(`multiple_orders:${rateCheck.orderCount}`);
+  }
+
+  // 6. 地理位置风险（缺少地理信息）
+  if (!params.country) {
+    score += 10;
+    factors.push("missing_geo_info");
+  }
+
+  // 7. 首次购买高价商品（如果能获取用户历史）
+  // TODO: 可以扩展为查询用户历史订单
 
   // 确定风险等级
   let level = "low";
-  if (score >= 60) {
+  if (score >= 70) {
+    level = "blocked"; // 建议拦截
+  } else if (score >= 50) {
     level = "high";
-  } else if (score >= 40) {
+  } else if (score >= 30) {
     level = "medium";
   }
 
-  return { riskScore: score, riskLevel: level, riskFactors: factors };
+  return { riskScore: Math.min(score, 100), riskLevel: level, riskFactors: factors };
 }
 
 // =============================================================================

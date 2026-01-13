@@ -24,6 +24,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 获取风控信息
+    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "";
+    const userAgent = request.headers.get("user-agent") || "";
+    const country = request.headers.get("cf-ipcountry") || ""; // Cloudflare 提供
+
     // 构建回调URL
     const envBase = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
     const proto = request.headers.get("x-forwarded-proto") || "https";
@@ -122,6 +129,9 @@ export async function POST(request: NextRequest) {
         days: String(days),
         isUpgrade: isUpgradeOrder ? "true" : "false",
         originalAmount: String(extractPlanAmount(resolvedPlan, effectiveBillingPeriod)),
+        ipAddress,
+        userAgent: userAgent.slice(0, 500), // Stripe metadata 限制
+        country,
       },
     });
 

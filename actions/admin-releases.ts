@@ -8,6 +8,7 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { revalidatePath } from "next/cache";
+import { verifyAdminSession } from "@/utils/session";
 
 export interface Release {
   id: string;
@@ -219,6 +220,12 @@ async function deleteCloudBaseRelease(id: string): Promise<{ success: boolean; e
  * @param platform - 平台筛选
  */
 export async function getReleases(region?: string, platform?: string): Promise<Release[]> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getReleases] Unauthorized access attempt");
+    return [];
+  }
+
   try {
     if (region === "cn") {
       return await getCloudBaseReleases(platform);
@@ -246,6 +253,12 @@ export async function getReleases(region?: string, platform?: string): Promise<R
 export async function createRelease(
   formData: ReleaseFormData
 ): Promise<{ success: boolean; error?: string; id?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[createRelease] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版存储到 CloudBase
     if (formData.region === "cn") {
@@ -306,6 +319,12 @@ export async function updateRelease(
   formData: Partial<ReleaseFormData>,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[updateRelease] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版更新 CloudBase
     if (region === "cn") {
@@ -358,6 +377,12 @@ export async function deleteRelease(
   id: string,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[deleteRelease] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     // 国内版删除 CloudBase
     if (region === "cn") {

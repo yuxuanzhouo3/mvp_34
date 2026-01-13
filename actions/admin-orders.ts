@@ -7,6 +7,7 @@
 
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { verifyAdminSession } from "@/utils/session";
 
 export interface Order {
   id: string;
@@ -212,7 +213,6 @@ async function getCloudBaseOrders(filters: OrderFilters): Promise<OrdersResult> 
     const connector = new CloudBaseConnector();
     await connector.initialize();
     const db = connector.getClient();
-    const _ = db.command;
 
     const page = filters.page || 1;
     const limit = filters.limit || 20;
@@ -328,6 +328,12 @@ async function updateCloudBaseOrder(
  * @param filters - 筛选条件，source 决定查询哪个数据库
  */
 export async function getOrders(filters: OrderFilters = {}): Promise<OrdersResult> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getOrders] Unauthorized access attempt");
+    return { orders: [], total: 0, page: 1, limit: 20 };
+  }
+
   try {
     if (filters.source === "cn") {
       return await getCloudBaseOrders(filters);
@@ -369,6 +375,12 @@ export async function getOrders(filters: OrderFilters = {}): Promise<OrdersResul
  * 获取单个订单详情
  */
 export async function getOrder(id: string, source?: string): Promise<Order | null> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getOrder] Unauthorized access attempt");
+    return null;
+  }
+
   try {
     if (source === "cn") {
       const connector = new CloudBaseConnector();
@@ -410,6 +422,12 @@ export async function updateOrderNotes(
   notes: string,
   source?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[updateOrderNotes] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     if (source === "cn") {
       return await updateCloudBaseOrder(id, { notes });
@@ -445,6 +463,12 @@ export async function updateOrderRiskLevel(
   risk_score?: number,
   source?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[updateOrderRiskLevel] Unauthorized access attempt");
+    return { success: false, error: "未授权访问" };
+  }
+
   try {
     const updateData: Record<string, unknown> = { risk_level };
     if (risk_score !== undefined) {
@@ -488,6 +512,12 @@ export async function getOrderStats(source: string = "all"): Promise<{
   totalAmount: number;
   highRisk: number;
 }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    console.error("[getOrderStats] Unauthorized access attempt");
+    return { total: 0, paid: 0, pending: 0, failed: 0, totalAmount: 0, highRisk: 0 };
+  }
+
   try {
     if (source === "cn") {
       return await getCloudBaseOrderStats();

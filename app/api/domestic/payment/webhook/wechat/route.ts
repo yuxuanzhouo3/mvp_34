@@ -93,6 +93,12 @@ export async function POST(request: NextRequest) {
     const timestamp = request.headers.get("Wechatpay-Timestamp") || "";
     const nonce = request.headers.get("Wechatpay-Nonce") || "";
 
+    // 获取风控信息（从请求头中）
+    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "";
+    const userAgent = request.headers.get("user-agent") || "";
+
     // 2. 读取请求体
     const body = await request.text();
 
@@ -236,6 +242,8 @@ export async function POST(request: NextRequest) {
       currency: "CNY",
       paymentMethod: "wechat",
       source: "cn",
+      ipAddress,
+      userAgent,
     });
 
     if (orderResult.success && orderResult.orderId) {

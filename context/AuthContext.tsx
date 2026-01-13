@@ -5,6 +5,7 @@ import { User, Session, AuthChangeEvent } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { IS_DOMESTIC_VERSION } from "@/config";
+import { trackLoginEventClient } from "@/services/analytics-client";
 
 // 国内版用户类型（兼容 Supabase User 接口的关键字段）
 interface DomesticUser {
@@ -127,8 +128,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 处理特定事件
       if (event === "SIGNED_OUT") {
         router.refresh();
-      } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-        router.refresh();
+      } else if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        // 记录活跃用户埋点（session 恢复或登录时）
+        if (session?.user?.id) {
+          trackLoginEventClient(session.user.id, event === "SIGNED_IN" ? "login" : "session").catch(() => {});
+        }
+        if (event !== "INITIAL_SESSION") {
+          router.refresh();
+        }
       }
     });
 

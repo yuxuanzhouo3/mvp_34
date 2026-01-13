@@ -20,6 +20,7 @@ import {
 } from "@/lib/payment/payment-record-helper";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
 import { trackPaymentAndSubscription } from "@/lib/payment/analytics-helper";
+import { assessPaymentRisk } from "@/services/orders";
 
 /**
  * 解析 customId
@@ -88,6 +89,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 获取风控信息（从请求头中）
+    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "";
+    const userAgent = request.headers.get("user-agent") || "";
 
     // 幂等性检查：先检查是否已处理过此订单
     if (supabaseAdmin) {
@@ -272,8 +279,21 @@ export async function POST(request: NextRequest) {
     // 确定订单类型
     const productType = parsed.isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
 
+    // 风控评估
+    const payerCountry = result.payer?.address?.country_code || "";
+    const riskAssess = assessPaymentRisk({
+      userId,
+      userEmail,
+      amount: amountValue,
+      ipAddress,
+      userAgent,
+      country: payerCountry,
+    });
+
+    console.log(`[PayPal][CAPTURE] Risk assessment: score=${riskAssess.riskScore}, level=${riskAssess.riskLevel}, factors=${riskAssess.riskFactors.join(",")}`);
+
     // 插入订单记录
-    await supabaseAdmin.from("orders").insert({
+    const { error: orderInsertError } = await supabaseAdmin.from("orders").insert({
       order_no: orderNoGen,
       user_id: userId,
       user_email: userEmail,
@@ -283,12 +303,29 @@ export async function POST(request: NextRequest) {
       period,
       amount: amountValue,
       currency,
+      original_amount: amountValue,
+      discount_amount: 0,
       payment_method: "paypal",
       payment_status: "paid",
       paid_at: nowIso,
       provider_order_id: orderId,
+      provider_transaction_id: capture?.id || null,
+      risk_score: riskAssess.riskScore,
+      risk_level: riskAssess.riskLevel,
+      risk_factors: riskAssess.riskFactors,
+      ip_address: ipAddress || null,
+      user_agent: userAgent || null,
+      country: payerCountry || null,
       source: "global",
+      created_at: nowIso,
+      updated_at: nowIso,
     });
+
+    if (orderInsertError) {
+      console.error("[PayPal][CAPTURE] Order insert failed:", orderInsertError);
+    } else {
+      console.log(`[PayPal][CAPTURE] Order created: ${orderNoGen}`);
+    }
 
     // 降级处理：延迟生效
     if (isDowngrade) {

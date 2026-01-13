@@ -13,6 +13,7 @@ import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
 import { checkPaymentExists, insertPaymentRecord } from "@/lib/payment/payment-record-helper";
 import { trackPaymentAndSubscription } from "@/lib/payment/analytics-helper";
+import { assessPaymentRisk } from "@/services/orders";
 
 /**
  * POST /api/payment/stripe/confirm
@@ -136,6 +137,65 @@ export async function POST(request: NextRequest) {
       plan,
       period,
     });
+
+    // 获取用户邮箱
+    const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const userEmail = userData?.user?.email || "";
+
+    // 生成订单号
+    const orderNo = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    // 确定订单类型
+    const productType = isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
+
+    // 风控评估
+    const riskAssess = assessPaymentRisk({
+      userId,
+      userEmail,
+      amount,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+      country: metadata.country,
+    });
+
+    console.log(`[Stripe][CONFIRM] Risk assessment: score=${riskAssess.riskScore}, level=${riskAssess.riskLevel}, factors=${riskAssess.riskFactors.join(",")}`);
+
+    // 插入订单记录
+    const { error: orderInsertError } = await supabaseAdmin.from("orders").insert({
+      order_no: orderNo,
+      user_id: userId,
+      user_email: userEmail,
+      product_name: `${plan} Plan (${period})`,
+      product_type: productType,
+      plan,
+      period,
+      amount,
+      currency,
+      original_amount: amount,
+      discount_amount: 0,
+      payment_method: "stripe",
+      payment_status: "paid",
+      paid_at: nowIso,
+      provider_order_id: sessionId,
+      provider_transaction_id: typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : (session.payment_intent?.id || null),
+      risk_score: riskAssess.riskScore,
+      risk_level: riskAssess.riskLevel,
+      risk_factors: riskAssess.riskFactors,
+      ip_address: metadata.ipAddress || null,
+      user_agent: metadata.userAgent || null,
+      country: metadata.country || null,
+      source: "global",
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+
+    if (orderInsertError) {
+      console.error("[Stripe][CONFIRM] Order insert failed:", orderInsertError);
+    } else {
+      console.log(`[Stripe][CONFIRM] Order created: ${orderNo}`);
+    }
 
     // 降级处理：延迟生效
     if (isDowngrade) {

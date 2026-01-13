@@ -46,6 +46,19 @@ const PAYMENT_METHODS = [
   { value: "alipay", label: "支付宝" },
 ];
 
+// 常用国家代码映射
+const COUNTRY_NAMES: Record<string, string> = {
+  US: "美国", CN: "中国", JP: "日本", KR: "韩国", GB: "英国",
+  DE: "德国", FR: "法国", CA: "加拿大", AU: "澳大利亚", SG: "新加坡",
+  HK: "香港", TW: "台湾", IN: "印度", BR: "巴西", RU: "俄罗斯",
+  C2: "PayPal测试", // PayPal沙盒环境
+};
+
+function getCountryName(code?: string): string {
+  if (!code) return "";
+  return COUNTRY_NAMES[code.toUpperCase()] || code;
+}
+
 const RISK_LEVELS = [
   { value: "low", label: "低风险", color: "bg-green-100 text-green-700" },
   { value: "medium", label: "中风险", color: "bg-yellow-100 text-yellow-700" },
@@ -528,11 +541,32 @@ export default function AdminOrdersPage() {
                   <div>
                     <Label className="text-slate-500">地理位置</Label>
                     <p>
-                      {[detailOrder.country, detailOrder.region_name, detailOrder.city]
+                      {[getCountryName(detailOrder.country), detailOrder.region_name, detailOrder.city]
                         .filter(Boolean)
                         .join(", ") || "-"}
                     </p>
                   </div>
+                  <div className="col-span-2">
+                    <Label className="text-slate-500">User-Agent</Label>
+                    <p className="font-mono text-xs break-all bg-slate-50 dark:bg-slate-700/50 p-2 rounded mt-1">
+                      {detailOrder.user_agent || "-"}
+                    </p>
+                  </div>
+                  {detailOrder.risk_factors && detailOrder.risk_factors.length > 0 && (
+                    <div className="col-span-2">
+                      <Label className="text-slate-500">风险因素</Label>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {(detailOrder.risk_factors as string[]).map((factor, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded text-xs"
+                          >
+                            {factor}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
