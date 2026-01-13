@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { geoRouter } from "@/lib/core/geo-router";
 import { RegionType, GeoResult } from "@/lib/utils/ip-detection";
+import { verifyAdminSessionToken } from "@/utils/session";
 
 // ============================================================================
 // Middleware 配置
@@ -9,6 +10,8 @@ import { RegionType, GeoResult } from "@/lib/utils/ip-detection";
 
 const FAIL_CLOSED =
   (process.env.GEO_FAIL_CLOSED || "true").toLowerCase() === "true";
+
+const ADMIN_SESSION_COOKIE_NAME = "admin_session";
 
 // ============================================================================
 // Middleware 主逻辑
@@ -24,6 +27,26 @@ export async function middleware(request: NextRequest) {
     (pathname.includes(".") && !pathname.startsWith("/api/"))
   ) {
     return NextResponse.next();
+  }
+
+  // ============================================================================
+  // Admin 路由保护
+  // ============================================================================
+  if (pathname.startsWith("/admin")) {
+    // 非登录页需要验证 session
+    if (!pathname.startsWith("/admin/login")) {
+      const sessionToken = request.cookies.get(ADMIN_SESSION_COOKIE_NAME)?.value;
+
+      if (!sessionToken || !verifyAdminSessionToken(sessionToken)) {
+        const loginUrl = new URL("/admin/login", request.url);
+        return NextResponse.redirect(loginUrl);
+      }
+    }
+
+    // Admin 路由直接返回，不经过地理位置检测，设置路径 header 供根布局使用
+    const response = NextResponse.next();
+    response.headers.set("x-pathname", pathname);
+    return response;
   }
 
   // 先处理 Supabase Session 刷新和路由保护

@@ -6,7 +6,7 @@ import { trackWechatLoginEvent } from "@/services/analytics";
 /**
  * POST /api/domestic/auth/wechat
  * 使用微信 OAuth code 登录（国内版）
- * 请求体: { code: string, state?: string }
+ * 请求体: { code: string, state: string }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -17,8 +17,26 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const code = body?.code as string | undefined;
+    const state = body?.state as string | undefined;
+
     if (!code) {
       return NextResponse.json({ error: "Missing code" }, { status: 400 });
+    }
+
+    // 验证 state 参数（防止 CSRF 攻击）
+    if (!state) {
+      return NextResponse.json({ error: "Missing state parameter" }, { status: 400 });
+    }
+
+    // 解析并验证 state 格式
+    try {
+      const statePayload = JSON.parse(Buffer.from(state, "base64url").toString("utf-8"));
+      // state 必须包含 next 字段（由 qrcode 接口生成）
+      if (typeof statePayload !== "object" || !("next" in statePayload)) {
+        return NextResponse.json({ error: "Invalid state format" }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: "Invalid state encoding" }, { status: 400 });
     }
 
     const appId = process.env.WECHAT_APP_ID;

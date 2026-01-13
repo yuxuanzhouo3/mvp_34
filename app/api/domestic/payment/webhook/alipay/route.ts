@@ -16,6 +16,7 @@ import { verifyAlipaySignature } from "@/lib/payment/providers/alipay-provider";
 import { normalizePlanName } from "@/utils/plan-utils";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { trackPaymentEvent, trackSubscriptionEvent } from "@/services/analytics";
+import { createOrder, markOrderPaid } from "@/services/orders";
 
 // Webhook 事件幂等性检查
 async function isWebhookEventProcessed(eventId: string): Promise<boolean> {
@@ -90,10 +91,7 @@ export async function POST(request: NextRequest) {
 
     console.log("📝 [Alipay Webhook] 接收到的参数:", {
       outTradeNo: params.out_trade_no,
-      tradeNo: params.trade_no,
       tradeStatus: params.trade_status,
-      totalAmount: params.total_amount,
-      passbackParams: params.passback_params,
       hasSignature: !!params.sign,
     });
 
@@ -188,11 +186,7 @@ export async function POST(request: NextRequest) {
     const days = Number(paymentRecord?.metadata?.days) || (period === "annual" ? 365 : 30);
     const planName = normalizePlanName(paymentRecord.plan || paymentRecord?.metadata?.planName || "Pro") || "Pro";
 
-    console.log("📦 [Alipay Webhook] Processing subscription:", {
-      userId,
-      days,
-      planName,
-    });
+    console.log("📦 [Alipay Webhook] Processing subscription for order:", outTradeNo);
 
     await applySubscriptionPayment({
       userId,
@@ -202,6 +196,25 @@ export async function POST(request: NextRequest) {
       days,
       planName,
     });
+
+    // 创建订单记录
+    const orderResult = await createOrder({
+      userId,
+      userEmail: paymentRecord?.metadata?.userEmail || undefined,
+      productName: `${planName} Plan (${period})`,
+      productType: "subscription",
+      plan: planName,
+      period,
+      amount: totalAmount,
+      currency: "CNY",
+      paymentMethod: "alipay",
+      source: "cn",
+    });
+
+    if (orderResult.success && orderResult.orderId) {
+      await markOrderPaid(orderResult.orderId, outTradeNo, tradeNo);
+      console.log("📝 [Alipay Webhook] Order created:", orderResult.orderNo);
+    }
 
     // 埋点：记录支付和订阅事件
     trackPaymentEvent(userId, {

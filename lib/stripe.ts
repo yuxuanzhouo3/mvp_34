@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
-// 初始化 Stripe
+// 初始化 Stripe（带格式验证）
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
+
+// 验证 Stripe 密钥格式
+function isValidStripeKey(key: string | undefined): key is string {
+  if (!key) return false;
+  // Stripe 密钥格式：sk_test_xxx 或 sk_live_xxx
+  return /^sk_(test|live)_[a-zA-Z0-9]+$/.test(key);
+}
+
+const stripe = isValidStripeKey(stripeSecretKey) ? new Stripe(stripeSecretKey) : null;
 
 export function getStripe(): Stripe {
   if (!stripe) {
-    throw new Error("Stripe not initialized - missing STRIPE_SECRET_KEY");
+    throw new Error("Stripe not initialized - missing or invalid STRIPE_SECRET_KEY");
   }
   return stripe;
 }

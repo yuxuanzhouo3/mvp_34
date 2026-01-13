@@ -145,6 +145,34 @@ export async function POST(req: Request) {
       period,
     });
 
+    // 获取用户邮箱
+    const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const userEmail = userData?.user?.email || "";
+
+    // 生成订单号
+    const orderNo = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    // 确定订单类型
+    const productType = isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
+
+    // 插入订单记录
+    await supabaseAdmin.from("orders").insert({
+      order_no: orderNo,
+      user_id: userId,
+      user_email: userEmail,
+      product_name: `${plan} Plan (${period})`,
+      product_type: productType,
+      plan,
+      period,
+      amount,
+      currency,
+      payment_method: "stripe",
+      payment_status: "paid",
+      paid_at: nowIso,
+      provider_order_id: session.id,
+      source: "global",
+    });
+
     // 降级处理：延迟生效
     if (isDowngrade) {
       const scheduledStart = currentPlanExp && currentPlanActive ? currentPlanExp : now;

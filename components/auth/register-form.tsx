@@ -39,12 +39,16 @@ export function RegisterForm() {
 
     setLoading(true);
 
-    const { error } = await signUp(email, password);
+    const { error, userId } = await signUp(email, password);
 
     if (error) {
       setError(error.message);
       setLoading(false);
     } else {
+      // 注册成功埋点
+      if (userId) {
+        trackRegisterEventClient(userId, "email");
+      }
       setSuccess(true);
       setLoading(false);
     }
