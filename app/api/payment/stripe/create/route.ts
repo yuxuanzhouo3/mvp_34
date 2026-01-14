@@ -29,7 +29,10 @@ export async function POST(request: NextRequest) {
       || request.headers.get("x-real-ip")
       || "";
     const userAgent = request.headers.get("user-agent") || "";
-    const country = request.headers.get("cf-ipcountry") || ""; // Cloudflare 提供
+    // 地理位置：优先 Vercel，其次 Cloudflare
+    const country = request.headers.get("x-vercel-ip-country")
+      || request.headers.get("cf-ipcountry")
+      || "";
 
     // 构建回调URL
     const envBase = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
