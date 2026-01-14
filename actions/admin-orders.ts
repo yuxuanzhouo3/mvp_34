@@ -345,8 +345,8 @@ export async function getOrders(filters: OrderFilters = {}): Promise<OrdersResul
       const limit = filters.limit || 20;
 
       const [supabaseResult, cloudbaseResult] = await Promise.all([
-        getSupabaseOrders({ ...filters, page: 1, limit: 500 }),
-        getCloudBaseOrders({ ...filters, page: 1, limit: 500 }),
+        getSupabaseOrders({ ...filters, page: 1, limit: 2000 }),
+        getCloudBaseOrders({ ...filters, page: 1, limit: 2000 }),
       ]);
 
       // 合并并按时间排序

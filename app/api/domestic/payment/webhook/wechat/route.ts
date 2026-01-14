@@ -249,6 +249,8 @@ export async function POST(request: NextRequest) {
     if (orderResult.success && orderResult.orderId) {
       await markOrderPaid(orderResult.orderId, paymentData.out_trade_no, paymentData.transaction_id);
       console.log("📝 [WeChat Webhook] Order created:", orderResult.orderNo);
+    } else {
+      console.error("❌ [WeChat Webhook] Order creation failed:", orderResult.error);
     }
 
     // 埋点：记录支付和订阅事件

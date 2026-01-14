@@ -244,14 +244,18 @@ export function extractUserId(paymentRecord: PaymentRecord | null, fallbackUserI
 }
 
 /**
- * 验证支付金额
+ * 验证支付金额（允许 0.01 元或 1% 的误差，取较大值）
  */
 export function validatePaymentAmount(
   expectedAmount: number,
   paidAmount: number,
-  tolerance: number = 0.01
+  tolerancePercent: number = 1
 ): boolean {
   if (expectedAmount <= 0) return true;
+  // 允许 0.01 元或 1% 的误差，取较大值
+  const absoluteTolerance = 0.01;
+  const percentTolerance = expectedAmount * (tolerancePercent / 100);
+  const tolerance = Math.max(absoluteTolerance, percentTolerance);
   return Math.abs(expectedAmount - paidAmount) <= tolerance;
 }
 

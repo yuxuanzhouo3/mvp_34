@@ -222,6 +222,8 @@ export async function POST(request: NextRequest) {
     if (orderResult.success && orderResult.orderId) {
       await markOrderPaid(orderResult.orderId, outTradeNo, tradeNo);
       console.log("📝 [Alipay Webhook] Order created:", orderResult.orderNo);
+    } else {
+      console.error("❌ [Alipay Webhook] Order creation failed:", orderResult.error);
     }
 
     // 埋点：记录支付和订阅事件
