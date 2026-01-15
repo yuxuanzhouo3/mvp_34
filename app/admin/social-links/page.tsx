@@ -176,95 +176,163 @@ export default function AdminSocialLinksPage() {
           暂无社交链接
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-50 dark:bg-slate-700/50">
-              <tr>
-                <th className="text-left py-3 px-4 font-medium text-sm">排序</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">名称</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">平台</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">区域</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">状态</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {links.map((link) => (
-                <tr
-                  key={link.id}
-                  className="border-t border-slate-100 dark:border-slate-700"
-                >
-                  <td className="py-3 px-4">
-                    <GripVertical className="h-4 w-4 text-slate-400" />
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{link.name}</span>
-                      <a
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-slate-400 hover:text-primary"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </div>
-                    {link.description && (
-                      <p className="text-sm text-slate-500 mt-0.5">
-                        {link.description}
-                      </p>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-sm">
-                      {PLATFORM_TYPES.find((p) => p.value === link.platform_type)?.label || link.platform_type}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm">
-                      {link.region === "global" ? "国际版" : "国内版"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        link.status === "active"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {link.status === "active" ? "启用" : "禁用"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditDialog(link)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700"
-                        onClick={() => handleDelete(link)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </td>
+        <>
+          {/* 桌面端表格视图 */}
+          <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-slate-50 dark:bg-slate-700/50">
+                <tr>
+                  <th className="text-left py-3 px-4 font-medium text-sm">排序</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">名称</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">平台</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">区域</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">状态</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {links.map((link) => (
+                  <tr
+                    key={link.id}
+                    className="border-t border-slate-100 dark:border-slate-700"
+                  >
+                    <td className="py-3 px-4">
+                      <GripVertical className="h-4 w-4 text-slate-400" />
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{link.name}</span>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-slate-400 hover:text-primary"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </div>
+                      {link.description && (
+                        <p className="text-sm text-slate-500 mt-0.5">
+                          {link.description}
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-sm">
+                        {PLATFORM_TYPES.find((p) => p.value === link.platform_type)?.label || link.platform_type}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-sm">
+                        {link.region === "global" ? "国际版" : "国内版"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          link.status === "active"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {link.status === "active" ? "启用" : "禁用"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditDialog(link)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                          onClick={() => handleDelete(link)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 移动端卡片视图 */}
+          <div className="md:hidden space-y-3">
+            {links.map((link) => (
+              <div
+                key={link.id}
+                className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="font-semibold truncate">{link.name}</span>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-primary flex-shrink-0"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </div>
+                  <span
+                    className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
+                      link.status === "active"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {link.status === "active" ? "启用" : "禁用"}
+                  </span>
+                </div>
+
+                {link.description && (
+                  <p className="text-sm text-slate-500 mb-3">{link.description}</p>
+                )}
+
+                <div className="flex flex-wrap gap-2 mb-3 text-xs">
+                  <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                    {PLATFORM_TYPES.find((p) => p.value === link.platform_type)?.label || link.platform_type}
+                  </span>
+                  <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                    {link.region === "global" ? "国际版" : "国内版"}
+                  </span>
+                  <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                    排序: {link.sort_order}
+                  </span>
+                </div>
+
+                <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                  <Button variant="outline" size="sm" onClick={() => openEditDialog(link)}>
+                    <Pencil className="h-4 w-4 mr-1" />
+                    编辑
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700"
+                    onClick={() => handleDelete(link)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    删除
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* 创建/编辑对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>{editingLink ? "编辑链接" : "新建链接"}</DialogTitle>
           </DialogHeader>
@@ -301,7 +369,7 @@ export default function AdminSocialLinksPage() {
                 placeholder="https://... 或图标名称"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>平台类型</Label>
                 <Select
@@ -336,7 +404,7 @@ export default function AdminSocialLinksPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>排序</Label>
                 <Input
@@ -361,7 +429,7 @@ export default function AdminSocialLinksPage() {
                 </Select>
               </div>
             </div>
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 取消
               </Button>

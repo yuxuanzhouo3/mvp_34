@@ -241,116 +241,194 @@ export default function AdminReleasesPage() {
           暂无版本数据
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-50 dark:bg-slate-700/50">
-              <tr>
-                <th className="text-left py-3 px-4 font-medium text-sm">版本</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">平台</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">区域</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">大小</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">状态</th>
-                <th className="text-left py-3 px-4 font-medium text-sm">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {releases.map((release) => (
-                <tr
-                  key={release.id}
-                  className="border-t border-slate-100 dark:border-slate-700"
-                >
-                  <td className="py-3 px-4">
-                    <div>
-                      <span className="font-medium">{release.version}</span>
-                      <span className="text-slate-500 ml-2">
-                        ({release.version_code})
+        <>
+          {/* 桌面端表格视图 */}
+          <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-slate-50 dark:bg-slate-700/50">
+                <tr>
+                  <th className="text-left py-3 px-4 font-medium text-sm">版本</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">平台</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">区域</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">大小</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">状态</th>
+                  <th className="text-left py-3 px-4 font-medium text-sm">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {releases.map((release) => (
+                  <tr
+                    key={release.id}
+                    className="border-t border-slate-100 dark:border-slate-700"
+                  >
+                    <td className="py-3 px-4">
+                      <div>
+                        <span className="font-medium">{release.version}</span>
+                        <span className="text-slate-500 ml-2">
+                          ({release.version_code})
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-500 mt-0.5">
+                        {release.title}
+                      </p>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-sm">
+                        {PLATFORMS.find((p) => p.value === release.platform)?.label || release.platform}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm">
+                      {release.region === "global" ? "国际版" : "国内版"}
+                    </td>
+                    <td className="py-3 px-4 text-sm">
+                      {formatFileSize(release.file_size)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(release.status)}`}
+                        >
+                          {getStatusLabel(release.status)}
+                        </span>
+                        {release.is_force_update && (
+                          <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
+                            强制更新
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex gap-2">
+                        {release.status === "draft" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePublish(release)}
+                            title="发布"
+                          >
+                            <Rocket className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {release.download_url && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                            title="下载"
+                          >
+                            <a href={release.download_url} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditDialog(release)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                          onClick={() => handleDelete(release)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 移动端卡片视图 */}
+          <div className="md:hidden space-y-3">
+            {releases.map((release) => {
+              const PlatformIcon = PLATFORMS.find((p) => p.value === release.platform)?.icon || Monitor;
+              return (
+                <div
+                  key={release.id}
+                  className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <PlatformIcon className="h-5 w-5 text-slate-500" />
+                      <div>
+                        <span className="font-semibold">{release.version}</span>
+                        <span className="text-slate-500 text-sm ml-1">({release.version_code})</span>
+                      </div>
                     </div>
-                    <p className="text-sm text-slate-500 mt-0.5">
-                      {release.title}
-                    </p>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-sm">
+                    <span
+                      className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(release.status)}`}
+                    >
+                      {getStatusLabel(release.status)}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">{release.title}</p>
+
+                  <div className="flex flex-wrap gap-2 mb-3 text-xs">
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
                       {PLATFORMS.find((p) => p.value === release.platform)?.label || release.platform}
                     </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm">
-                    {release.region === "global" ? "国际版" : "国内版"}
-                  </td>
-                  <td className="py-3 px-4 text-sm">
-                    {formatFileSize(release.file_size)}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${getStatusBadge(release.status)}`}
-                      >
-                        {getStatusLabel(release.status)}
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                      {release.region === "global" ? "国际版" : "国内版"}
+                    </span>
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                      {formatFileSize(release.file_size)}
+                    </span>
+                    {release.is_force_update && (
+                      <span className="px-2 py-1 bg-red-100 text-red-700 rounded font-medium">
+                        强制更新
                       </span>
-                      {release.is_force_update && (
-                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
-                          强制更新
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-2">
-                      {release.status === "draft" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handlePublish(release)}
-                          title="发布"
-                        >
-                          <Rocket className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {release.download_url && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          asChild
-                          title="下载"
-                        >
-                          <a href={release.download_url} target="_blank" rel="noopener noreferrer">
-                            <Download className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditDialog(release)}
-                      >
-                        <Pencil className="h-4 w-4" />
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    {release.status === "draft" && (
+                      <Button variant="outline" size="sm" onClick={() => handlePublish(release)}>
+                        <Rocket className="h-4 w-4 mr-1" />
+                        发布
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700"
-                        onClick={() => handleDelete(release)}
-                      >
-                        <Trash2 className="h-4 w-4" />
+                    )}
+                    {release.download_url && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={release.download_url} target="_blank" rel="noopener noreferrer">
+                          <Download className="h-4 w-4 mr-1" />
+                          下载
+                        </a>
                       </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => openEditDialog(release)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                      onClick={() => handleDelete(release)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {/* 创建/编辑对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>{editingRelease ? "编辑版本" : "新建版本"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>版本号 *</Label>
                 <Input
@@ -395,7 +473,7 @@ export default function AdminReleasesPage() {
                 rows={4}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>平台 *</Label>
                 <Select
@@ -446,7 +524,7 @@ export default function AdminReleasesPage() {
                 placeholder="https://..."
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>文件大小 (字节)</Label>
                 <Input
@@ -464,7 +542,7 @@ export default function AdminReleasesPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>状态</Label>
                 <Select
@@ -497,7 +575,7 @@ export default function AdminReleasesPage() {
               />
               <Label>强制更新</Label>
             </div>
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 取消
               </Button>

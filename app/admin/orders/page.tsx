@@ -323,86 +323,141 @@ export default function AdminOrdersPage() {
       ) : orders.length === 0 ? (
         <div className="text-center py-12 text-slate-500">暂无订单数据</div>
       ) : (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-700/50">
-              <tr>
-                <th className="text-left py-3 px-4 font-medium">订单号</th>
-                <th className="text-left py-3 px-4 font-medium">用户</th>
-                <th className="text-left py-3 px-4 font-medium">商品</th>
-                <th className="text-left py-3 px-4 font-medium">金额</th>
-                <th className="text-left py-3 px-4 font-medium">支付方式</th>
-                <th className="text-left py-3 px-4 font-medium">状态</th>
-                <th className="text-left py-3 px-4 font-medium">风控</th>
-                <th className="text-left py-3 px-4 font-medium">时间</th>
-                <th className="text-left py-3 px-4 font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr
-                  key={order.id}
-                  className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/30"
-                >
-                  <td className="py-3 px-4">
-                    <span className="font-mono text-xs">{order.order_no}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-xs">{order.user_email || "-"}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div>
-                      <span className="font-medium">{order.product_name}</span>
-                      {order.plan && (
-                        <span className="text-slate-500 ml-1">({order.plan})</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 font-medium">
-                    {formatCurrency(order.amount, order.currency)}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-xs">
-                      {PAYMENT_METHODS.find((m) => m.value === order.payment_method)?.label ||
-                        order.payment_method ||
-                        "-"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-1">
-                      {getPaymentStatusIcon(order.payment_status)}
-                      <span className="text-xs">
-                        {getPaymentStatusLabel(order.payment_status)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          RISK_LEVELS.find((r) => r.value === order.risk_level)?.color ||
-                          "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {RISK_LEVELS.find((r) => r.value === order.risk_level)?.label ||
-                          order.risk_level}
-                      </span>
-                      <span className="text-xs text-slate-500">{order.risk_score}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-xs text-slate-500">
-                    {formatDate(order.created_at)}
-                  </td>
-                  <td className="py-3 px-4">
-                    <Button variant="ghost" size="sm" onClick={() => openDetail(order)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </td>
+        <>
+          {/* 桌面端表格视图 */}
+          <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-700/50">
+                <tr>
+                  <th className="text-left py-3 px-4 font-medium">订单号</th>
+                  <th className="text-left py-3 px-4 font-medium">用户</th>
+                  <th className="text-left py-3 px-4 font-medium">商品</th>
+                  <th className="text-left py-3 px-4 font-medium">金额</th>
+                  <th className="text-left py-3 px-4 font-medium">支付方式</th>
+                  <th className="text-left py-3 px-4 font-medium">状态</th>
+                  <th className="text-left py-3 px-4 font-medium">风控</th>
+                  <th className="text-left py-3 px-4 font-medium">时间</th>
+                  <th className="text-left py-3 px-4 font-medium">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {orders.map((order) => (
+                  <tr
+                    key={order.id}
+                    className="border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/30"
+                  >
+                    <td className="py-3 px-4">
+                      <span className="font-mono text-xs">{order.order_no}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs">{order.user_email || "-"}</span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div>
+                        <span className="font-medium">{order.product_name}</span>
+                        {order.plan && (
+                          <span className="text-slate-500 ml-1">({order.plan})</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 font-medium">
+                      {formatCurrency(order.amount, order.currency)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-xs">
+                        {PAYMENT_METHODS.find((m) => m.value === order.payment_method)?.label ||
+                          order.payment_method ||
+                          "-"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        {getPaymentStatusIcon(order.payment_status)}
+                        <span className="text-xs">
+                          {getPaymentStatusLabel(order.payment_status)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            RISK_LEVELS.find((r) => r.value === order.risk_level)?.color ||
+                            "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {RISK_LEVELS.find((r) => r.value === order.risk_level)?.label ||
+                            order.risk_level}
+                        </span>
+                        <span className="text-xs text-slate-500">{order.risk_score}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-xs text-slate-500">
+                      {formatDate(order.created_at)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <Button variant="ghost" size="sm" onClick={() => openDetail(order)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 移动端卡片视图 */}
+          <div className="md:hidden space-y-3">
+            {orders.map((order) => (
+              <div
+                key={order.id}
+                className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4"
+                onClick={() => openDetail(order)}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono text-xs text-slate-500 truncate">{order.order_no}</p>
+                    <p className="text-sm truncate mt-0.5">{order.user_email || "-"}</p>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    {getPaymentStatusIcon(order.payment_status)}
+                    <span className="text-xs">{getPaymentStatusLabel(order.payment_status)}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="font-medium text-sm">{order.product_name}</span>
+                    {order.plan && (
+                      <span className="text-slate-500 text-xs ml-1">({order.plan})</span>
+                    )}
+                  </div>
+                  <span className="font-semibold text-primary">
+                    {formatCurrency(order.amount, order.currency)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
+                      {PAYMENT_METHODS.find((m) => m.value === order.payment_method)?.label ||
+                        order.payment_method || "-"}
+                    </span>
+                    <span
+                      className={`px-2 py-1 rounded font-medium ${
+                        RISK_LEVELS.find((r) => r.value === order.risk_level)?.color ||
+                        "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {RISK_LEVELS.find((r) => r.value === order.risk_level)?.label || order.risk_level}
+                    </span>
+                  </div>
+                  <span className="text-slate-500">{formatDate(order.created_at)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* 分页 */}
@@ -434,21 +489,21 @@ export default function AdminOrdersPage() {
 
       {/* 订单详情对话框 */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] md:w-full">
           <DialogHeader>
             <DialogTitle>订单详情</DialogTitle>
           </DialogHeader>
           {detailOrder && (
             <div className="space-y-6">
               {/* 基本信息 */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <Label className="text-slate-500">订单号</Label>
-                  <p className="font-mono">{detailOrder.order_no}</p>
+                  <p className="font-mono text-xs break-all">{detailOrder.order_no}</p>
                 </div>
                 <div>
                   <Label className="text-slate-500">用户邮箱</Label>
-                  <p>{detailOrder.user_email || "-"}</p>
+                  <p className="break-all">{detailOrder.user_email || "-"}</p>
                 </div>
                 <div>
                   <Label className="text-slate-500">商品名称</Label>
@@ -487,7 +542,7 @@ export default function AdminOrdersPage() {
               {/* 第三方支付信息 */}
               <div className="border-t pt-4">
                 <h4 className="font-medium mb-3">支付渠道信息</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div>
                     <Label className="text-slate-500">渠道订单号</Label>
                     <p className="font-mono text-xs break-all">
@@ -509,16 +564,16 @@ export default function AdminOrdersPage() {
                   <Shield className="h-4 w-4" />
                   风控信息
                 </h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div>
                     <Label className="text-slate-500">风控评分</Label>
                     <p className="font-medium">{detailOrder.risk_score}</p>
                   </div>
                   <div>
                     <Label className="text-slate-500">风控等级</Label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Select value={editRiskLevel} onValueChange={setEditRiskLevel}>
-                        <SelectTrigger className="w-32">
+                        <SelectTrigger className="w-28">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -546,14 +601,14 @@ export default function AdminOrdersPage() {
                         .join(", ") || "-"}
                     </p>
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-1 sm:col-span-2">
                     <Label className="text-slate-500">User-Agent</Label>
                     <p className="font-mono text-xs break-all bg-slate-50 dark:bg-slate-700/50 p-2 rounded mt-1">
                       {detailOrder.user_agent || "-"}
                     </p>
                   </div>
                   {detailOrder.risk_factors && detailOrder.risk_factors.length > 0 && (
-                    <div className="col-span-2">
+                    <div className="col-span-1 sm:col-span-2">
                       <Label className="text-slate-500">风险因素</Label>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {(detailOrder.risk_factors as string[]).map((factor, idx) => (

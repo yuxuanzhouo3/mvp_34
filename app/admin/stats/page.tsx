@@ -304,21 +304,23 @@ export default function StatsPage() {
             </Card>
           </div>
 
-          {/* 图表区域 */}
+          {/* ��表区域 */}
           <Tabs defaultValue="users" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <TabsList>
-                <TabsTrigger value="users">用户趋势</TabsTrigger>
-                <TabsTrigger value="revenue">收入趋势</TabsTrigger>
-                <TabsTrigger value="devices">设备分布</TabsTrigger>
-                <TabsTrigger value="plans">订阅分布</TabsTrigger>
-              </TabsList>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                <TabsList className="inline-flex w-max sm:w-auto">
+                  <TabsTrigger value="users" className="text-xs sm:text-sm">用户趋势</TabsTrigger>
+                  <TabsTrigger value="revenue" className="text-xs sm:text-sm">收入趋势</TabsTrigger>
+                  <TabsTrigger value="devices" className="text-xs sm:text-sm">设备分布</TabsTrigger>
+                  <TabsTrigger value="plans" className="text-xs sm:text-sm">订阅分布</TabsTrigger>
+                </TabsList>
+              </div>
 
               <Select
                 value={timeRange.toString()}
                 onValueChange={(v) => setTimeRange(Number(v))}
               >
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger className="w-full sm:w-[120px]">
                   <Calendar className="h-4 w-4 mr-2" />
                   <SelectValue />
                 </SelectTrigger>
@@ -333,11 +335,11 @@ export default function StatsPage() {
             {/* 用户趋势图 */}
             <TabsContent value="users">
               <Card>
-                <CardHeader>
-                  <CardTitle>活跃用户趋势</CardTitle>
+                <CardHeader className="pb-2 sm:pb-6">
+                  <CardTitle className="text-base sm:text-lg">活跃用户趋势</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-[350px]">
+                <CardContent className="px-2 sm:px-6">
+                  <div className="h-[250px] sm:h-[350px]">
                     {dailyUsers.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={dailyUsers}>
@@ -370,11 +372,11 @@ export default function StatsPage() {
             {/* 收入趋势图 */}
             <TabsContent value="revenue">
               <Card>
-                <CardHeader>
-                  <CardTitle>收入趋势</CardTitle>
+                <CardHeader className="pb-2 sm:pb-6">
+                  <CardTitle className="text-base sm:text-lg">收入趋势</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-[350px]">
+                <CardContent className="px-2 sm:px-6">
+                  <div className="h-[250px] sm:h-[350px]">
                     {dailyRevenue.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dailyRevenue}>
@@ -415,11 +417,11 @@ export default function StatsPage() {
             <TabsContent value="devices">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card>
-                  <CardHeader>
-                    <CardTitle>设备类型分布</CardTitle>
+                  <CardHeader className="pb-2 sm:pb-6">
+                    <CardTitle className="text-base sm:text-lg">设备类型分布</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="h-[300px]">
+                  <CardContent className="px-2 sm:px-6">
+                    <div className="h-[220px] sm:h-[300px]">
                       {deviceData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -455,11 +457,11 @@ export default function StatsPage() {
                 </Card>
 
                 <Card>
-                  <CardHeader>
-                    <CardTitle>操作系统分布</CardTitle>
+                  <CardHeader className="pb-2 sm:pb-6">
+                    <CardTitle className="text-base sm:text-lg">操作系统分布</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="h-[300px]">
+                  <CardContent className="px-2 sm:px-6">
+                    <div className="h-[220px] sm:h-[300px]">
                       {osData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -499,12 +501,12 @@ export default function StatsPage() {
             {/* 订阅分布 */}
             <TabsContent value="plans">
               <Card>
-                <CardHeader>
-                  <CardTitle>订阅计划分布</CardTitle>
+                <CardHeader className="pb-2 sm:pb-6">
+                  <CardTitle className="text-base sm:text-lg">订阅计划分布</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="px-2 sm:px-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="h-[300px]">
+                    <div className="h-[220px] sm:h-[300px]">
                       {planData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>

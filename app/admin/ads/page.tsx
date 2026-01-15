@@ -292,7 +292,7 @@ export default function AdminAdsPage() {
 
       {/* 创建/编辑对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>{editingAd ? "编辑广告" : "新建广告"}</DialogTitle>
           </DialogHeader>
@@ -312,7 +312,7 @@ export default function AdminAdsPage() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>媒体类型</Label>
                 <Select
@@ -364,7 +364,7 @@ export default function AdminAdsPage() {
                 placeholder="https://..."
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>区域</Label>
                 <Select
@@ -400,7 +400,7 @@ export default function AdminAdsPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>优先级</Label>
                 <Input
@@ -425,7 +425,7 @@ export default function AdminAdsPage() {
                 </Select>
               </div>
             </div>
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 取消
               </Button>

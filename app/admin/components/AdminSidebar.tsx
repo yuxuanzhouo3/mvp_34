@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { adminLogout } from "@/actions/admin-auth";
@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   BarChart3,
+  MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,27 +27,32 @@ interface AdminSidebarProps {
 const navItems = [
   {
     href: "/admin/stats",
-    label: "数据统计",
+    label: "统计",
+    fullLabel: "数据统计",
     icon: BarChart3,
   },
   {
     href: "/admin/ads",
-    label: "广告管理",
+    label: "广告",
+    fullLabel: "广告管理",
     icon: Megaphone,
   },
   {
     href: "/admin/social-links",
-    label: "社交链接",
+    label: "链接",
+    fullLabel: "社交链接",
     icon: LinkIcon,
   },
   {
     href: "/admin/releases",
-    label: "发布版本",
+    label: "版本",
+    fullLabel: "发布版本",
     icon: Package,
   },
   {
     href: "/admin/orders",
-    label: "交易订单",
+    label: "订单",
+    fullLabel: "交易订单",
     icon: ShoppingCart,
   },
 ];
@@ -89,7 +95,7 @@ function SidebarContent({
               )}
             >
               <Icon className="h-5 w-5 flex-shrink-0" />
-              <span className="text-sm md:text-base">{item.label}</span>
+              <span className="text-sm md:text-base">{item.fullLabel}</span>
             </Link>
           );
         })}
@@ -125,6 +131,18 @@ export default function AdminSidebar({ username }: AdminSidebarProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // 关闭菜单时禁止背景滚动
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileMenuOpen]);
+
   const handleNavClick = () => setMobileMenuOpen(false);
 
   return (
@@ -149,10 +167,10 @@ export default function AdminSidebar({ username }: AdminSidebarProps) {
       {mobileMenuOpen && (
         <>
           <div
-            className="md:hidden fixed inset-0 bg-black/50 z-40"
+            className="md:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="md:hidden fixed left-0 top-14 bottom-0 w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-in slide-in-from-left duration-200">
+          <aside className="md:hidden fixed left-0 top-14 bottom-16 w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col z-50 animate-in slide-in-from-left duration-200 shadow-xl">
             <SidebarContent
               pathname={pathname}
               username={username}
@@ -161,6 +179,31 @@ export default function AdminSidebar({ username }: AdminSidebarProps) {
           </aside>
         </>
       )}
+
+      {/* 移动端底部导航栏 */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 z-50 safe-area-inset-bottom">
+        <div className="flex items-center justify-around h-full px-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px]",
+                  isActive
+                    ? "text-primary"
+                    : "text-slate-500 dark:text-slate-400 active:bg-slate-100 dark:active:bg-slate-700"
+                )}
+              >
+                <Icon className={cn("h-5 w-5", isActive && "text-primary")} />
+                <span className={cn("text-xs", isActive && "font-medium")}>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* 桌面端固定侧边栏 */}
       <aside className="hidden md:flex fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex-col">
