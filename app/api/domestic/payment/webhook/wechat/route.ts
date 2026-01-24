@@ -234,6 +234,7 @@ export async function POST(request: NextRequest) {
     const orderResult = await createOrder({
       userId: effectiveUserId,
       userEmail: paymentRecord?.metadata?.userEmail || undefined,
+      isWechatUser: paymentRecord?.metadata?.isWechatUser || false,
       productName: `${planName} Plan (${period})`,
       productType: "subscription",
       plan: planName,

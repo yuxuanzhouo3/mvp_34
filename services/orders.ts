@@ -15,6 +15,7 @@ import { nanoid } from "nanoid";
 export interface CreateOrderParams {
   userId: string;
   userEmail?: string;
+  isWechatUser?: boolean;
   productName: string;
   productType: "subscription" | "one_time" | "upgrade";
   plan?: string;
@@ -220,6 +221,7 @@ function isSuspiciousUserAgent(userAgent?: string): { suspicious: boolean; reaso
 export interface RiskAssessParams {
   userId: string;
   userEmail?: string;
+  isWechatUser?: boolean;
   amount: number;
   ipAddress?: string;
   userAgent?: string;
@@ -253,8 +255,8 @@ export function assessPaymentRisk(params: RiskAssessParams): RiskAssessResult {
     factors.push("medium_amount");
   }
 
-  // 2. 用户信息完整性
-  if (!params.userEmail) {
+  // 2. 用户信息完整性（微信登录用户不因缺少邮箱增加风险分）
+  if (!params.userEmail && !params.isWechatUser) {
     score += 15;
     factors.push("missing_email");
   }
@@ -326,8 +328,8 @@ function assessRisk(params: CreateOrderParams): {
     factors.push("medium_amount");
   }
 
-  // 2. 用户信息完整性
-  if (!params.userEmail) {
+  // 2. 用户信息完整性（微信登录用户不因缺少邮箱增加风险分）
+  if (!params.userEmail && !params.isWechatUser) {
     score += 15;
     factors.push("missing_email");
   }

@@ -32,6 +32,31 @@ async function resolveUserId(request: NextRequest): Promise<string | null> {
   }
 }
 
+// 获取用户信息（邮箱和登录方式）
+async function getUserInfo(userId: string): Promise<{ email: string | null; isWechatUser: boolean }> {
+  try {
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+
+    const result = await db
+      .collection("users")
+      .doc(userId)
+      .get();
+
+    const user = result.data?.[0] || result.data;
+    const email = user?.email || null;
+    const isWechatUser = !!(user?.wechatOpenId || user?.wechatUnionId);
+
+    console.log("📧 [Alipay Create] getUserInfo:", { userId, email, isWechatUser, hasUser: !!user });
+
+    return { email, isWechatUser };
+  } catch (error) {
+    console.error("[Alipay Create] getUserInfo error:", error);
+    return { email: null, isWechatUser: false };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -96,6 +121,9 @@ export async function POST(request: NextRequest) {
       effectiveBillingPeriod === "annual" ? "年度订阅" : "月度订阅"
     }`;
 
+    // 获取用户信息
+    const userInfo = await getUserInfo(userId);
+
     const metadata = {
       userId,
       days,
@@ -104,6 +132,8 @@ export async function POST(request: NextRequest) {
       planName: resolvedPlanName,
       isUpgrade: amount !== baseAmount,
       originalAmount: baseAmount,
+      userEmail: userInfo.email,
+      isWechatUser: userInfo.isWechatUser,
     };
 
     // 创建支付宝支付提供商
