@@ -58,7 +58,7 @@ function cloudBaseDocToSocialLink(doc: Record<string, unknown>): SocialLink {
     icon_type: (doc.icon_type as string) || "url",
     platform_type: (doc.platform_type as string) || "website",
     region,
-    source: region === "both" ? "both" : "cloudbase",
+    source: "cloudbase",
     status,
     is_active: status === "active",
     sort_order: (doc.sort_order as number) || 0,
