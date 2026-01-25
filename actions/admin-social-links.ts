@@ -265,6 +265,8 @@ export async function createSocialLink(
         name: name as string,
         description: description as string,
         url: targetUrl as string,
+        platform_type: "website",
+        region: "cn",
         sort_order: sortOrder,
         status: isActive ? "active" : "inactive",
       });
