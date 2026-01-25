@@ -385,24 +385,8 @@ export async function getReleases(region?: string, platform?: string): Promise<R
         getCloudBaseReleases(platform),
       ]);
 
-      // 去重：优先保留Supabase中region="both"的记录
-      const versionSet = new Set<string>();
-      const deduped: Release[] = [];
-
-      // 先添加Supabase数据
-      for (const release of supabaseData) {
-        const key = `${release.platform}-${release.version}`;
-        versionSet.add(key);
-        deduped.push(release);
-      }
-
-      // 再添加CloudBase数据，跳过已存在的版本
-      for (const release of cloudbaseData) {
-        const key = `${release.platform}-${release.version}`;
-        if (!versionSet.has(key)) {
-          deduped.push(release);
-        }
-      }
+      // 合并数据：不去重，因为需要区分国内版和国际版
+      const deduped: Release[] = [...supabaseData, ...cloudbaseData];
 
       // 按版本代码排序
       return deduped.sort((a, b) => b.version_code - a.version_code);
@@ -494,21 +478,26 @@ export async function createRelease(
         return { success: false, error: "数据库连接失败" };
       }
 
+      const platform = getData("platform") as string;
+      const title = getData("title") as string || `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${version}`;
+      const isActive = getData("isActive") === "true";
+      const status = isActive ? "published" : "draft";
+
       const { data, error } = await supabaseAdmin
         .from("releases")
         .insert({
           version,
           version_code: parseInt(getData("version_code") as string) || 0,
-          title: getData("title") as string,
+          title,
           description: getData("description") as string,
           release_notes: getData("release_notes") as string,
           download_url: supabaseDownloadUrl,
           download_url_backup: getData("download_url_backup") as string,
           file_size: fileSize,
           file_hash: getData("file_hash") as string,
-          platform: getData("platform") as string,
+          platform,
           region: "both",
-          status: getData("status") as string || "draft",
+          status,
           is_force_update: getData("is_force_update") === "true" || getData("is_force_update") === true,
           min_supported_version: getData("min_supported_version") as string,
         })
@@ -524,7 +513,7 @@ export async function createRelease(
       const cloudbaseResult = await createCloudBaseRelease({
         version,
         version_code: parseInt(getData("version_code") as string) || 0,
-        title: getData("title") as string,
+        title,
         description: getData("description") as string,
         release_notes: getData("release_notes") as string,
         download_url: cloudbaseDownloadUrl,
@@ -533,7 +522,7 @@ export async function createRelease(
         file_hash: getData("file_hash") as string,
         platform: getData("platform") as string,
         region: "cn",
-        status: getData("status") as string,
+        status,
         is_force_update: getData("is_force_update") === "true" || getData("is_force_update") === true,
         min_supported_version: getData("min_supported_version") as string,
       });
@@ -552,10 +541,14 @@ export async function createRelease(
         return { success: false, error: "请上传文件或提供下载URL" };
       }
 
+      const platform = getData("platform") as string;
+      const title = getData("title") as string || `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${version}`;
+      const isActive = getData("isActive") === "true";
+      const status = isActive ? "published" : "draft";
       const result = await createCloudBaseRelease({
         version,
         version_code: parseInt(getData("version_code") as string) || 0,
-        title: getData("title") as string,
+        title,
         description: getData("description") as string,
         release_notes: getData("release_notes") as string,
         download_url: cloudbaseDownloadUrl,
@@ -564,7 +557,7 @@ export async function createRelease(
         file_hash: getData("file_hash") as string,
         platform: getData("platform") as string,
         region: "cn",
-        status: getData("status") as string,
+        status,
         is_force_update: getData("is_force_update") === "true" || getData("is_force_update") === true,
         min_supported_version: getData("min_supported_version") as string,
       });
@@ -583,12 +576,16 @@ export async function createRelease(
       return { success: false, error: "请上传文件或提供下载URL" };
     }
 
+    const platform = getData("platform") as string;
+    const title = getData("title") as string || `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${version}`;
+    const isActive = getData("isActive") === "true";
+    const status = isActive ? "published" : "draft";
     const { data, error } = await supabaseAdmin
       .from("releases")
       .insert({
         version,
         version_code: parseInt(getData("version_code") as string) || 0,
-        title: getData("title") as string,
+        title,
         description: getData("description") as string,
         release_notes: getData("release_notes") as string,
         download_url: supabaseDownloadUrl,
@@ -597,7 +594,7 @@ export async function createRelease(
         file_hash: getData("file_hash") as string,
         platform: getData("platform") as string,
         region: "global",
-        status: getData("status") as string || "draft",
+        status,
         is_force_update: getData("is_force_update") === "true" || getData("is_force_update") === true,
         min_supported_version: getData("min_supported_version") as string,
       })
@@ -714,11 +711,11 @@ export async function deleteRelease(
       // 获取Supabase中的记录
       const { data: releaseData } = await supabaseAdmin
         .from("releases")
-        .select("version, platform, download_url, file_url")
+        .select("version, platform, download_url")
         .eq("id", id)
         .single();
 
-      const supabaseDownloadUrl = releaseData?.download_url || releaseData?.file_url;
+      const supabaseDownloadUrl = releaseData?.download_url;
 
       // 删除Supabase数据库记录
       const { error } = await supabaseAdmin
@@ -737,10 +734,13 @@ export async function deleteRelease(
           const urlParts = supabaseDownloadUrl.split("/releases/");
           if (urlParts.length > 1) {
             const fileName = urlParts[1].split("?")[0];
-            await supabaseAdmin.storage.from("releases").remove([fileName]);
+            const { error: storageError } = await supabaseAdmin.storage.from("releases").remove([fileName]);
+            if (storageError) {
+              console.error("[deleteRelease] Storage delete error:", storageError);
+            }
           }
         } catch (err) {
-          console.warn("Supabase delete file warning:", err);
+          console.error("[deleteRelease] Storage delete exception:", err);
         }
       }
 
@@ -793,14 +793,18 @@ export async function deleteRelease(
     }
 
     // 获取文件URL
-    const { data: releaseData } = await supabaseAdmin
+    const { data: releaseData, error: fetchError } = await supabaseAdmin
       .from("releases")
-      .select("download_url, file_url")
+      .select("download_url")
       .eq("id", id)
       .single();
 
+    if (fetchError) {
+      console.error("[deleteRelease] Error fetching release data:", fetchError);
+    }
+
     if (releaseData) {
-      downloadUrl = releaseData.download_url || releaseData.file_url;
+      downloadUrl = releaseData.download_url;
     }
 
     // 删除数据库记录
@@ -817,13 +821,31 @@ export async function deleteRelease(
     // 删除存储文件
     if (downloadUrl) {
       try {
-        const urlParts = downloadUrl.split("/releases/");
-        if (urlParts.length > 1) {
-          const fileName = urlParts[1].split("?")[0];
-          await supabaseAdmin.storage.from("releases").remove([fileName]);
+        let fileName: string | null = null;
+
+        // 尝试多种URL格式解析
+        if (downloadUrl.includes("/releases/")) {
+          const urlParts = downloadUrl.split("/releases/");
+          if (urlParts.length > 1) {
+            fileName = urlParts[1].split("?")[0];
+          }
+        }
+
+        if (!fileName && downloadUrl.includes("/object/public/releases/")) {
+          const urlParts = downloadUrl.split("/object/public/releases/");
+          if (urlParts.length > 1) {
+            fileName = urlParts[1].split("?")[0];
+          }
+        }
+
+        if (fileName) {
+          const { error: storageError } = await supabaseAdmin.storage.from("releases").remove([fileName]);
+          if (storageError) {
+            console.error("[deleteRelease] Storage delete error:", storageError);
+          }
         }
       } catch (err) {
-        console.warn("Supabase delete file warning:", err);
+        console.error("[deleteRelease] Storage delete exception:", err);
       }
     }
 

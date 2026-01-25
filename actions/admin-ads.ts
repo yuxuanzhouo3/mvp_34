@@ -533,6 +533,9 @@ export async function createAd(
         return { success: false, error: "数据库连接失败" };
       }
 
+      const isActive = getData("isActive") === "true";
+      const status = isActive ? "active" : "inactive";
+
       const { data, error } = await supabaseAdmin
         .from("ads")
         .insert({
@@ -546,7 +549,7 @@ export async function createAd(
           position: getData("position") as string,
           platform: getData("platform") as string || "all",
           region: "both",
-          status: getData("status") as string || "inactive",
+          status,
           priority: parseInt(getData("priority") as string) || 0,
           start_at: getData("start_at") as string || null,
           end_at: getData("end_at") as string || null,
@@ -574,7 +577,7 @@ export async function createAd(
         position: getData("position") as string,
         platform: getData("platform") as string,
         region: "cn",
-        status: getData("status") as string,
+        status,
         priority: parseInt(getData("priority") as string) || 0,
         start_at: getData("start_at") as string,
         end_at: getData("end_at") as string,
@@ -594,6 +597,8 @@ export async function createAd(
         return { success: false, error: "请上传媒体文件或提供媒体URL" };
       }
 
+      const isActive = getData("isActive") === "true";
+      const status = isActive ? "active" : "inactive";
       const result = await createCloudBaseAd({
         title,
         description: getData("description") as string,
@@ -605,7 +610,7 @@ export async function createAd(
         position: getData("position") as string,
         platform: getData("platform") as string,
         region: "cn",
-        status: getData("status") as string,
+        status,
         priority: parseInt(getData("priority") as string) || 0,
         start_at: getData("start_at") as string,
         end_at: getData("end_at") as string,
@@ -625,6 +630,9 @@ export async function createAd(
       return { success: false, error: "请上传媒体文件或提供媒体URL" };
     }
 
+    const isActive = getData("isActive") === "true";
+    const status = isActive ? "active" : "inactive";
+
     const { data, error } = await supabaseAdmin
       .from("ads")
       .insert({
@@ -638,7 +646,7 @@ export async function createAd(
         position: getData("position") as string,
         platform: getData("platform") as string || "all",
         region: "global",
-        status: getData("status") as string || "inactive",
+        status,
         priority: parseInt(getData("priority") as string) || 0,
         start_at: getData("start_at") as string || null,
         end_at: getData("end_at") as string || null,

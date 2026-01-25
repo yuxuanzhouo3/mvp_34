@@ -225,7 +225,7 @@ export default function ReleasesManagementPage() {
     setError(null);
 
     const formData = new FormData(e.currentTarget);
-    const result = await updateRelease(editing.id, formData);
+    const result = await updateRelease(editing.id, formData, editing.region);
 
     if (result.success) {
       setEditDialogOpen(false);
@@ -238,9 +238,9 @@ export default function ReleasesManagementPage() {
   }
 
   // 删除发布版本
-  async function handleDelete(id: string) {
-    setDeleting(id);
-    const result = await deleteRelease(id);
+  async function handleDelete(release: AppRelease) {
+    setDeleting(release.id);
+    const result = await deleteRelease(release.id, release.region);
     if (result.success) {
       loadReleases();
     } else {
@@ -250,9 +250,9 @@ export default function ReleasesManagementPage() {
   }
 
   // 切换状态
-  async function handleToggle(id: string, currentStatus: boolean) {
-    setToggling(id);
-    const result = await toggleReleaseStatus(id, !currentStatus);
+  async function handleToggle(release: AppRelease) {
+    setToggling(release.id);
+    const result = await toggleReleaseStatus(release.id, !release.is_active, release.region);
     if (result.success) {
       loadReleases();
     } else {
@@ -658,7 +658,7 @@ export default function ReleasesManagementPage() {
                             ? "text-green-600"
                             : "text-muted-foreground"
                         }
-                        onClick={() => handleToggle(release.id, release.is_active)}
+                        onClick={() => handleToggle(release)}
                         disabled={toggling === release.id}
                       >
                         {toggling === release.id ? (
@@ -722,7 +722,7 @@ export default function ReleasesManagementPage() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>取消</AlertDialogCancel>
                               <AlertDialogAction
-                                onClick={() => handleDelete(release.id)}
+                                onClick={() => handleDelete(release)}
                                 className="bg-red-600 hover:bg-red-700"
                               >
                                 {deleting === release.id ? (

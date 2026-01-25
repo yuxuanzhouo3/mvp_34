@@ -150,28 +150,21 @@ export function Footer() {
                       className="w-64 p-0 bg-background border-border shadow-lg z-50"
                       onOpenAutoFocus={(e) => e.preventDefault()}
                     >
-                      <div
-                        className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => {
-                          if (link.target_url) {
-                            window.open(link.target_url, "_blank", "noopener,noreferrer");
-                          }
-                        }}
-                      >
-                        <div className="flex items-start gap-3 mb-2">
-                          <div className="flex-shrink-0">
+                      <div className="p-2.5">
+                        <div className="flex items-start gap-2 mb-2">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
                             {isImageUrl(link.icon_url) ? (
                               <img
                                 src={link.icon_url}
                                 alt={link.title}
-                                className="w-8 h-8 object-contain"
+                                className="w-5 h-5 object-contain"
                               />
                             ) : (
-                              <span className="text-2xl">{link.icon_url}</span>
+                              <span className="text-lg">{link.icon_url}</span>
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-foreground text-sm mb-1">
+                            <h4 className="font-semibold text-foreground text-sm mb-0.5">
                               {link.title}
                             </h4>
                             {link.description && (
@@ -181,11 +174,25 @@ export function Footer() {
                             )}
                           </div>
                         </div>
+
                         {link.target_url && (
-                          <div className="text-xs text-primary hover:text-primary/80 truncate pt-2 border-t border-border/50">
-                            {currentLanguage === "zh" ? "点击访问" : "Click to visit"}:{" "}
-                            {link.target_url.replace("https://", "").replace("http://", "")}
-                          </div>
+                          <>
+                            <div className="mb-2 p-1.5 rounded bg-muted/50">
+                              <p className="text-xs text-muted-foreground truncate">
+                                {link.target_url.replace("https://", "").replace("http://", "")}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                window.open(link.target_url, "_blank", "noopener,noreferrer");
+                              }}
+                              className="w-full py-1.5 px-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                            >
+                              <Box className="w-3.5 h-3.5" />
+                              {currentLanguage === "zh" ? "立即前往" : "Visit Now"}
+                            </button>
+                          </>
                         )}
                       </div>
                     </PopoverContent>
@@ -199,38 +206,91 @@ export function Footer() {
 
           {/* 下载 - 占4列 */}
           <div className="md:col-span-4">
-            <h4 className="font-semibold text-foreground mb-4 flex items-center gap-2 text-sm">
-              <Download className="w-4 h-4" />
+            <h4 className="font-semibold text-foreground mb-4 text-sm">
               {t("footer.download")}
             </h4>
             {loading ? (
-              <div className="grid grid-cols-2 gap-2.5">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-14 bg-muted rounded animate-pulse" />
+              <div className="grid grid-cols-4 gap-1.5">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                  <div key={i} className="h-12 rounded-md bg-muted animate-pulse" />
                 ))}
               </div>
             ) : releases.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2.5">
-                {releases.slice(0, 6).map((release) => (
-                  <a
-                    key={release.id}
-                    href={release.download_url || "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2.5 rounded-lg border border-border/40 hover:border-primary/50 hover:bg-muted/50 transition-all group"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Download className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-foreground truncate">
+              <div className="grid grid-cols-4 gap-1.5">
+                {releases.slice(0, 8).map((release) => (
+                  <Popover key={release.id}>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="h-12 rounded-md border border-border/40 hover:border-primary/50 hover:bg-muted/50 transition-all flex items-center justify-center gap-2 px-2 group focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        onMouseEnter={(e) => e.currentTarget.focus()}
+                      >
+                        <Download className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+                        <span className="text-xs font-medium text-foreground truncate">
                           {getPlatformName(release.platform)}
+                        </span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="top"
+                      align="center"
+                      className="w-64 p-0 bg-background border-border shadow-lg z-50"
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <div className="p-2.5">
+                        <div className="flex items-start gap-2 mb-2">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                            <Download className="w-4 h-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-foreground text-sm mb-0.5">
+                              {release.title || getPlatformName(release.platform)}
+                            </h4>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <span>v{release.version}</span>
+                              {release.file_size && (
+                                <>
+                                  <span>•</span>
+                                  <span>{(release.file_size / 1024 / 1024).toFixed(2)} MB</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          v{release.version}
-                        </div>
+
+                        {release.description && (
+                          <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                            {release.description}
+                          </p>
+                        )}
+
+                        {release.release_notes && (
+                          <div className="mb-2 p-1.5 rounded bg-muted/50">
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {release.release_notes}
+                            </p>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            if (release.download_url) {
+                              window.location.href = release.download_url;
+                            }
+                          }}
+                          className="w-full py-1.5 px-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          {currentLanguage === "zh" ? "立即下载" : "Download Now"}
+                        </button>
+
+                        {release.published_at && (
+                          <p className="text-xs text-muted-foreground text-center mt-1.5">
+                            {currentLanguage === "zh" ? "发布于" : "Released"}: {new Date(release.published_at).toLocaleDateString()}
+                          </p>
+                        )}
                       </div>
-                    </div>
-                  </a>
+                    </PopoverContent>
+                  </Popover>
                 ))}
               </div>
             ) : (
