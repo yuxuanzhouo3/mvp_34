@@ -79,7 +79,7 @@ function cloudBaseDocToRelease(doc: Record<string, unknown>): Release {
     is_mandatory: is_force_update,
     min_supported_version: doc.min_supported_version as string | undefined,
     published_at: doc.published_at as string | undefined,
-    source: region === "both" ? "both" : "cloudbase",
+    source: "cloudbase",
     created_at: (doc.created_at as string) || (doc.createdAt as string) || new Date().toISOString(),
     updated_at: (doc.updated_at as string) || (doc.updatedAt as string) || new Date().toISOString(),
   };
