@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 import { Box, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PrivacyPolicy } from "@/components/legal/privacy-policy";
 import { SubscriptionTerms } from "@/components/legal/subscription-terms";
 
@@ -46,7 +47,10 @@ export function Footer() {
         const linksData = await linksRes.json();
         const releasesData = await releasesRes.json();
 
-        if (linksData.success) setSocialLinks(linksData.data || []);
+        if (linksData.success) {
+          console.log('Social links data:', linksData.data);
+          setSocialLinks(linksData.data || []);
+        }
         if (releasesData.success) setReleases(releasesData.data || []);
       } catch (error) {
         console.error("Failed to fetch footer data:", error);
@@ -59,7 +63,8 @@ export function Footer() {
   }, [isDomesticVersion]);
 
   const isImageUrl = (url: string) => {
-    return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('cloud://');
+    if (!url || typeof url !== 'string') return false;
+    return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('cloud://') || url.startsWith('/');
   };
 
   const getPlatformName = (platform: string) => {
@@ -105,36 +110,88 @@ export function Footer() {
               {t("footer.products")}
             </h4>
             {loading ? (
-              <div className="space-y-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-4 bg-muted rounded animate-pulse" />
+              <div className="grid grid-cols-8 gap-2">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                  <div key={i} className="w-full aspect-square rounded-md bg-muted animate-pulse" />
                 ))}
               </div>
             ) : socialLinks.length > 0 ? (
-              <ul className="space-y-2.5">
-                {socialLinks.slice(0, 6).map((link) => (
-                  <li key={link.id}>
-                    <a
-                      href={link.target_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2 group"
-                      title={link.description || link.title}
+              <div className="grid grid-cols-8 gap-2">
+                {socialLinks.map((link) => (
+                  <Popover key={link.id}>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="w-full aspect-square rounded-md border border-border/40 hover:border-primary/50 hover:bg-muted/50 transition-all flex items-center justify-center group focus:outline-none focus:ring-2 focus:ring-primary/50 overflow-hidden"
+                        onMouseEnter={(e) => e.currentTarget.focus()}
+                      >
+                        {isImageUrl(link.icon_url) ? (
+                          <img
+                            src={link.icon_url}
+                            alt={link.title}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const parent = e.currentTarget.parentElement;
+                              if (parent) {
+                                parent.innerHTML = `<span class="text-xl">${link.title.charAt(0)}</span>`;
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="text-xl">{link.icon_url}</span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="top"
+                      align="center"
+                      className="w-64 p-0 bg-background border-border shadow-lg z-50"
+                      onOpenAutoFocus={(e) => e.preventDefault()}
                     >
-                      {isImageUrl(link.icon_url) ? (
-                        <img
-                          src={link.icon_url}
-                          alt={link.title}
-                          className="w-4 h-4 object-contain flex-shrink-0"
-                        />
-                      ) : (
-                        <span className="text-base flex-shrink-0">{link.icon_url}</span>
-                      )}
-                      <span className="truncate group-hover:underline">{link.title}</span>
-                    </a>
-                  </li>
+                      <div
+                        className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => {
+                          if (link.target_url) {
+                            window.open(link.target_url, "_blank", "noopener,noreferrer");
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3 mb-2">
+                          <div className="flex-shrink-0">
+                            {isImageUrl(link.icon_url) ? (
+                              <img
+                                src={link.icon_url}
+                                alt={link.title}
+                                className="w-8 h-8 object-contain"
+                              />
+                            ) : (
+                              <span className="text-2xl">{link.icon_url}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-foreground text-sm mb-1">
+                              {link.title}
+                            </h4>
+                            {link.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-2">
+                                {link.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {link.target_url && (
+                          <div className="text-xs text-primary hover:text-primary/80 truncate pt-2 border-t border-border/50">
+                            {currentLanguage === "zh" ? "点击访问" : "Click to visit"}:{" "}
+                            {link.target_url.replace("https://", "").replace("http://", "")}
+                          </div>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 ))}
-              </ul>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">{t("footer.noProducts")}</p>
             )}

@@ -133,14 +133,6 @@ export default function SocialLinksManagementPage() {
   // 是否有筛选条件
   const hasFilters = searchQuery || filterSource !== "all" || filterStatus !== "all";
 
-  // 格式化文件大小
-  function formatFileSize(bytes?: number) {
-    if (!bytes) return "-";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
   // 处理文件选择，生成预览
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -234,7 +226,7 @@ export default function SocialLinksManagementPage() {
     if (!deleteTarget) return;
 
     setDeleting(deleteTarget.id);
-    const result = await deleteSocialLink(deleteTarget.id);
+    const result = await deleteSocialLink(deleteTarget.id, deleteTarget.region);
     if (result.success) {
       setDeleteDialogOpen(false);
       setDeleteTarget(null);
@@ -586,7 +578,6 @@ export default function SocialLinksManagementPage() {
                     <TableHead className="min-w-[120px]">标题</TableHead>
                     <TableHead className="min-w-[150px]">描述</TableHead>
                     <TableHead className="w-24">数据源</TableHead>
-                    <TableHead className="w-20">大小</TableHead>
                     <TableHead className="w-28">创建时间</TableHead>
                     <TableHead className="w-20">状态</TableHead>
                     <TableHead className="w-24">操作</TableHead>
@@ -653,13 +644,9 @@ export default function SocialLinksManagementPage() {
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-muted-foreground">
-                          {formatFileSize(link.file_size)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-muted-foreground">
                           {link.created_at
                             ? new Date(link.created_at).toLocaleDateString("zh-CN", {
+                                year: "numeric",
                                 month: "2-digit",
                                 day: "2-digit",
                               }) + " " + new Date(link.created_at).toLocaleTimeString("zh-CN", {

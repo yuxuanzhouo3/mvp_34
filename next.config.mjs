@@ -7,6 +7,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: 10485760, // 10MB (10 * 1024 * 1024 bytes)
+    },
+  },
   // 安全头配置
   async headers() {
     return [

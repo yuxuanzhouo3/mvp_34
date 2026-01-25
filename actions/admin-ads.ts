@@ -56,6 +56,7 @@ export interface AdFormData {
 // CloudBase 文档转 Ad 接口
 function cloudBaseDocToAd(doc: Record<string, unknown>): Ad {
   const status = (doc.status as "active" | "inactive" | "scheduled") || "inactive";
+  const region = (doc.region as "global" | "cn" | "all") || "cn";
   return {
     id: (doc._id as string) || "",
     title: (doc.title as string) || "",
@@ -68,7 +69,7 @@ function cloudBaseDocToAd(doc: Record<string, unknown>): Ad {
     link_type: (doc.link_type as "external" | "internal" | "download") || "external",
     position: (doc.position as "left" | "right" | "top" | "bottom") || "bottom",
     platform: (doc.platform as string) || "all",
-    region: (doc.region as "global" | "cn" | "all") || "cn",
+    region,
     status,
     is_active: status === "active",
     priority: (doc.priority as number) || 0,
@@ -76,7 +77,7 @@ function cloudBaseDocToAd(doc: Record<string, unknown>): Ad {
     end_at: doc.end_at as string | undefined,
     impressions: (doc.impressions as number) || 0,
     clicks: (doc.clicks as number) || 0,
-    source: doc.source as string | undefined || "cn",
+    source: region === "both" ? "both" : "cloudbase",
     file_size: doc.file_size as number | undefined,
     created_at: (doc.created_at as string) || (doc.createdAt as string) || new Date().toISOString(),
     updated_at: (doc.updated_at as string) || (doc.updatedAt as string) || new Date().toISOString(),
@@ -111,12 +112,84 @@ async function getSupabaseAds(status?: string): Promise<Ad[]> {
     return (data || []).map((item) => ({
       ...item,
       region: item.region || "global",
+      source: item.region === "both" ? "both" : "supabase",
       target_url: item.target_url || item.link_url,
       is_active: item.status === "active",
     }));
   } catch (err) {
     console.error("[getSupabaseAds] Unexpected error:", err);
     return [];
+  }
+}
+
+// ============================================================================
+// 文件上传函数
+// ============================================================================
+
+/**
+ * 上传文件到 Supabase Storage
+ */
+async function uploadToSupabase(
+  file: File,
+  fileName: string
+): Promise<string | null> {
+  if (!supabaseAdmin) return null;
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const filePath = `${fileName}`;
+
+    const { error } = await supabaseAdmin.storage
+      .from("ads")
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        upsert: true,
+      });
+
+    if (error) {
+      console.error("Supabase upload error:", error);
+      return null;
+    }
+
+    const { data: urlData } = supabaseAdmin.storage
+      .from("ads")
+      .getPublicUrl(filePath);
+
+    return urlData.publicUrl;
+  } catch (err) {
+    console.error("Supabase upload exception:", err);
+    return null;
+  }
+}
+
+/**
+ * 上传文件到 CloudBase Storage
+ */
+async function uploadToCloudBase(
+  file: File,
+  fileName: string
+): Promise<string | null> {
+  try {
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const app = connector.getApp();
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const cloudPath = `ads/${fileName}`;
+
+    const uploadResult = await app.uploadFile({
+      cloudPath,
+      fileContent: buffer,
+    });
+
+    if (!uploadResult.fileID) {
+      console.error("CloudBase upload failed: no fileID returned");
+      return null;
+    }
+
+    return uploadResult.fileID;
+  } catch (err) {
+    console.error("CloudBase upload exception:", err);
+    return null;
   }
 }
 
@@ -129,6 +202,7 @@ async function getCloudBaseAds(status?: string): Promise<Ad[]> {
     const connector = new CloudBaseConnector();
     await connector.initialize();
     const db = connector.getClient();
+    const app = connector.getApp();
 
     let query = db.collection("ads");
 
@@ -142,7 +216,44 @@ async function getCloudBaseAds(status?: string): Promise<Ad[]> {
       .limit(100)
       .get();
 
-    return (result.data || []).map((doc: Record<string, unknown>) => cloudBaseDocToAd(doc));
+    const ads = (result.data || []).map((doc: Record<string, unknown>) => cloudBaseDocToAd(doc));
+
+    // 收集需要获取临时 URL 的 fileID
+    const cloudbaseAds: { ad: Ad; fileId: string }[] = [];
+    for (const ad of ads) {
+      if (ad.media_url && ad.media_url.startsWith("cloud://")) {
+        cloudbaseAds.push({ ad, fileId: ad.media_url });
+      }
+    }
+
+    // 批量获取临时 URL
+    if (cloudbaseAds.length > 0) {
+      try {
+        const fileIds = cloudbaseAds.map((item) => item.fileId);
+        const urlResult = await app.getTempFileURL({ fileList: fileIds });
+
+        if (urlResult.fileList && Array.isArray(urlResult.fileList)) {
+          const urlMap = new Map<string, string>();
+          for (const fileInfo of urlResult.fileList) {
+            if (fileInfo.tempFileURL && fileInfo.code === "SUCCESS") {
+              urlMap.set(fileInfo.fileID, fileInfo.tempFileURL);
+            }
+          }
+
+          // 更新 ads 中的 media_url
+          for (const { ad, fileId } of cloudbaseAds) {
+            const tempUrl = urlMap.get(fileId);
+            if (tempUrl) {
+              ad.media_url = tempUrl;
+            }
+          }
+        }
+      } catch (urlErr) {
+        console.error("[getCloudBaseAds] getTempFileURL error:", urlErr);
+      }
+    }
+
+    return ads;
   } catch (err) {
     console.error("[getCloudBaseAds] Error:", err);
     return [];
@@ -212,8 +323,26 @@ async function deleteCloudBaseAd(id: string): Promise<{ success: boolean; error?
     const connector = new CloudBaseConnector();
     await connector.initialize();
     const db = connector.getClient();
+    const app = connector.getApp();
 
+    // 获取文件URL
+    const result = await db.collection("ads").doc(id).get();
+    let mediaUrl: string | null = null;
+    if (result.data && result.data.length > 0) {
+      mediaUrl = result.data[0].media_url;
+    }
+
+    // 删除数据库记录
     await db.collection("ads").doc(id).remove();
+
+    // 删除存储文件
+    if (mediaUrl && mediaUrl.startsWith("cloud://")) {
+      try {
+        await app.deleteFile({ fileList: [mediaUrl] });
+      } catch (fileErr) {
+        console.warn("CloudBase delete file warning:", fileErr);
+      }
+    }
 
     return { success: true };
   } catch (err) {
@@ -244,13 +373,31 @@ export async function getAds(region?: string, status?: string): Promise<Ad[]> {
     } else if (region === "global") {
       return await getSupabaseAds(status);
     } else {
-      // region === "all" 或未指定，合并两个数据源
+      // region === "all" 或未指定，合并两个数据源并去重
       const [supabaseData, cloudbaseData] = await Promise.all([
         getSupabaseAds(status),
         getCloudBaseAds(status),
       ]);
-      // 合并并按优先级排序
-      return [...supabaseData, ...cloudbaseData].sort((a, b) => {
+
+      // 去重：优先保留Supabase中region="both"的记录
+      const titleSet = new Set<string>();
+      const deduped: Ad[] = [];
+
+      // 先添加Supabase数据
+      for (const ad of supabaseData) {
+        titleSet.add(ad.title);
+        deduped.push(ad);
+      }
+
+      // 再添加CloudBase数据，跳过已存在的title
+      for (const ad of cloudbaseData) {
+        if (!titleSet.has(ad.title)) {
+          deduped.push(ad);
+        }
+      }
+
+      // 按优先级排序
+      return deduped.sort((a, b) => {
         if (b.priority !== a.priority) return b.priority - a.priority;
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
@@ -319,9 +466,150 @@ export async function createAd(
   }
 
   try {
+    // 处理 FormData 对象
+    const isFormData = formData instanceof FormData;
+    const getData = (key: string) => isFormData ? formData.get(key) : formData[key];
+
+    const title = getData("title") as string;
+    const file = getData("file") as File | null;
+    const uploadTarget = getData("uploadTarget") as string;
+
+    if (!title) {
+      return { success: false, error: "标题��能为空" };
+    }
+
+    // 如果有文件上传
+    let supabaseMediaUrl: string | null = null;
+    let cloudbaseMediaUrl: string | null = null;
+    let fileSize: number | undefined;
+
+    if (file && file.size > 0) {
+      const ext = file.name.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      fileSize = file.size;
+
+      // 根据上传目标选择存储
+      if (uploadTarget === "both") {
+        // 双端同步：同时上传到两个存储
+        const [supabaseResult, cloudbaseResult] = await Promise.all([
+          uploadToSupabase(file, fileName),
+          uploadToCloudBase(file, fileName),
+        ]);
+
+        if (!supabaseResult || !cloudbaseResult) {
+          const errors = [];
+          if (!supabaseResult) errors.push("Supabase");
+          if (!cloudbaseResult) errors.push("CloudBase");
+          return { success: false, error: `上传到 ${errors.join(" 和 ")} 失败` };
+        }
+
+        supabaseMediaUrl = supabaseResult;
+        cloudbaseMediaUrl = cloudbaseResult;
+      } else if (uploadTarget === "cn" || uploadTarget === "cloudbase") {
+        cloudbaseMediaUrl = await uploadToCloudBase(file, fileName);
+        if (!cloudbaseMediaUrl) {
+          return { success: false, error: "上传到 CloudBase 失败" };
+        }
+      } else {
+        supabaseMediaUrl = await uploadToSupabase(file, fileName);
+        if (!supabaseMediaUrl) {
+          return { success: false, error: "上传到 Supabase 失败" };
+        }
+      }
+    } else {
+      const mediaUrlData = getData("media_url") as string;
+      supabaseMediaUrl = mediaUrlData;
+      cloudbaseMediaUrl = mediaUrlData;
+    }
+
+    // 双端同步：写入两个数据库
+    if (uploadTarget === "both") {
+      if (!supabaseMediaUrl || !cloudbaseMediaUrl) {
+        return { success: false, error: "请上传媒体文件或提供媒体URL" };
+      }
+
+      // 写入 Supabase
+      if (!supabaseAdmin) {
+        return { success: false, error: "数据库连接失败" };
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("ads")
+        .insert({
+          title,
+          description: getData("description") as string,
+          media_type: (getData("media_type") as "image" | "video") || "image",
+          media_url: supabaseMediaUrl,
+          thumbnail_url: getData("thumbnail_url") as string,
+          link_url: getData("link_url") as string,
+          link_type: getData("link_type") as string || "external",
+          position: getData("position") as string,
+          platform: getData("platform") as string || "all",
+          region: "both",
+          status: getData("status") as string || "inactive",
+          priority: parseInt(getData("priority") as string) || 0,
+          start_at: getData("start_at") as string || null,
+          end_at: getData("end_at") as string || null,
+          impressions: 0,
+          clicks: 0,
+          file_size: fileSize,
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        console.error("[createAd] Supabase error:", error);
+        return { success: false, error: error.message };
+      }
+
+      // 同时写入 CloudBase
+      const cloudbaseResult = await createCloudBaseAd({
+        title,
+        description: getData("description") as string,
+        media_type: (getData("media_type") as "image" | "video") || "image",
+        media_url: cloudbaseMediaUrl,
+        thumbnail_url: getData("thumbnail_url") as string,
+        link_url: getData("link_url") as string,
+        link_type: getData("link_type") as string,
+        position: getData("position") as string,
+        platform: getData("platform") as string,
+        region: "cn",
+        status: getData("status") as string,
+        priority: parseInt(getData("priority") as string) || 0,
+        start_at: getData("start_at") as string,
+        end_at: getData("end_at") as string,
+      });
+
+      if (!cloudbaseResult.success) {
+        console.error("[createAd] CloudBase write failed:", cloudbaseResult.error);
+      }
+
+      revalidatePath("/admin/ads");
+      return { success: true, id: data.id };
+    }
+
     // 国内版存储到 CloudBase
-    if (formData.region === "cn") {
-      const result = await createCloudBaseAd(formData);
+    if (uploadTarget === "cn" || uploadTarget === "cloudbase") {
+      if (!cloudbaseMediaUrl) {
+        return { success: false, error: "请上传媒体文件或提供媒体URL" };
+      }
+
+      const result = await createCloudBaseAd({
+        title,
+        description: getData("description") as string,
+        media_type: (getData("media_type") as "image" | "video") || "image",
+        media_url: cloudbaseMediaUrl,
+        thumbnail_url: getData("thumbnail_url") as string,
+        link_url: getData("link_url") as string,
+        link_type: getData("link_type") as string,
+        position: getData("position") as string,
+        platform: getData("platform") as string,
+        region: "cn",
+        status: getData("status") as string,
+        priority: parseInt(getData("priority") as string) || 0,
+        start_at: getData("start_at") as string,
+        end_at: getData("end_at") as string,
+      });
       if (result.success) {
         revalidatePath("/admin/ads");
       }
@@ -333,25 +621,30 @@ export async function createAd(
       return { success: false, error: "数据库连接失败" };
     }
 
+    if (!supabaseMediaUrl) {
+      return { success: false, error: "请上传媒体文件或提供媒体URL" };
+    }
+
     const { data, error } = await supabaseAdmin
       .from("ads")
       .insert({
-        title: formData.title,
-        description: formData.description,
-        media_type: formData.media_type,
-        media_url: formData.media_url,
-        thumbnail_url: formData.thumbnail_url,
-        link_url: formData.link_url,
-        link_type: formData.link_type || "external",
-        position: formData.position,
-        platform: formData.platform || "all",
-        region: formData.region,
-        status: formData.status || "inactive",
-        priority: formData.priority || 0,
-        start_at: formData.start_at || null,
-        end_at: formData.end_at || null,
+        title,
+        description: getData("description") as string,
+        media_type: (getData("media_type") as "image" | "video") || "image",
+        media_url: supabaseMediaUrl,
+        thumbnail_url: getData("thumbnail_url") as string,
+        link_url: getData("link_url") as string,
+        link_type: getData("link_type") as string || "external",
+        position: getData("position") as string,
+        platform: getData("platform") as string || "all",
+        region: "global",
+        status: getData("status") as string || "inactive",
+        priority: parseInt(getData("priority") as string) || 0,
+        start_at: getData("start_at") as string || null,
+        end_at: getData("end_at") as string || null,
         impressions: 0,
         clicks: 0,
+        file_size: fileSize,
       })
       .select("id")
       .single();
@@ -438,13 +731,119 @@ export async function deleteAd(
   }
 
   try {
+    // 先获取广告信息以便删除存储文件
+    let mediaUrl: string | null = null;
+
     // 国内版删除 CloudBase
     if (region === "cn") {
-      const result = await deleteCloudBaseAd(id);
-      if (result.success) {
-        revalidatePath("/admin/ads");
+      // 获取文件URL
+      try {
+        const connector = new CloudBaseConnector();
+        await connector.initialize();
+        const db = connector.getClient();
+        const app = connector.getApp();
+
+        const result = await db.collection("ads").doc(id).get();
+        if (result.data && result.data.length > 0) {
+          mediaUrl = result.data[0].media_url;
+        }
+
+        // 删除数据库记录
+        await db.collection("ads").doc(id).remove();
+
+        // 删除存储文件
+        if (mediaUrl && mediaUrl.startsWith("cloud://")) {
+          try {
+            await app.deleteFile({ fileList: [mediaUrl] });
+          } catch (fileErr) {
+            console.warn("CloudBase delete file warning:", fileErr);
+          }
+        }
+      } catch (err) {
+        console.error("[deleteAd] CloudBase error:", err);
+        return { success: false, error: err instanceof Error ? err.message : "删除失败" };
       }
-      return result;
+
+      revalidatePath("/admin/ads");
+      return { success: true };
+    }
+
+    // 双端同步删除
+    if (region === "both") {
+      if (!supabaseAdmin) {
+        return { success: false, error: "数据库连接失败" };
+      }
+
+      // 获取Supabase中的记录
+      const { data: adData } = await supabaseAdmin
+        .from("ads")
+        .select("title, media_url")
+        .eq("id", id)
+        .single();
+
+      const supabaseMediaUrl = adData?.media_url;
+
+      // 删除Supabase数据库记录
+      const { error } = await supabaseAdmin.from("ads").delete().eq("id", id);
+
+      if (error) {
+        console.error("[deleteAd] Error:", error);
+        return { success: false, error: error.message };
+      }
+
+      // 删除Supabase Storage文件
+      if (supabaseMediaUrl) {
+        try {
+          const urlParts = supabaseMediaUrl.split("/ads/");
+          if (urlParts.length > 1) {
+            const fileName = urlParts[1].split("?")[0];
+            await supabaseAdmin.storage.from("ads").remove([fileName]);
+          }
+        } catch (err) {
+          console.warn("Supabase delete file warning:", err);
+        }
+      }
+
+      // 删除CloudBase数据库记录和Storage文件
+      try {
+        const connector = new CloudBaseConnector();
+        await connector.initialize();
+        const db = connector.getClient();
+        const app = connector.getApp();
+
+        // 查询CloudBase中是否有同名记录
+        if (adData?.title) {
+          const result = await db.collection("ads")
+            .where({ title: adData.title })
+            .get();
+
+          // 删除CloudBase数据库记录和Storage文件
+          if (result.data && result.data.length > 0) {
+            for (const doc of result.data) {
+              const cloudbaseMediaUrl = doc.media_url;
+
+              // 删除数据库记录
+              await db.collection("ads").doc(doc._id).remove();
+              console.log("CloudBase database record deleted:", doc._id);
+
+              // 删除Storage文件（使用CloudBase的fileID）
+              if (cloudbaseMediaUrl && cloudbaseMediaUrl.startsWith("cloud://")) {
+                try {
+                  await app.deleteFile({ fileList: [cloudbaseMediaUrl] });
+                  console.log("CloudBase storage file deleted:", cloudbaseMediaUrl);
+                } catch (fileErr) {
+                  console.warn("CloudBase delete file warning:", fileErr);
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("CloudBase delete warning:", err);
+      }
+
+      revalidatePath("/admin/ads");
+      return { success: true };
     }
 
     // 国际版删除 Supabase
@@ -452,11 +851,36 @@ export async function deleteAd(
       return { success: false, error: "数据库连接失败" };
     }
 
+    // 获取文件URL
+    const { data: adData } = await supabaseAdmin
+      .from("ads")
+      .select("media_url")
+      .eq("id", id)
+      .single();
+
+    if (adData) {
+      mediaUrl = adData.media_url;
+    }
+
+    // 删除数据库记录
     const { error } = await supabaseAdmin.from("ads").delete().eq("id", id);
 
     if (error) {
       console.error("[deleteAd] Error:", error);
       return { success: false, error: error.message };
+    }
+
+    // 删除存储文件
+    if (mediaUrl) {
+      try {
+        const urlParts = mediaUrl.split("/ads/");
+        if (urlParts.length > 1) {
+          const fileName = urlParts[1].split("?")[0];
+          await supabaseAdmin.storage.from("ads").remove([fileName]);
+        }
+      } catch (err) {
+        console.warn("Supabase delete file warning:", err);
+      }
     }
 
     revalidatePath("/admin/ads");
