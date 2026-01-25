@@ -47,7 +47,8 @@ export async function updateSession(request: NextRequest) {
   const hasDomesticAuth = !!domesticToken;
 
   // Protected routes - 需要登录的路由
-  const protectedPaths = ["/generate", "/builds"];
+  // 注意：/generate 允许游客访问（游客模式有独立的构建限制）
+  const protectedPaths = ["/builds"];
   const isProtectedPath = protectedPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   );

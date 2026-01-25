@@ -9,8 +9,10 @@ import { signInWithGoogle } from "@/actions/oauth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Mail, Lock, User, Eye, EyeOff, Layers } from "lucide-react";
 import { toast } from "sonner";
+import { PrivacyPolicy } from "@/components/legal/privacy-policy";
 import {
   isMiniProgram,
   parseWxMpLoginCallback,
@@ -69,6 +71,8 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isInMiniProgram, setIsInMiniProgram] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
+  const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
 
   const [form, setForm] = useState({
     email: "",
@@ -376,7 +380,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                   type="button"
                   className="w-full h-11 rounded-xl gap-3 mb-6 bg-[#00c060] hover:bg-[#00a654] text-white"
                   onClick={handleWechatSignIn}
-                  disabled={isLoading}
+                  disabled={isLoading || !agreePrivacy}
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -392,7 +396,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                   variant="outline"
                   className="w-full h-11 rounded-xl gap-3 mb-6"
                   onClick={handleGoogleSignIn}
-                  disabled={isLoading}
+                  disabled={isLoading || !agreePrivacy}
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -531,11 +535,32 @@ export function AuthPage({ mode }: AuthPageProps) {
               </div>
             )}
 
+            {/* 隐私条款复选框 */}
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                id="agree-privacy"
+                checked={agreePrivacy}
+                onChange={(e) => setAgreePrivacy(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer"
+              />
+              <label htmlFor="agree-privacy" className="text-sm text-muted-foreground cursor-pointer">
+                {isZhText ? "我已阅读并同意" : "I have read and agree to the "}
+                <button
+                  type="button"
+                  onClick={() => setShowPrivacyDialog(true)}
+                  className="text-cyan-500 hover:text-cyan-400 underline"
+                >
+                  {isZhText ? "《隐私条款》" : "Privacy Policy"}
+                </button>
+              </label>
+            </div>
+
             {/* 提交按钮 */}
             <Button
               type="submit"
               className="w-full h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium"
-              disabled={isLoading}
+              disabled={isLoading || !agreePrivacy}
             >
               {isLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -566,7 +591,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                   type="button"
                   className="w-full h-11 rounded-xl gap-3 bg-[#00c060] hover:bg-[#00a654] text-white"
                   onClick={handleWechatSignIn}
-                  disabled={isLoading}
+                  disabled={isLoading || !agreePrivacy}
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -581,7 +606,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                   variant="outline"
                   className="w-full h-11 rounded-xl gap-3"
                   onClick={handleGoogleSignIn}
-                  disabled={isLoading}
+                  disabled={isLoading || !agreePrivacy}
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -613,6 +638,47 @@ export function AuthPage({ mode }: AuthPageProps) {
             )}
           </p>
         </div>
+
+        {/* 隐私条款弹窗 */}
+        <Dialog open={showPrivacyDialog} onOpenChange={setShowPrivacyDialog}>
+          <DialogContent className="w-[95vw] sm:max-w-2xl lg:max-w-4xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden rounded-xl sm:rounded-2xl p-0 border-0 shadow-2xl">
+            <div className="absolute inset-0 bg-gradient-to-br from-cyan-50/50 via-white to-blue-50/50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900" />
+            <div className="absolute top-0 right-0 w-32 sm:w-48 lg:w-64 h-32 sm:h-48 lg:h-64 bg-gradient-to-br from-cyan-400/10 to-blue-500/10 rounded-full blur-3xl" />
+            <div className="absolute bottom-0 left-0 w-32 sm:w-48 lg:w-64 h-32 sm:h-48 lg:h-64 bg-gradient-to-br from-purple-400/10 to-pink-500/10 rounded-full blur-3xl" />
+
+            <div className="relative z-10 flex flex-col h-full max-h-[90vh] sm:max-h-[85vh]">
+              <DialogHeader className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200/80 dark:border-gray-700/80 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm flex-shrink-0">
+                <DialogTitle className="flex items-center gap-2 sm:gap-3 text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+                  <div className="p-1.5 sm:p-2 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg sm:rounded-xl shadow-lg shadow-cyan-500/25">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <span>{isZhText ? "隐私条款" : "Privacy Policy"}</span>
+                </DialogTitle>
+                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 ml-8 sm:ml-12">
+                  {isZhText ? "请仔细阅读以下隐私条款" : "Please read the following privacy policy carefully"}
+                </p>
+              </DialogHeader>
+
+              <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-slate-800/50">
+                <PrivacyPolicy currentLanguage={currentLanguage} />
+              </div>
+
+              <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200/80 dark:border-gray-700/80 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setShowPrivacyDialog(false);
+                    setAgreePrivacy(true);
+                  }}
+                  className="w-full py-2 sm:py-2.5 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white text-sm sm:text-base font-medium rounded-lg sm:rounded-xl shadow-lg shadow-cyan-500/25 hover:shadow-xl hover:shadow-cyan-500/30 transition-all duration-300 hover:-translate-y-0.5"
+                >
+                  {isZhText ? "我已阅读并同意" : "I have read and agree"}
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

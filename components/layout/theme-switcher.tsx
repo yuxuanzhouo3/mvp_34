@@ -2,25 +2,48 @@
 
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Sun, Moon } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
 
 export function ThemeSwitcher() {
   const { setTheme, theme } = useTheme();
+  const { currentLanguage } = useLanguage();
+  const isDarkMode = theme === "dark";
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={toggleTheme}
-      className="h-9 w-9 text-muted-foreground hover:text-foreground"
-    >
-      <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-      <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">Toggle theme</span>
-    </Button>
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleTheme}
+            className="h-7 w-7 p-0 text-foreground hover:bg-accent flex-shrink-0"
+          >
+            {isDarkMode ? (
+              <Sun className="w-3.5 h-3.5" />
+            ) : (
+              <Moon className="w-3.5 h-3.5" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          {isDarkMode
+            ? (currentLanguage === "zh" ? "切换到亮色模式" : "Switch to light mode")
+            : (currentLanguage === "zh" ? "切换到暗色模式" : "Switch to dark mode")
+          }
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

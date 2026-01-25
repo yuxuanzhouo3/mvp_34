@@ -15,7 +15,7 @@ export function Hero() {
     {
       id: "mobile",
       name: currentLanguage === "zh" ? "移动应用" : "Mobile Apps",
-      description: currentLanguage === "zh" ? "Android / iOS / 鸿蒙" : "Android / iOS / HarmonyOS",
+      description: currentLanguage === "zh" ? "Android / iOS / HarmonyOS" : "Android / iOS / HarmonyOS",
       icon: Smartphone,
       color: "from-emerald-500 to-teal-600",
     },
@@ -81,7 +81,7 @@ export function Hero() {
 
           {/* Platform tags */}
           <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mb-8 sm:mb-12 px-2">
-            {["Android", "iOS", currentLanguage === "zh" ? "鸿蒙" : "HarmonyOS", currentLanguage === "zh" ? "小程序" : "Mini Programs", "Windows", "MacOS", "Linux", "Chrome"].map((platform) => (
+            {["Android", "iOS", "HarmonyOS", currentLanguage === "zh" ? "小程序" : "Mini Programs", "Windows", "MacOS", "Linux", "Chrome"].map((platform) => (
               <span
                 key={platform}
                 className="px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 text-foreground"

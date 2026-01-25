@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { PLATFORMS, PLATFORM_CATEGORIES, getPlatformsByCategory } from "@/config/platforms";
 import type { PlatformCategory } from "@/config/platforms";
 import { Badge } from "@/components/ui/badge";
-import { Check, Layers, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Check, Layers, Clock, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { getPlanSupportBatchBuild } from "@/utils/plan-limits";
@@ -20,7 +23,13 @@ interface PlatformSelectorProps {
 export function PlatformSelector({ selectedPlatforms, onSelectionChange }: PlatformSelectorProps) {
   const { t, currentLanguage } = useLanguage();
   const { user } = useAuth();
+  const router = useRouter();
   const [batchBuildEnabled, setBatchBuildEnabled] = useState(false);
+  const [showGuestLoginDialog, setShowGuestLoginDialog] = useState(false);
+  const [guestDialogType, setGuestDialogType] = useState<"platform" | "batch">("platform");
+
+  // 游客���持的移动端平台
+  const guestSupportedPlatforms = ["android", "ios", "harmonyos"];
 
   useEffect(() => {
     if (!user) return;
@@ -60,6 +69,14 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
       toast.info(currentLanguage === "zh" ? "该平台正在开发中，敬请期待" : "This platform is coming soon");
       return;
     }
+
+    // 游客限制：仅支持移动端平台
+    if (!user && !guestSupportedPlatforms.includes(platformId)) {
+      setGuestDialogType("platform");
+      setShowGuestLoginDialog(true);
+      return;
+    }
+
     if (selectedPlatforms.includes(platformId)) {
       onSelectionChange(selectedPlatforms.filter((id) => id !== platformId));
     } else {
@@ -72,6 +89,13 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   const toggleCategory = (category: PlatformCategory) => {
+    // 游客限制：批量构建需要登录
+    if (!user) {
+      setGuestDialogType("batch");
+      setShowGuestLoginDialog(true);
+      return;
+    }
+
     if (!batchBuildEnabled) {
       window.dispatchEvent(new CustomEvent("open-subscription-modal"));
       return;
@@ -88,6 +112,13 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   };
 
   const selectAll = () => {
+    // 游客限制：批量构建需要登录
+    if (!user) {
+      setGuestDialogType("batch");
+      setShowGuestLoginDialog(true);
+      return;
+    }
+
     if (!batchBuildEnabled) {
       window.dispatchEvent(new CustomEvent("open-subscription-modal"));
       return;
@@ -194,6 +225,62 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
           </div>
         );
       })}
+
+      {/* 游客登录提示对话框 */}
+      <Dialog open={showGuestLoginDialog} onOpenChange={setShowGuestLoginDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-amber-500" />
+              {currentLanguage === "zh" ? "需要登录" : "Login Required"}
+            </DialogTitle>
+            <DialogDescription>
+              {guestDialogType === "platform" ? (
+                currentLanguage === "zh"
+                  ? "游客模式仅支持移动端平台（Android、iOS、HarmonyOS）的单平台构建。"
+                  : "Guest mode only supports single mobile platform builds (Android, iOS, HarmonyOS)."
+              ) : (
+                currentLanguage === "zh"
+                  ? "游客模式仅支持单平台构建，批量构建功能需要登录后使用。"
+                  : "Guest mode only supports single platform builds. Batch building requires login."
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-4">
+              <p className="text-sm text-muted-foreground">
+                {guestDialogType === "platform" ? (
+                  currentLanguage === "zh"
+                    ? "登录后即可解锁所有平台的构建功能，包括桌面端（Chrome、Windows、macOS、Linux）和小程序平台。"
+                    : "Login to unlock all platform builds, including desktop (Chrome, Windows, macOS, Linux) and mini-program platforms."
+                ) : (
+                  currentLanguage === "zh"
+                    ? "登录后即可使用批量构建功能，同时构建多个平台，大幅提升效率。"
+                    : "Login to use batch building feature and build multiple platforms simultaneously for better efficiency."
+                )}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={() => {
+                  setShowGuestLoginDialog(false);
+                  router.push("/auth/login?redirect=/generate");
+                }}
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500"
+              >
+                {currentLanguage === "zh" ? "立即登录" : "Login Now"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowGuestLoginDialog(false)}
+                className="w-full"
+              >
+                {currentLanguage === "zh" ? "继续试用" : "Continue Trial"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

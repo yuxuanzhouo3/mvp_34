@@ -95,7 +95,7 @@ export function Header() {
           </nav>
         </div>
         <div className="flex items-center gap-1 sm:gap-1.5">
-          <div className="flex items-center gap-0.5"><LanguageSwitcher /><ThemeSwitcher /></div>
+          <div className="flex items-center gap-0.5 bg-muted/50 rounded-md p-0.5"><LanguageSwitcher /><ThemeSwitcher /></div>
           <div className="hidden md:block w-px h-5 bg-border mx-1.5 lg:mx-2" />
           <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
             {user && (<Button variant="ghost" size="sm" className="h-8 lg:h-9 gap-1.5 lg:gap-2 text-amber-600 dark:text-amber-400 hover:text-amber-500 hover:bg-amber-500/10" onClick={() => setSubscriptionOpen(true)}><Crown className="h-4 w-4" /><span className="text-xs lg:text-sm font-medium">{currentLanguage === "zh" ? "订阅" : "Subscribe"}</span></Button>)}

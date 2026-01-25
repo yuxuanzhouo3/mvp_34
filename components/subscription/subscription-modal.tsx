@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { getAllPlansConfig } from "@/utils/plan-limits";
 import { toast } from "sonner";
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
+import { SubscriptionTerms } from "@/components/legal/subscription-terms";
 
 // 从环境变量获取套餐配置
 const PLANS_CONFIG = getAllPlansConfig();
@@ -179,6 +180,8 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [selectedPayment, setSelectedPayment] = useState(isDomestic ? "alipay" : "stripe");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [showTermsDialog, setShowTermsDialog] = useState(false);
 
   // 动态生成套餐数据（从环境变量读取配额）
   const internationalPlans = getPlansWithFeatures(internationalPlansBase, isZh);
@@ -379,6 +382,7 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:max-w-[52rem] bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-[#0f1015] dark:via-[#14151a] dark:to-[#0f1015] border-0 overflow-hidden shadow-2xl rounded-2xl p-0">
         {/* 装饰性背景 */}
@@ -630,11 +634,31 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
                   </div>
                 </div>
 
+                {/* 订阅规则勾选 */}
+                <label className="flex items-start gap-1.5 text-[10px] text-gray-600 dark:text-gray-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={agreeTerms}
+                    onChange={(e) => setAgreeTerms(e.target.checked)}
+                    className="mt-0.5 h-3 w-3 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:bg-transparent dark:border-gray-600 cursor-pointer"
+                  />
+                  <span className="leading-snug flex flex-wrap items-center gap-0.5">
+                    {isZh ? "我已阅读并同意" : "I have read and agree to the"}
+                    <button
+                      type="button"
+                      className="underline hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      onClick={() => setShowTermsDialog(true)}
+                    >
+                      {isZh ? "《订阅规则》" : "Subscription Terms"}
+                    </button>
+                  </span>
+                </label>
+
                 {/* 订阅按钮 */}
                 <Button
-                  disabled={isProcessing || !selectedPlan || selectedPlan.disabled || selectedPlan.id === "free"}
+                  disabled={isProcessing || !selectedPlan || selectedPlan.disabled || selectedPlan.id === "free" || !agreeTerms}
                   onClick={handleSubscribe}
-                  className="h-8 md:h-9 px-4 md:px-6 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold text-xs md:text-sm rounded-lg shadow-lg shadow-indigo-500/30 transition-all duration-300 hover:shadow-xl hover:scale-[1.02]"
+                  className="h-8 md:h-9 px-4 md:px-6 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold text-xs md:text-sm rounded-lg shadow-lg shadow-indigo-500/30 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isProcessing ? (
                     <>
@@ -695,5 +719,48 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* 订阅规则弹窗 */}
+    <Dialog open={showTermsDialog} onOpenChange={setShowTermsDialog}>
+      <DialogContent className="w-[95vw] sm:max-w-2xl lg:max-w-4xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden rounded-xl sm:rounded-2xl p-0 border-0 shadow-2xl">
+        {/* 装饰性背景 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/50 via-white to-teal-50/50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900" />
+        <div className="absolute top-0 right-0 w-32 sm:w-48 lg:w-64 h-32 sm:h-48 lg:h-64 bg-gradient-to-br from-emerald-400/10 to-teal-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-32 sm:w-48 lg:w-64 h-32 sm:h-48 lg:h-64 bg-gradient-to-br from-blue-400/10 to-cyan-500/10 rounded-full blur-3xl" />
+
+        <div className="relative z-10 flex flex-col h-full max-h-[90vh] sm:max-h-[85vh]">
+          <DialogHeader className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200/80 dark:border-gray-700/80 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2 sm:gap-3 text-base sm:text-lg font-bold text-gray-900 dark:text-white">
+              <div className="p-1.5 sm:p-2 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg sm:rounded-xl shadow-lg shadow-emerald-500/25">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <span>{isZh ? "订阅规则" : "Subscription Terms"}</span>
+            </DialogTitle>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 ml-8 sm:ml-12">
+              {isZh ? "请仔细阅读以下订阅规则" : "Please read the following subscription terms carefully"}
+            </p>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-slate-800/50">
+            <SubscriptionTerms currentLanguage={currentLanguage} />
+          </div>
+
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200/80 dark:border-gray-700/80 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm flex-shrink-0">
+            <button
+              onClick={() => {
+                setShowTermsDialog(false);
+                setAgreeTerms(true);
+              }}
+              className="w-full py-2 sm:py-2.5 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-sm sm:text-base font-medium rounded-lg sm:rounded-xl shadow-lg shadow-emerald-500/25 hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-300 hover:-translate-y-0.5"
+            >
+              {isZh ? "我已阅读并同意" : "I have read and agree"}
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

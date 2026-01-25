@@ -5,14 +5,16 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { useGuestBuild } from "@/hooks/useGuestBuild";
+import { useGuestBuildHistory } from "@/hooks/useGuestBuildHistory";
 import { UrlInput, AppConfig, PlatformSelector, AndroidConfig, IOSConfig, HarmonyOSConfig } from "@/components/generate";
 import { WechatConfig } from "@/components/generate/wechat-config";
 import { ChromeExtensionConfig } from "@/components/generate/chrome-extension-config";
 import { WindowsConfig } from "@/components/generate/windows-config";
 import { MacOSConfig } from "@/components/generate/macos-config";
 import { LinuxConfig } from "@/components/generate/linux-config";
+import { GuestBuildHistory } from "@/components/generate/guest-build-history";
 import { Button } from "@/components/ui/button";
-import { Rocket, Sparkles, ArrowRight, Loader2, UserX } from "lucide-react";
+import { Rocket, Sparkles, ArrowRight, Loader2, UserX, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { IS_DOMESTIC_VERSION } from "@/config";
 
@@ -20,6 +22,7 @@ function GenerateContent() {
   const { t, currentLanguage } = useLanguage();
   const { user } = useAuth();
   const guestBuild = useGuestBuild();
+  const guestBuildHistory = useGuestBuildHistory();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -105,23 +108,32 @@ function GenerateContent() {
   };
 
   // 快捷填写：根据应用名称自动生成包名
-  const generatePackageName = (name: string) => {
+  const generatePackageName = (name: string, platform: 'android' | 'ios' | 'harmonyos' = 'android') => {
     const sanitized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    return `com.app.${sanitized || 'myapp'}`;
+    if (platform === 'android') {
+      return `com.${sanitized || 'myapp'}.android.app`;
+    } else if (platform === 'harmonyos') {
+      return `com.${sanitized || 'myapp'}_harmony.app`;
+    } else {
+      return `com.${sanitized || 'myapp'}.ios.app`;
+    }
   };
 
   // 当应用名称变化时，如果包名为空或是自动生成的，则自动更新包名
   const handleAppNameWithPackage = (name: string) => {
     handleAppNameChange(name);
-    const autoPackage = generatePackageName(appName);
-    if (!packageName || packageName === autoPackage || packageName === 'com.app.myapp') {
-      setPackageName(generatePackageName(name));
+    const autoAndroidPackage = generatePackageName(appName, 'android');
+    const autoIosPackage = generatePackageName(appName, 'ios');
+    const autoHarmonyPackage = generatePackageName(appName, 'harmonyos');
+
+    if (!packageName || packageName === autoAndroidPackage || packageName.startsWith('com.') && packageName.includes('.android.app')) {
+      setPackageName(generatePackageName(name, 'android'));
     }
-    if (!bundleId || bundleId === autoPackage || bundleId === 'com.app.myapp') {
-      setBundleId(generatePackageName(name));
+    if (!bundleId || bundleId === autoIosPackage || bundleId.startsWith('com.') && bundleId.includes('.ios.app')) {
+      setBundleId(generatePackageName(name, 'ios'));
     }
-    if (!harmonyBundleName || harmonyBundleName === autoPackage || harmonyBundleName === 'com.app.myapp') {
-      setHarmonyBundleName(generatePackageName(name));
+    if (!harmonyBundleName || harmonyBundleName === autoHarmonyPackage || harmonyBundleName.startsWith('com.') && harmonyBundleName.includes('_harmony.app')) {
+      setHarmonyBundleName(generatePackageName(name, 'harmonyos'));
     }
   };
 
@@ -162,26 +174,25 @@ function GenerateContent() {
         return;
       }
 
-      // 检查游客剩余构建次数
+      // 检查游客剩余构建次数（移除强制跳转，改为友好提示）
       if (!guestBuild.hasRemaining) {
         toast.error(
           currentLanguage === "zh"
-            ? `今日游客构建次数已用完（${guestBuild.limit}次/天），请登录后继续使用`
-            : `Daily guest build limit reached (${guestBuild.limit}/day). Please login to continue.`
+            ? `今日游客构建次数已用完（${guestBuild.limit}次/天）\n明天自动重置，或登录后继续使用`
+            : `Daily guest build limit reached (${guestBuild.limit}/day)\nResets tomorrow, or login to continue`
         );
-        router.push("/auth/login?redirect=/generate");
         return;
       }
 
-      // 游客模式仅支持部分平台（不支持 iOS、WeChat、HarmonyOS）
+      // 游客模式仅支持移动端平台（Android、iOS、HarmonyOS）
       const unsupportedPlatforms = selectedPlatforms.filter(p =>
-        ["ios", "wechat", "harmonyos"].includes(p)
+        !["android", "ios", "harmonyos"].includes(p)
       );
       if (unsupportedPlatforms.length > 0) {
         toast.error(
           currentLanguage === "zh"
-            ? `游客模式不支持 ${unsupportedPlatforms.join(", ")} 平台，请登录后使用`
-            : `Guest mode doesn't support ${unsupportedPlatforms.join(", ")}. Please login.`
+            ? `游客模式仅支持移动端平台（Android、iOS、HarmonyOS），请登录后使用其他平台`
+            : `Guest mode only supports mobile platforms (Android, iOS, HarmonyOS). Please login for other platforms.`
         );
         return;
       }
@@ -352,17 +363,30 @@ function GenerateContent() {
         formData.append("platformCount", "1");
 
         // 根据平台设置应用名称
+        let currentAppName = appName;
         if (platform === "android") {
           formData.append("appName", appName);
         } else if (platform === "chrome") {
+          currentAppName = chromeExtensionName;
           formData.append("appName", chromeExtensionName);
         } else if (platform === "windows") {
+          currentAppName = windowsAppName;
           formData.append("appName", windowsAppName);
         } else if (platform === "macos") {
+          currentAppName = macosAppName;
           formData.append("appName", macosAppName);
         } else if (platform === "linux") {
+          currentAppName = linuxAppName;
           formData.append("appName", linuxAppName);
         }
+
+        // 添加构建记录到历史
+        const buildId = guestBuildHistory.addBuild({
+          platform,
+          appName: currentAppName,
+          url,
+          status: "building",
+        });
 
         toast.info(
           currentLanguage === "zh"
@@ -370,38 +394,63 @@ function GenerateContent() {
             : "Building in guest mode, please wait..."
         );
 
-        const response = await fetch("/api/international/guest/build", {
-          method: "POST",
-          body: formData,
-        });
+        const guestApiPath = IS_DOMESTIC_VERSION ? "/api/domestic/guest/build" : "/api/international/guest/build";
 
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || error.error || "Guest build failed");
+        try {
+          const response = await fetch(guestApiPath, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            // 更新构建记录为失败
+            guestBuildHistory.updateBuild(buildId, {
+              status: "failed",
+              error: error.message || error.error || "Guest build failed",
+            });
+            throw new Error(error.message || error.error || "Guest build failed");
+          }
+
+          // API 成功后再消费本地次数
+          guestBuild.consumeBuild();
+
+          const result = await response.json();
+
+          // 更新构建记录为完成，保存下载数据
+          guestBuildHistory.updateBuild(buildId, {
+            status: "completed",
+            fileName: result.fileName,
+            downloadData: result.data,
+          });
+
+          // 下载构建结果
+          const binaryData = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
+          const blob = new Blob([binaryData], { type: "application/zip" });
+          const downloadUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = downloadUrl;
+          a.download = result.fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(downloadUrl);
+
+          toast.success(
+            currentLanguage === "zh"
+              ? `构建完成！剩余 ${result.remaining}/${result.limit} 次`
+              : `Build completed! ${result.remaining}/${result.limit} remaining`
+          );
+        } catch (error) {
+          // 如果是网络错误或其他未捕获的错误，更新构建记录
+          if (error instanceof Error && !error.message.includes("Guest build failed")) {
+            guestBuildHistory.updateBuild(buildId, {
+              status: "failed",
+              error: error.message,
+            });
+          }
+          throw error;
         }
-
-        // API 成功后再消费本地次数
-        guestBuild.consumeBuild();
-
-        const result = await response.json();
-
-        // 下载构建结果
-        const binaryData = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
-        const blob = new Blob([binaryData], { type: "application/zip" });
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = downloadUrl;
-        a.download = result.fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(downloadUrl);
-
-        toast.success(
-          currentLanguage === "zh"
-            ? `构建完成！剩余 ${result.remaining}/${result.limit} 次`
-            : `Build completed! ${result.remaining}/${result.limit} remaining`
-        );
 
         setIsSubmitting(false);
         return;
@@ -513,7 +562,8 @@ function GenerateContent() {
       }
 
       // 发送批量构建请求（一次请求，服务端批量创建记录后立即返回）
-      const response = await fetch("/api/international/batch/build", {
+      const apiPath = IS_DOMESTIC_VERSION ? "/api/domestic/batch/build" : "/api/international/batch/build";
+      const response = await fetch(apiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, platforms }),
@@ -626,7 +676,15 @@ function GenerateContent() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
+        <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
+          {/* Guest Build History - Only show for guest users */}
+          {isGuestMode && guestBuildHistory.history.length > 0 && (
+            <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
+              <GuestBuildHistory />
+            </div>
+          )}
+
+        <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
           {/* Step 1: Platform Selection */}
           <div className="bg-card/50 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-border/50 p-4 sm:p-6 md:p-8 shadow-xl shadow-black/5">
             <div className="flex items-center gap-3 mb-4 sm:mb-6">
@@ -782,15 +840,42 @@ function GenerateContent() {
                 </div>
               )}
 
-              {/* Show generic config if no specific platform is selected */}
-              {!hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && !hasWindows && !hasMacos && !hasLinux && (
-                <AppConfig
-                  name={appName}
-                  description={appDescription}
-                  onNameChange={setAppName}
-                  onDescriptionChange={setAppDescription}
-                  onIconChange={setAppIcon}
-                />
+              {/* Show prompt if no platform is selected */}
+              {selectedPlatforms.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-4">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center mb-4 sm:mb-6">
+                    <Layers className="h-8 w-8 sm:h-10 sm:w-10 text-purple-400" />
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-semibold text-foreground/90 mb-2">
+                    {currentLanguage === "zh" ? "请先选择构建平台" : "Please Select a Platform First"}
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground text-center max-w-md">
+                    {currentLanguage === "zh"
+                      ? "在配置应用信息之前，请先在上方选择至少一个目标平台"
+                      : "Before configuring app info, please select at least one target platform above"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const platformSection = document.querySelector('[class*="bg-card/50"]');
+                      platformSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className="mt-6 px-6 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium transition-all duration-200 shadow-lg shadow-purple-500/25"
+                  >
+                    {currentLanguage === "zh" ? "返回选择平台" : "Go to Platform Selection"}
+                  </button>
+                </div>
+              ) : (
+                /* Show generic config if no specific platform is selected but other platforms are */
+                !hasAndroid && !hasIOS && !hasWechat && !hasHarmonyOS && !hasChrome && !hasWindows && !hasMacos && !hasLinux && (
+                  <AppConfig
+                    name={appName}
+                    description={appDescription}
+                    onNameChange={setAppName}
+                    onDescriptionChange={setAppDescription}
+                    onIconChange={setAppIcon}
+                  />
+                )
               )}
           </div>
 
@@ -798,24 +883,115 @@ function GenerateContent() {
           <div className="flex flex-col items-center gap-3 sm:gap-4 pt-4 sm:pt-6 pb-8 sm:pb-12">
             {/* Guest Mode Notice */}
             {isGuestMode && (
-              <div className="flex items-center gap-3 px-5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 max-w-lg">
-                <UserX className="h-5 w-5 flex-shrink-0" />
-                <div className="text-sm">
-                  <span className="font-medium">
-                    {currentLanguage === "zh" ? "游客模式" : "Guest Mode"}
-                  </span>
-                  <span className="mx-1.5">·</span>
-                  <span>
-                    {currentLanguage === "zh"
-                      ? `今日剩余 ${guestBuild.remaining}/${guestBuild.limit} 次`
-                      : `${guestBuild.remaining}/${guestBuild.limit} builds remaining today`}
-                  </span>
-                  <span className="mx-1.5">·</span>
-                  <span className="text-muted-foreground">
-                    {currentLanguage === "zh"
-                      ? "仅支持单平台构建"
-                      : "Single platform only"}
-                  </span>
+              <div className="w-full max-w-2xl">
+                <div className={`rounded-xl border bg-card p-5 sm:p-6 ${
+                  guestBuild.remaining === 0
+                    ? "border-red-200 dark:border-red-800"
+                    : guestBuild.remaining <= 1
+                    ? "border-amber-200 dark:border-amber-800"
+                    : "border-border"
+                }`}>
+                  <div className="flex items-start gap-4">
+                    {/* Icon */}
+                    <div className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center ${
+                      guestBuild.remaining === 0
+                        ? "bg-red-100 dark:bg-red-900/30"
+                        : guestBuild.remaining <= 1
+                        ? "bg-amber-100 dark:bg-amber-900/30"
+                        : "bg-cyan-100 dark:bg-cyan-900/30"
+                    }`}>
+                      <UserX className={`h-6 w-6 sm:h-7 sm:w-7 ${
+                        guestBuild.remaining === 0
+                          ? "text-red-600 dark:text-red-400"
+                          : guestBuild.remaining <= 1
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-cyan-600 dark:text-cyan-400"
+                      }`} />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-lg sm:text-xl font-semibold">
+                          {currentLanguage === "zh" ? "游客模式" : "Guest Mode"}
+                        </h3>
+                        {guestBuild.remaining === 0 && (
+                          <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs font-medium">
+                            {currentLanguage === "zh" ? "已用完" : "Depleted"}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Build count with progress bar */}
+                      <div className="space-y-2 mb-3">
+                        <div className="flex items-baseline gap-2">
+                          <span className={`text-2xl sm:text-3xl font-bold tabular-nums ${
+                            guestBuild.remaining === 0
+                              ? "text-red-600 dark:text-red-400"
+                              : guestBuild.remaining <= 1
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-cyan-600 dark:text-cyan-400"
+                          }`}>
+                            {guestBuild.remaining}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            / {guestBuild.limit} {currentLanguage === "zh" ? "次" : "builds"}
+                          </span>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              guestBuild.remaining === 0
+                                ? "bg-red-500"
+                                : guestBuild.remaining <= 1
+                                ? "bg-amber-500"
+                                : "bg-cyan-500"
+                            }`}
+                            style={{ width: `${(guestBuild.remaining / guestBuild.limit) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Platform restriction */}
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground mb-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                        <span>
+                          {currentLanguage === "zh"
+                            ? "仅支持单平台构建（Android、iOS、HarmonyOS）"
+                            : "Single platform only (Android, iOS, HarmonyOS)"}
+                        </span>
+                      </div>
+
+                      {/* CTA */}
+                      {guestBuild.remaining === 0 ? (
+                        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                          <span className="text-sm text-muted-foreground">
+                            {currentLanguage === "zh" ? "💡 明天自动重置，或" : "💡 Resets tomorrow, or"}
+                          </span>
+                          <a
+                            href="/auth/login?redirect=/generate"
+                            className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            {currentLanguage === "zh" ? "立即登录" : "login now"}
+                          </a>
+                        </div>
+                      ) : (
+                        <a
+                          href="/auth/login?redirect=/generate"
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-muted hover:bg-muted/80 transition-colors"
+                        >
+                          <span>
+                            {currentLanguage === "zh"
+                              ? "登录解锁更多功能"
+                              : "Login for unlimited builds"}
+                          </span>
+                          <ArrowRight className="h-4 w-4" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -843,6 +1019,7 @@ function GenerateContent() {
             </Button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );
