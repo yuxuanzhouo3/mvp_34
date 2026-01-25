@@ -243,15 +243,31 @@ export async function createSocialLink(
   }
 
   try {
+    // 处理 FormData 对象
+    const isFormData = formData instanceof FormData;
+    const getData = (key: string) => isFormData ? formData.get(key) : formData[key];
+
     // 字段映射：前端使用 title，数据库使用 name
-    const name = formData.title || formData.name;
+    const name = getData("title") || getData("name");
     if (!name) {
       return { success: false, error: "标题不能为空" };
     }
 
+    const description = getData("description");
+    const targetUrl = getData("targetUrl");
+    const uploadTarget = getData("uploadTarget");
+    const sortOrder = parseInt(getData("sortOrder") as string) || 0;
+    const isActive = getData("isActive") === "true";
+
     // 国内版存储到 CloudBase
-    if (formData.region === "cn") {
-      const result = await createCloudBaseSocialLink({ ...formData, name });
+    if (uploadTarget === "cn" || uploadTarget === "cloudbase") {
+      const result = await createCloudBaseSocialLink({
+        name: name as string,
+        description: description as string,
+        url: targetUrl as string,
+        sort_order: sortOrder,
+        status: isActive ? "active" : "inactive",
+      });
       if (result.success) {
         revalidatePath("/admin/social-links");
       }
@@ -266,15 +282,14 @@ export async function createSocialLink(
     const { data, error } = await supabaseAdmin
       .from("social_links")
       .insert({
-        name,
-        description: formData.description,
-        url: formData.url,
-        icon: formData.icon,
-        icon_type: formData.icon_type || "url",
-        platform_type: formData.platform_type,
-        region: formData.region,
-        status: formData.status || "active",
-        sort_order: formData.sort_order || 0,
+        name: name as string,
+        description: description as string,
+        url: targetUrl as string,
+        icon_type: "url",
+        platform_type: "website",
+        region: "global",
+        status: isActive ? "active" : "inactive",
+        sort_order: sortOrder,
       })
       .select("id")
       .single();
