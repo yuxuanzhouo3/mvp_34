@@ -25,16 +25,18 @@ const BURST_WINDOW = 60 * 1000;
 const ipRateLimitCache = new Map<string, { count: number; resetTime: number }>();
 const ipBurstCache = new Map<string, { count: number; windowStart: number }>();
 
-// 定期清理过期缓存
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, record] of ipRateLimitCache.entries()) {
-    if (record.resetTime < now) ipRateLimitCache.delete(ip);
-  }
-  for (const [ip, record] of ipBurstCache.entries()) {
-    if (record.windowStart + BURST_WINDOW < now) ipBurstCache.delete(ip);
-  }
-}, 60 * 60 * 1000);
+// 定期清理过期缓存（仅在非Serverless环境中运行）
+if (process.env.NODE_ENV !== 'production' || process.env.VERCEL !== '1') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, record] of ipRateLimitCache.entries()) {
+      if (record.resetTime < now) ipRateLimitCache.delete(ip);
+    }
+    for (const [ip, record] of ipBurstCache.entries()) {
+      if (record.windowStart + BURST_WINDOW < now) ipBurstCache.delete(ip);
+    }
+  }, 60 * 60 * 1000);
+}
 
 function getClientIp(req: NextRequest): string {
   const vercelIp = req.headers.get("x-vercel-forwarded-for");

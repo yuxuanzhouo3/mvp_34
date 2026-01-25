@@ -73,11 +73,12 @@ export async function GET(request: NextRequest) {
 
           // Update build record to mark files as cleaned
           waitUntil(
-            serviceClient
-              .from("builds")
-              .update({ output_file_path: null, icon_path: null })
-              .eq("id", build.id)
-              .then(() => {})
+            Promise.resolve(
+              serviceClient
+                .from("builds")
+                .update({ output_file_path: null, icon_path: null })
+                .eq("id", build.id)
+            ).then(() => {})
           );
 
           return { ...build, output_file_path: null, icon_path: null, icon_url: null };

@@ -122,7 +122,7 @@ export function ShareModal({
 
       setPlan(userPlan);
 
-      const maxDays = getPlanShareExpireDays(userPlan);
+      const maxDays = getPlanShareExpireDays(userPlan || "Free");
       setMaxShareDays(maxDays);
 
       // 计算构建剩余有效期

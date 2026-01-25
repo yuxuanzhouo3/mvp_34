@@ -94,7 +94,7 @@ export async function detectMiniProgramEnvBySdk(): Promise<boolean> {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => resolve(false), 1000);
     try {
-      mp.getEnv((res) => {
+      mp.getEnv?.((res) => {
         clearTimeout(timeout);
         resolve(res?.miniprogram === true);
       });
