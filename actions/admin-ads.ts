@@ -18,16 +18,20 @@ export interface Ad {
   media_url: string;
   thumbnail_url?: string;
   link_url?: string;
+  target_url?: string; // 别名，兼容旧代码
   link_type: "external" | "internal" | "download";
   position: "left" | "right" | "top" | "bottom";
   platform: string;
   region: "global" | "cn" | "all";
   status: "active" | "inactive" | "scheduled";
+  is_active: boolean; // 兼容旧代码
   priority: number;
   start_at?: string;
   end_at?: string;
   impressions: number;
   clicks: number;
+  source?: string; // 数据来源标识
+  file_size?: number; // 文件大小
   created_at: string;
   updated_at: string;
 }
@@ -51,6 +55,7 @@ export interface AdFormData {
 
 // CloudBase 文档转 Ad 接口
 function cloudBaseDocToAd(doc: Record<string, unknown>): Ad {
+  const status = (doc.status as "active" | "inactive" | "scheduled") || "inactive";
   return {
     id: (doc._id as string) || "",
     title: (doc.title as string) || "",
@@ -59,16 +64,20 @@ function cloudBaseDocToAd(doc: Record<string, unknown>): Ad {
     media_url: (doc.media_url as string) || "",
     thumbnail_url: doc.thumbnail_url as string | undefined,
     link_url: doc.link_url as string | undefined,
+    target_url: doc.target_url as string | undefined || doc.link_url as string | undefined,
     link_type: (doc.link_type as "external" | "internal" | "download") || "external",
     position: (doc.position as "left" | "right" | "top" | "bottom") || "bottom",
     platform: (doc.platform as string) || "all",
     region: (doc.region as "global" | "cn" | "all") || "cn",
-    status: (doc.status as "active" | "inactive" | "scheduled") || "inactive",
+    status,
+    is_active: status === "active",
     priority: (doc.priority as number) || 0,
     start_at: doc.start_at as string | undefined,
     end_at: doc.end_at as string | undefined,
     impressions: (doc.impressions as number) || 0,
     clicks: (doc.clicks as number) || 0,
+    source: doc.source as string | undefined || "cn",
+    file_size: doc.file_size as number | undefined,
     created_at: (doc.created_at as string) || (doc.createdAt as string) || new Date().toISOString(),
     updated_at: (doc.updated_at as string) || (doc.updatedAt as string) || new Date().toISOString(),
   };
@@ -99,7 +108,12 @@ async function getSupabaseAds(status?: string): Promise<Ad[]> {
       return [];
     }
 
-    return (data || []).map((item) => ({ ...item, region: item.region || "global" }));
+    return (data || []).map((item) => ({
+      ...item,
+      region: item.region || "global",
+      target_url: item.target_url || item.link_url,
+      is_active: item.status === "active",
+    }));
   } catch (err) {
     console.error("[getSupabaseAds] Unexpected error:", err);
     return [];
@@ -296,7 +310,7 @@ export async function getAd(id: string, region?: string): Promise<Ad | null> {
  * 根据 region 字段决定存储到哪个数据库
  */
 export async function createAd(
-  formData: AdFormData
+  formData: any
 ): Promise<{ success: boolean; error?: string; id?: string }> {
   // 权限验证
   if (!(await verifyAdminSession())) {
@@ -336,6 +350,8 @@ export async function createAd(
         priority: formData.priority || 0,
         start_at: formData.start_at || null,
         end_at: formData.end_at || null,
+        impressions: 0,
+        clicks: 0,
       })
       .select("id")
       .single();
@@ -361,7 +377,7 @@ export async function createAd(
  */
 export async function updateAd(
   id: string,
-  formData: Partial<AdFormData>,
+  formData: any,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
   // 权限验证
@@ -456,9 +472,51 @@ export async function deleteAd(
  */
 export async function toggleAdStatus(
   id: string,
-  status: "active" | "inactive",
+  status: "active" | "inactive" | boolean,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
-  // 权限验证（通过 updateAd 内部验证）
-  return updateAd(id, { status }, region);
+  // 兼容boolean类型参数
+  const statusStr = typeof status === "boolean" ? (status ? "active" : "inactive") : status;
+  return updateAd(id, { status: statusStr }, region);
 }
+
+// ============================================================================
+// 类型别名和函数别名（向后兼容）
+// ============================================================================
+
+/**
+ * Advertisement 类型别名（向后兼容）
+ */
+export type Advertisement = Ad;
+
+/**
+ * 获取广告列表（向后兼容的函数别名）
+ */
+export async function listAdvertisements(region?: string, status?: string): Promise<{ success: boolean; data?: Ad[]; error?: string }> {
+  try {
+    const data = await getAds(region, status);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "获取广告列表失败" };
+  }
+}
+
+/**
+ * 创建广告（向后兼容的函数别名）
+ */
+export const createAdvertisement = createAd;
+
+/**
+ * 更新广告（向后兼容的函数别名）
+ */
+export const updateAdvertisement = updateAd;
+
+/**
+ * 删除广告（向后兼容的函数别名）
+ */
+export const deleteAdvertisement = deleteAd;
+
+/**
+ * 切换广告状态（向后兼容的函数别名）
+ */
+export const toggleAdvertisementStatus = toggleAdStatus;

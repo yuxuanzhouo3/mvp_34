@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
-  getSocialLinks,
+  listSocialLinks,
   createSocialLink,
   updateSocialLink,
   deleteSocialLink,
+  toggleSocialLinkStatus,
+  updateSocialLinksOrder,
   type SocialLink,
-  type SocialLinkFormData,
 } from "@/actions/admin-social-links";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -19,428 +22,946 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Plus,
   Pencil,
   Trash2,
   Loader2,
-  ExternalLink,
+  Image as ImageIcon,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Database,
+  Cloud,
+  Search,
+  X,
   GripVertical,
+  ExternalLink,
+  Link as LinkIcon,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
-const PLATFORM_TYPES = [
-  { value: "twitter", label: "Twitter/X" },
-  { value: "facebook", label: "Facebook" },
-  { value: "instagram", label: "Instagram" },
-  { value: "youtube", label: "YouTube" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "discord", label: "Discord" },
-  { value: "telegram", label: "Telegram" },
-  { value: "github", label: "GitHub" },
-  { value: "wechat", label: "微信" },
-  { value: "qq", label: "QQ" },
-  { value: "weibo", label: "微博" },
-  { value: "bilibili", label: "哔哩哔哩" },
-  { value: "website", label: "官网" },
-  { value: "other", label: "其他" },
-];
-
-export default function AdminSocialLinksPage() {
+export default function SocialLinksManagementPage() {
+  const router = useRouter();
   const [links, setLinks] = useState<SocialLink[]>([]);
   const [loading, setLoading] = useState(true);
-  const [regionFilter, setRegionFilter] = useState("global");
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<SocialLink | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingLink, setEditingLink] = useState<SocialLink | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<SocialLink | null>(null);
 
-  const [formData, setFormData] = useState<SocialLinkFormData>({
-    name: "",
-    description: "",
-    url: "",
-    icon: "",
-    platform_type: "website",
-    region: "global",
-    status: "active",
-    sort_order: 0,
-  });
+  // 文件预览状态
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchLinks();
-  }, [regionFilter]);
+  // 列表预览对话框状态
+  const [listPreviewLink, setListPreviewLink] = useState<SocialLink | null>(null);
 
-  async function fetchLinks() {
-    setLoading(true);
-    const data = await getSocialLinks(regionFilter);
-    setLinks(data);
-    setLoading(false);
-  }
+  // 筛选和搜索状态
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterSource, setFilterSource] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  function openCreateDialog() {
-    setEditingLink(null);
-    setFormData({
-      name: "",
-      description: "",
-      url: "",
-      icon: "",
-      platform_type: "website",
-      region: "global",
-      status: "active",
-      sort_order: links.length,
-    });
-    setDialogOpen(true);
-  }
+  // 排序更新状态
+  const [updating, setUpdating] = useState(false);
 
-  function openEditDialog(link: SocialLink) {
-    setEditingLink(link);
-    setFormData({
-      name: link.name,
-      description: link.description || "",
-      url: link.url,
-      icon: link.icon || "",
-      platform_type: link.platform_type,
-      region: link.region,
-      status: link.status,
-      sort_order: link.sort_order,
-    });
-    setDialogOpen(true);
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-
-    try {
-      if (editingLink) {
-        await updateSocialLink(editingLink.id, formData, editingLink.region);
-      } else {
-        await createSocialLink(formData);
+  // 筛选后的链接列表
+  const filteredLinks = useMemo(() => {
+    return links.filter((link) => {
+      // 搜索过滤
+      if (searchQuery && !(link.title || link.name).toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false;
       }
-      setDialogOpen(false);
-      fetchLinks();
+      // 数据源过滤
+      if (filterSource !== "all" && link.source !== filterSource) {
+        return false;
+      }
+      // 状态过滤
+      if (filterStatus !== "all") {
+        const isActive = filterStatus === "active";
+        if (link.is_active !== isActive) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [links, searchQuery, filterSource, filterStatus]);
+
+  // 清除所有筛选
+  function clearFilters() {
+    setSearchQuery("");
+    setFilterSource("all");
+    setFilterStatus("all");
+  }
+
+  // 是否有筛选条件
+  const hasFilters = searchQuery || filterSource !== "all" || filterStatus !== "all";
+
+  // 格式化文件大小
+  function formatFileSize(bytes?: number) {
+    if (!bytes) return "-";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  // 处理文件选择，生成预览
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    // 释放之前的预览 URL
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    // 生成新的预览 URL
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+  }
+
+  // 清理预览 URL
+  function clearPreview() {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl(null);
+  }
+
+  // 加载链接列表
+  async function loadLinks() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await listSocialLinks();
+      if (result.success && result.data) {
+        setLinks(result.data);
+      } else {
+        setError(result.error || "加载失败");
+      }
     } catch (err) {
-      console.error("Save error:", err);
+      setError("加载社交链接列表失败");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   }
 
-  async function handleDelete(link: SocialLink) {
-    if (!confirm("确定要删除这个链接吗？")) return;
-    await deleteSocialLink(link.id, link.region);
-    fetchLinks();
+  useEffect(() => {
+    loadLinks();
+  }, []);
+
+  // 创建链接
+  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setCreating(true);
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+    const result = await createSocialLink(formData);
+
+    if (result.success) {
+      setDialogOpen(false);
+      clearPreview();
+      loadLinks();
+    } else {
+      setError(result.error || "创建失败");
+    }
+    setCreating(false);
+  }
+
+  // 更新链接
+  async function handleUpdate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editing) return;
+
+    setCreating(true);
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+    const result = await updateSocialLink(editing.id, formData);
+
+    if (result.success) {
+      setEditDialogOpen(false);
+      setEditing(null);
+      loadLinks();
+    } else {
+      setError(result.error || "更新失败");
+    }
+    setCreating(false);
+  }
+
+  // 删除链接
+  async function handleDelete() {
+    if (!deleteTarget) return;
+
+    setDeleting(deleteTarget.id);
+    const result = await deleteSocialLink(deleteTarget.id);
+    if (result.success) {
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      loadLinks();
+    } else {
+      setError(result.error || "删除失败");
+    }
+    setDeleting(null);
+  }
+
+  // 切换状态
+  async function handleToggle(id: string, currentStatus: boolean) {
+    setToggling(id);
+    const result = await toggleSocialLinkStatus(id, !currentStatus);
+    if (result.success) {
+      loadLinks();
+    } else {
+      setError(result.error || "切换状态失败");
+    }
+    setToggling(null);
+  }
+
+  // 移动排序
+  async function handleMove(index: number, direction: "up" | "down") {
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= filteredLinks.length) return;
+
+    setUpdating(true);
+
+    // 创建新的排序
+    const newLinks = [...filteredLinks];
+    [newLinks[index], newLinks[newIndex]] = [newLinks[newIndex], newLinks[index]];
+
+    // 更新排序值
+    const orders = newLinks.map((link, idx) => ({
+      id: link.id,
+      sort_order: idx,
+    }));
+
+    const result = await updateSocialLinksOrder(orders);
+    if (result.success) {
+      loadLinks();
+    } else {
+      setError(result.error || "更新排序失败");
+    }
+    setUpdating(false);
   }
 
   return (
-    <div className="space-y-6">
-      {/* 页面标题和操作 */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-4 md:p-6 space-y-6">
+      {/* 页头 */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">社交链接</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
-            管理同生态跳转链接
+          <h1 className="text-2xl font-bold">社交链接管理</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            管理侧边栏折叠后显示的小方块链接，支持图标、标题、描述和跳转链接
           </p>
         </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="h-4 w-4 mr-2" />
-          新建链接
-        </Button>
-      </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadLinks} disabled={loading}>
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
+            />
+            刷新
+          </Button>
 
-      {/* 筛选器 */}
-      <div className="flex gap-4">
-        <Select value={regionFilter} onValueChange={setRegionFilter}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="global">国际版</SelectItem>
-            <SelectItem value="cn">国内版</SelectItem>
-            <SelectItem value="all">全部</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+          <Dialog open={dialogOpen} onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) clearPreview();
+          }}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                新增链接
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>新增社交链接</DialogTitle>
+                <DialogDescription>
+                  上传图标并填写链接信息，可选择存储到国际版、国内版或双端同步
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreate} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="title">标题 *</Label>
+                  <Input
+                    id="title"
+                    name="title"
+                    placeholder="输入链接标题（悬浮显示）"
+                    required
+                  />
+                </div>
 
-      {/* 链接列表 */}
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      ) : links.length === 0 ? (
-        <div className="text-center py-12 text-slate-500">
-          暂无社交链接
-        </div>
-      ) : (
-        <>
-          {/* 桌面端表格视图 */}
-          <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-slate-50 dark:bg-slate-700/50">
-                <tr>
-                  <th className="text-left py-3 px-4 font-medium text-sm">排序</th>
-                  <th className="text-left py-3 px-4 font-medium text-sm">名称</th>
-                  <th className="text-left py-3 px-4 font-medium text-sm">平台</th>
-                  <th className="text-left py-3 px-4 font-medium text-sm">区域</th>
-                  <th className="text-left py-3 px-4 font-medium text-sm">状态</th>
-                  <th className="text-left py-3 px-4 font-medium text-sm">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {links.map((link) => (
-                  <tr
-                    key={link.id}
-                    className="border-t border-slate-100 dark:border-slate-700"
-                  >
-                    <td className="py-3 px-4">
-                      <GripVertical className="h-4 w-4 text-slate-400" />
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{link.name}</span>
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-slate-400 hover:text-primary"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </div>
-                      {link.description && (
-                        <p className="text-sm text-slate-500 mt-0.5">
-                          {link.description}
-                        </p>
-                      )}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-sm">
-                        {PLATFORM_TYPES.find((p) => p.value === link.platform_type)?.label || link.platform_type}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-sm">
-                        {link.region === "global" ? "国际版" : "国内版"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          link.status === "active"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
+                <div className="space-y-2">
+                  <Label htmlFor="description">描述</Label>
+                  <Textarea
+                    id="description"
+                    name="description"
+                    placeholder="输入链接描述（悬浮显示）"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="targetUrl">跳转链接 *</Label>
+                  <Input
+                    id="targetUrl"
+                    name="targetUrl"
+                    type="url"
+                    placeholder="https://example.com"
+                    required
+                  />
+                </div>
+
+                {/* 上传目标选择 */}
+                <div className="space-y-2">
+                  <Label>上传目标 *</Label>
+                  <Select name="uploadTarget" defaultValue="both">
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="both">
+                        <span className="flex items-center gap-2">
+                          <Database className="h-4 w-4" />
+                          <Cloud className="h-4 w-4" />
+                          双端同步 (Supabase + CloudBase)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="supabase">
+                        <span className="flex items-center gap-2">
+                          <Database className="h-4 w-4" />
+                          仅 Supabase (国际版)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="cloudbase">
+                        <span className="flex items-center gap-2">
+                          <Cloud className="h-4 w-4" />
+                          仅 CloudBase (国内版)
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="file">图标文件 *</Label>
+                  <Input
+                    id="file"
+                    name="file"
+                    type="file"
+                    accept="image/*"
+                    required
+                    onChange={handleFileChange}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    建议使用 PNG 或 SVG 格式，尺寸 64x64 像素
+                  </p>
+
+                  {/* 文件预览 */}
+                  {previewUrl && (
+                    <div className="mt-3 relative rounded-lg overflow-hidden border bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-center">
+                      <img
+                        src={previewUrl}
+                        alt="预览"
+                        className="w-16 h-16 object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearPreview();
+                          const fileInput = document.getElementById("file") as HTMLInputElement;
+                          if (fileInput) fileInput.value = "";
+                        }}
+                        className="absolute top-2 right-2 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white"
                       >
-                        {link.status === "active" ? "启用" : "禁用"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditDialog(link)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600 hover:text-red-700"
-                          onClick={() => handleDelete(link)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-          {/* 移动端卡片视图 */}
-          <div className="md:hidden space-y-3">
-            {links.map((link) => (
-              <div
-                key={link.id}
-                className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="font-semibold truncate">{link.name}</span>
-                    <a
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-400 hover:text-primary flex-shrink-0"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sortOrder">排序顺序</Label>
+                    <Input
+                      id="sortOrder"
+                      name="sortOrder"
+                      type="number"
+                      defaultValue="0"
+                      min="0"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      数字越小越靠前
+                    </p>
                   </div>
-                  <span
-                    className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
-                      link.status === "active"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {link.status === "active" ? "启用" : "禁用"}
-                  </span>
+
+                  <div className="space-y-2">
+                    <Label>立即上架</Label>
+                    <div className="flex items-center h-10">
+                      <input
+                        type="hidden"
+                        name="isActive"
+                        id="create-isActive-hidden"
+                        defaultValue="true"
+                      />
+                      <Switch
+                        defaultChecked={true}
+                        onCheckedChange={(checked) => {
+                          const hidden = document.getElementById("create-isActive-hidden") as HTMLInputElement;
+                          if (hidden) hidden.value = String(checked);
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {link.description && (
-                  <p className="text-sm text-slate-500 mb-3">{link.description}</p>
-                )}
-
-                <div className="flex flex-wrap gap-2 mb-3 text-xs">
-                  <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
-                    {PLATFORM_TYPES.find((p) => p.value === link.platform_type)?.label || link.platform_type}
-                  </span>
-                  <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
-                    {link.region === "global" ? "国际版" : "国内版"}
-                  </span>
-                  <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded">
-                    排序: {link.sort_order}
-                  </span>
-                </div>
-
-                <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
-                  <Button variant="outline" size="sm" onClick={() => openEditDialog(link)}>
-                    <Pencil className="h-4 w-4 mr-1" />
-                    编辑
-                  </Button>
+                <DialogFooter>
                   <Button
+                    type="button"
                     variant="outline"
-                    size="sm"
-                    className="text-red-600 hover:text-red-700"
-                    onClick={() => handleDelete(link)}
+                    onClick={() => {
+                      setDialogOpen(false);
+                      clearPreview();
+                    }}
                   >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    删除
+                    取消
                   </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+                  <Button type="submit" disabled={creating}>
+                    {creating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        上传中...
+                      </>
+                    ) : (
+                      "创建"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* 错误提示 */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      {/* 创建/编辑对话框 */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
+      {/* 搜索和筛选栏 */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* 搜索框 */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="搜索链接标题..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            {/* 数据源筛选 */}
+            <Select value={filterSource} onValueChange={setFilterSource}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="数据源" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部数据源</SelectItem>
+                <SelectItem value="supabase">
+                  <span className="flex items-center gap-2">
+                    <Database className="h-4 w-4" /> Supabase
+                  </span>
+                </SelectItem>
+                <SelectItem value="cloudbase">
+                  <span className="flex items-center gap-2">
+                    <Cloud className="h-4 w-4" /> CloudBase
+                  </span>
+                </SelectItem>
+                <SelectItem value="both">
+                  <span className="flex items-center gap-2">
+                    <Database className="h-4 w-4" />
+                    <Cloud className="h-4 w-4" /> 双端
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* 状态筛选 */}
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="active">已上架</SelectItem>
+                <SelectItem value="inactive">已下架</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* 清除筛选按钮 */}
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="h-4 w-4 mr-1" />
+                清除筛选
+              </Button>
+            )}
+          </div>
+
+          {/* 筛选结果统计 */}
+          {hasFilters && (
+            <div className="mt-3 text-sm text-muted-foreground">
+              找到 {filteredLinks.length} 条结果（共 {links.length} 条）
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 链接列表 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <LinkIcon className="h-5 w-5" />
+            社交链接列表
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredLinks.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {hasFilters ? "没有符合筛选条件的链接" : "暂无链接，点击\"新增链接\"开始添加"}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">排序</TableHead>
+                    <TableHead className="w-16">图标</TableHead>
+                    <TableHead className="min-w-[120px]">标题</TableHead>
+                    <TableHead className="min-w-[150px]">描述</TableHead>
+                    <TableHead className="w-24">数据源</TableHead>
+                    <TableHead className="w-20">大小</TableHead>
+                    <TableHead className="w-28">创建时间</TableHead>
+                    <TableHead className="w-20">状态</TableHead>
+                    <TableHead className="w-24">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredLinks.map((link, index) => (
+                    <TableRow key={link.id}>
+                      <TableCell className="p-2">
+                        <div className="flex flex-col gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleMove(index, "up")}
+                            disabled={index === 0 || updating}
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleMove(index, "down")}
+                            disabled={index === filteredLinks.length - 1 || updating}
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell className="p-2">
+                        <button
+                          type="button"
+                          onClick={() => setListPreviewLink(link)}
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                          title="点击预览"
+                        >
+                          <img
+                            src={link.icon_url}
+                            alt={link.title}
+                            className="w-10 h-10 object-cover rounded"
+                          />
+                        </button>
+                      </TableCell>
+                      <TableCell className="font-medium text-sm">{link.title}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground truncate max-w-[150px]">
+                        {link.description || "-"}
+                      </TableCell>
+                      <TableCell>
+                        {link.source === "supabase" ? (
+                          <Badge variant="secondary" className="gap-0.5 text-xs px-1.5">
+                            <Database className="h-3 w-3" />
+                          </Badge>
+                        ) : link.source === "cloudbase" ? (
+                          <Badge variant="secondary" className="gap-0.5 text-xs px-1.5">
+                            <Cloud className="h-3 w-3" />
+                          </Badge>
+                        ) : (
+                          <Badge variant="default" className="gap-0.5 text-xs px-1.5">
+                            <Database className="h-3 w-3" />
+                            <Cloud className="h-3 w-3" />
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {formatFileSize(link.file_size)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {link.created_at
+                            ? new Date(link.created_at).toLocaleDateString("zh-CN", {
+                                month: "2-digit",
+                                day: "2-digit",
+                              }) + " " + new Date(link.created_at).toLocaleTimeString("zh-CN", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "-"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`h-7 px-2 ${
+                            link.is_active
+                              ? "text-green-600"
+                              : "text-muted-foreground"
+                          }`}
+                          onClick={() => handleToggle(link.id, link.is_active)}
+                          disabled={toggling === link.id}
+                        >
+                          {toggling === link.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : link.is_active ? (
+                            <><Eye className="h-3.5 w-3.5 mr-0.5" />上架</>
+                          ) : (
+                            <><EyeOff className="h-3.5 w-3.5 mr-0.5" />下架</>
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => {
+                              setEditing(link);
+                              setEditDialogOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => link.target_url && window.open(link.target_url, "_blank")}
+                            disabled={!link.target_url}
+                            title="访问链接"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              setDeleteTarget(link);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 编辑对话框 */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingLink ? "编辑链接" : "新建链接"}</DialogTitle>
+            <DialogTitle>编辑社交链接</DialogTitle>
+            <DialogDescription>
+              修改链接信息，图标文件不支持更换
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label>名称 *</Label>
-              <Input
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <Label>描述</Label>
-              <Input
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>链接URL *</Label>
-              <Input
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder="https://..."
-                required
-              />
-            </div>
-            <div>
-              <Label>图标URL</Label>
-              <Input
-                value={formData.icon}
-                onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                placeholder="https://... 或图标名称"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>平台类型</Label>
-                <Select
-                  value={formData.platform_type}
-                  onValueChange={(v) => setFormData({ ...formData, platform_type: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PLATFORM_TYPES.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>区域</Label>
-                <Select
-                  value={formData.region}
-                  onValueChange={(v) => setFormData({ ...formData, region: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="global">国际版</SelectItem>
-                    <SelectItem value="cn">国内版</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <Label>排序</Label>
+          {editing && (
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-title">标题 *</Label>
                 <Input
-                  type="number"
-                  value={formData.sort_order}
-                  onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
+                  id="edit-title"
+                  name="title"
+                  defaultValue={editing.title || editing.name}
+                  required
                 />
               </div>
-              <div>
-                <Label>状态</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(v) => setFormData({ ...formData, status: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">启用</SelectItem>
-                    <SelectItem value="inactive">禁用</SelectItem>
-                  </SelectContent>
-                </Select>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">描述</Label>
+                <Textarea
+                  id="edit-description"
+                  name="description"
+                  defaultValue={editing.description || ""}
+                  rows={2}
+                />
               </div>
-            </div>
-            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                取消
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {editingLink ? "保存" : "创建"}
-              </Button>
-            </div>
-          </form>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-targetUrl">跳转链接 *</Label>
+                <Input
+                  id="edit-targetUrl"
+                  name="targetUrl"
+                  type="url"
+                  defaultValue={editing.target_url || editing.url}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-sortOrder">排序顺序</Label>
+                  <Input
+                    id="edit-sortOrder"
+                    name="sortOrder"
+                    type="number"
+                    defaultValue={editing.sort_order}
+                    min="0"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>状态</Label>
+                  <div className="flex items-center h-10">
+                    <input
+                      type="hidden"
+                      name="isActive"
+                      id="edit-isActive-hidden"
+                      defaultValue={String(editing.is_active)}
+                    />
+                    <Switch
+                      defaultChecked={editing.is_active}
+                      onCheckedChange={(checked) => {
+                        const hidden = document.getElementById(
+                          "edit-isActive-hidden"
+                        ) as HTMLInputElement;
+                        if (hidden) hidden.value = String(checked);
+                      }}
+                    />
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      {editing.is_active ? "已上架" : "已下架"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 当前图标预览 */}
+              {editing.icon_url && (
+                <div className="space-y-2">
+                  <Label>当前图标</Label>
+                  <div className="flex items-center gap-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-800">
+                    <img
+                      src={editing.icon_url}
+                      alt={editing.title || editing.name}
+                      className="w-16 h-16 object-contain"
+                    />
+                    <div className="text-sm text-muted-foreground">
+                      <p>图标文件不支持更换</p>
+                      <p>如需更换请删除后重新创建</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditDialogOpen(false);
+                    setEditing(null);
+                  }}
+                >
+                  取消
+                </Button>
+                <Button type="submit" disabled={creating}>
+                  {creating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      保存中...
+                    </>
+                  ) : (
+                    "保存"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
+
+      {/* 列表预览对话框 */}
+      <Dialog open={!!listPreviewLink} onOpenChange={(open) => !open && setListPreviewLink(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LinkIcon className="h-5 w-5" />
+              {listPreviewLink?.title}
+            </DialogTitle>
+            <DialogDescription>
+              {listPreviewLink?.is_active ? "已上架" : "已下架"} ·
+              排序: {listPreviewLink?.sort_order}
+            </DialogDescription>
+          </DialogHeader>
+
+          {listPreviewLink && (
+            <div className="space-y-4">
+              {/* 图标预览 */}
+              <div className="rounded-lg overflow-hidden border bg-slate-50 dark:bg-slate-900 p-8 flex items-center justify-center">
+                <img
+                  src={listPreviewLink.icon_url}
+                  alt={listPreviewLink.title}
+                  className="w-24 h-24 object-contain"
+                />
+              </div>
+
+              {/* 描述 */}
+              {listPreviewLink.description && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">描述：</span>
+                  <p className="mt-1">{listPreviewLink.description}</p>
+                </div>
+              )}
+
+              {/* 跳转链接 */}
+              <div className="text-sm">
+                <span className="text-muted-foreground">跳转链接：</span>
+                <a
+                  href={listPreviewLink.target_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline ml-1 break-all"
+                >
+                  {listPreviewLink.target_url}
+                </a>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setListPreviewLink(null)}>
+              关闭
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => listPreviewLink?.target_url && window.open(listPreviewLink.target_url, "_blank")}
+              disabled={!listPreviewLink?.target_url}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              访问链接
+            </Button>
+            <Button
+              onClick={() => {
+                if (listPreviewLink) {
+                  setEditing(listPreviewLink);
+                  setEditDialogOpen(true);
+                  setListPreviewLink(null);
+                }
+              }}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              编辑
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除确认对话框 */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除社交链接「{deleteTarget?.title}」吗？此操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deleting === deleteTarget?.id}
+            >
+              {deleting === deleteTarget?.id ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "删除"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -18,15 +18,20 @@ export interface Release {
   description?: string;
   release_notes?: string;
   download_url?: string;
+  file_url?: string; // 别名，兼容旧代码
   download_url_backup?: string;
   file_size?: number;
   file_hash?: string;
   platform: string;
+  variant?: string; // 平台变体，兼容旧代码
   region: "global" | "cn";
   status: "draft" | "published" | "deprecated";
+  is_active: boolean; // 兼容旧代码
   is_force_update: boolean;
+  is_mandatory?: boolean; // 别名，兼容旧代码
   min_supported_version?: string;
   published_at?: string;
+  source?: string; // 数据来源标识
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +55,8 @@ export interface ReleaseFormData {
 
 // CloudBase 文档转 Release 接口
 function cloudBaseDocToRelease(doc: Record<string, unknown>): Release {
+  const status = (doc.status as "draft" | "published" | "deprecated") || "draft";
+  const is_force_update = (doc.is_force_update as boolean) || false;
   return {
     id: (doc._id as string) || "",
     version: (doc.version as string) || "",
@@ -58,15 +65,20 @@ function cloudBaseDocToRelease(doc: Record<string, unknown>): Release {
     description: doc.description as string | undefined,
     release_notes: doc.release_notes as string | undefined,
     download_url: doc.download_url as string | undefined,
+    file_url: doc.file_url as string | undefined || doc.download_url as string | undefined,
     download_url_backup: doc.download_url_backup as string | undefined,
     file_size: doc.file_size as number | undefined,
     file_hash: doc.file_hash as string | undefined,
     platform: (doc.platform as string) || "",
+    variant: doc.variant as string | undefined,
     region: (doc.region as "global" | "cn") || "cn",
-    status: (doc.status as "draft" | "published" | "deprecated") || "draft",
-    is_force_update: (doc.is_force_update as boolean) || false,
+    status,
+    is_active: status === "published",
+    is_force_update,
+    is_mandatory: is_force_update,
     min_supported_version: doc.min_supported_version as string | undefined,
     published_at: doc.published_at as string | undefined,
+    source: doc.source as string | undefined || "cn",
     created_at: (doc.created_at as string) || (doc.createdAt as string) || new Date().toISOString(),
     updated_at: (doc.updated_at as string) || (doc.updatedAt as string) || new Date().toISOString(),
   };
@@ -96,7 +108,12 @@ async function getSupabaseReleases(platform?: string): Promise<Release[]> {
       return [];
     }
 
-    return (data || []).map((item) => ({ ...item, region: item.region || "global" }));
+    return (data || []).map((item) => ({
+      ...item,
+      region: item.region || "global",
+      file_url: item.file_url || item.download_url,
+      is_active: item.status === "published",
+    }));
   } catch (err) {
     console.error("[getSupabaseReleases] Unexpected error:", err);
     return [];
@@ -251,7 +268,7 @@ export async function getReleases(region?: string, platform?: string): Promise<R
  * 根据 region 字段决定存储到哪个数据库
  */
 export async function createRelease(
-  formData: ReleaseFormData
+  formData: any
 ): Promise<{ success: boolean; error?: string; id?: string }> {
   // 权限验证
   if (!(await verifyAdminSession())) {
@@ -316,7 +333,7 @@ export async function createRelease(
  */
 export async function updateRelease(
   id: string,
-  formData: Partial<ReleaseFormData>,
+  formData: any,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
   // 权限验证
@@ -426,4 +443,47 @@ export async function publishRelease(
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
   return updateRelease(id, { status: "published" }, region);
+}
+
+// ============================================================================
+// 类型别名和函数别名（向后兼容）
+// ============================================================================
+
+/**
+ * AppRelease 类型别名（向后兼容）
+ */
+export type AppRelease = Release;
+
+/**
+ * Platform 类型（向后兼容）
+ */
+export type Platform = string; // 改为string以兼容页面代码
+
+/**
+ * Variant 类型（向后兼容）
+ */
+export type Variant = string;
+
+/**
+ * 获取版本列表（向后兼容的函数别名）
+ */
+export async function listReleases(region?: string, platform?: string): Promise<{ success: boolean; data?: Release[]; error?: string }> {
+  try {
+    const data = await getReleases(region, platform);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "获取版本列表失败" };
+  }
+}
+
+/**
+ * 切换版本状态（向后兼容的函数别名）
+ */
+export async function toggleReleaseStatus(
+  id: string,
+  isActive: boolean,
+  region?: string
+): Promise<{ success: boolean; error?: string }> {
+  const status = isActive ? "published" : "draft";
+  return updateRelease(id, { status }, region);
 }

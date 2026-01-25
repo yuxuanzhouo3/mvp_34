@@ -83,9 +83,14 @@ const translations: Record<Language, Record<string, string>> = {
     "footer.company.careers": "加入我们",
     "footer.company.contact": "联系方式",
     "footer.legal": "法律",
+    "footer.legal.title": "法律信息",
     "footer.legal.privacy": "隐私政策",
     "footer.legal.subscription": "订阅规则",
     "footer.legal.refund": "退款政策",
+    "footer.products": "旗下产品",
+    "footer.download": "下载",
+    "footer.noProducts": "暂无产品",
+    "footer.noReleases": "暂无下载",
 
     // 通用
     "common.loading": "加载中...",
@@ -159,9 +164,14 @@ const translations: Record<Language, Record<string, string>> = {
     "footer.company.careers": "Careers",
     "footer.company.contact": "Contact",
     "footer.legal": "Legal",
+    "footer.legal.title": "Legal",
     "footer.legal.privacy": "Privacy Policy",
     "footer.legal.subscription": "Subscription Terms",
     "footer.legal.refund": "Refund Policy",
+    "footer.products": "Our Products",
+    "footer.download": "Download",
+    "footer.noProducts": "No products available",
+    "footer.noReleases": "No downloads available",
 
     // Common
     "common.loading": "Loading...",

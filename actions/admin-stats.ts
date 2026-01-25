@@ -102,9 +102,9 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
     try {
       const analyticsCollection = db.collection("user_analytics");
       const [dauData, wauData, mauData] = await Promise.all([
-        analyticsCollection.where({ created_at: _.gte(todayStart.toISOString()) }).limit(5000).get(),
-        analyticsCollection.where({ created_at: _.gte(weekAgo.toISOString()) }).limit(5000).get(),
-        analyticsCollection.where({ created_at: _.gte(monthAgo.toISOString()) }).limit(5000).get(),
+        analyticsCollection.where({ created_at: _.gte(todayStart.toISOString()) }).limit(10000).get(),
+        analyticsCollection.where({ created_at: _.gte(weekAgo.toISOString()) }).limit(10000).get(),
+        analyticsCollection.where({ created_at: _.gte(monthAgo.toISOString()) }).limit(10000).get(),
       ]);
       const dauUsers = new Set((dauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
       const wauUsers = new Set((wauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
@@ -118,7 +118,7 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
 
     // 订阅统计 - CloudBase 中 wallet 是 users 的嵌套字段
     // 查询 wallet.plan 不为 Free/free 的用户
-    const allUsersResult = await usersCollection.limit(1000).get().catch(() => ({ data: [] }));
+    const allUsersResult = await usersCollection.limit(10000).get().catch(() => ({ data: [] }));
     const allUsers = allUsersResult.data || [];
     const byPlan: Record<string, number> = {};
     let subscriptionCount = 0;
@@ -138,7 +138,7 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
     // 从 orders 集合获取订单/收入数据
     try {
       const ordersCollection = db.collection("orders");
-      const ordersResult = await ordersCollection.limit(1000).get();
+      const ordersResult = await ordersCollection.limit(10000).get();
       const orders = ordersResult.data || [];
 
       totalOrders = orders.length;
@@ -173,7 +173,7 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       const analyticsCollection = db.collection("user_analytics");
       const sessionsData = await analyticsCollection
         .where({ event_type: "session_start" })
-        .limit(1000)
+        .limit(10000)
         .get();
       const sessions = sessionsData.data || [];
 
@@ -218,7 +218,7 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
         { createdAt: _.gte(startDate.toISOString()) },
         { created_at: _.gte(startDate.toISOString()) }
       ]))
-      .limit(1000)
+      .limit(10000)
       .get()
       .catch(() => ({ data: [] }));
 
@@ -244,7 +244,7 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
       const analyticsData = await db
         .collection("user_analytics")
         .where({ created_at: _.gte(startDate.toISOString()) })
-        .limit(5000)
+        .limit(10000)
         .get();
 
       const analytics = analyticsData.data || [];
@@ -294,7 +294,7 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
       const ordersData = await db
         .collection("orders")
         .where({ payment_status: "paid" })
-        .limit(1000)
+        .limit(10000)
         .get();
 
       const orders = ordersData.data || [];

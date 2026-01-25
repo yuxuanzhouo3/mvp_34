@@ -1,44 +1,87 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
-import { Box } from "lucide-react";
+import { Box, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PrivacyPolicy } from "@/components/legal/privacy-policy";
 import { SubscriptionTerms } from "@/components/legal/subscription-terms";
 
+interface SocialLink {
+  id: string;
+  title: string;
+  description: string | null;
+  icon_url: string;
+  target_url: string;
+  sort_order: number;
+}
+
+interface Release {
+  id: string;
+  version: string;
+  title: string;
+  description?: string;
+  download_url?: string;
+  platform: string;
+  published_at?: string;
+}
+
 export function Footer() {
-  const { t, currentLanguage } = useLanguage();
+  const { t, currentLanguage, isDomesticVersion } = useLanguage();
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const footerLinks = {
-    product: [
-      { label: t("footer.product.features"), href: "/features" },
-      { label: t("footer.product.pricing"), href: "/pricing" },
-      { label: t("footer.product.docs"), href: "/docs" },
-      { label: t("footer.product.changelog"), href: "/changelog" },
-    ],
-    company: [
-      { label: t("footer.company.about"), href: "/about" },
-      { label: t("footer.company.blog"), href: "/blog" },
-      { label: t("footer.company.careers"), href: "/careers" },
-      { label: t("footer.company.contact"), href: "/contact" },
-    ],
-    legal: [
-      { label: t("footer.legal.privacy"), href: "/privacy" },
-      { label: t("footer.legal.subscription"), href: "/subscription-terms" },
-      { label: t("footer.legal.refund"), href: "/refund" },
-    ],
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [linksRes, releasesRes] = await Promise.all([
+          fetch(`/api/social-links/active?isDomestic=${isDomesticVersion}`),
+          fetch(`/api/releases/active?isDomestic=${isDomesticVersion}`),
+        ]);
+
+        const linksData = await linksRes.json();
+        const releasesData = await releasesRes.json();
+
+        if (linksData.success) setSocialLinks(linksData.data || []);
+        if (releasesData.success) setReleases(releasesData.data || []);
+      } catch (error) {
+        console.error("Failed to fetch footer data:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [isDomesticVersion]);
+
+  const isImageUrl = (url: string) => {
+    return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('cloud://');
+  };
+
+  const getPlatformName = (platform: string) => {
+    const names: Record<string, { zh: string; en: string }> = {
+      android: { zh: "Android", en: "Android" },
+      ios: { zh: "iOS", en: "iOS" },
+      harmonyos: { zh: "鸿蒙", en: "HarmonyOS" },
+      windows: { zh: "Windows", en: "Windows" },
+      macos: { zh: "macOS", en: "macOS" },
+      linux: { zh: "Linux", en: "Linux" },
+      chrome: { zh: "Chrome", en: "Chrome" },
+      wechat: { zh: "微信小程序", en: "WeChat" },
+    };
+    return names[platform]?.[currentLanguage] || platform;
   };
 
   return (
     <footer className="border-t border-border/40 bg-muted/30">
       <div className="container mx-auto px-4 md:px-6 py-12 md:py-16">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
-          {/* Brand */}
-          <div className="col-span-2 md:col-span-1">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-8">
+          {/* Brand - 占3列 */}
+          <div className="md:col-span-3">
             <Link href="/" className="inline-flex items-center gap-2.5 mb-4">
               <div className="relative flex h-8 w-8 items-center justify-center">
                 <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 opacity-90" />
@@ -48,89 +91,119 @@ export function Footer() {
                 MornClient
               </span>
             </Link>
-            <p className="text-sm text-muted-foreground max-w-[200px]">
+            <p className="text-sm text-muted-foreground mb-4">
               {t("footer.slogan")}
             </p>
-          </div>
-
-          {/* Product Links */}
-          <div>
-            <h4 className="font-semibold text-foreground mb-4">
-              {t("footer.product")}
-            </h4>
-            <ul className="space-y-3">
-              {footerLinks.product.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Company Links */}
-          <div>
-            <h4 className="font-semibold text-foreground mb-4">
-              {t("footer.company")}
-            </h4>
-            <ul className="space-y-3">
-              {footerLinks.company.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Legal Links */}
-          <div>
-            <h4 className="font-semibold text-foreground mb-4">
-              {t("footer.legal")}
-            </h4>
-            <ul className="space-y-3">
-              {footerLinks.legal.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Copyright */}
-        <div className="mt-12 pt-8 border-t border-border/40">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {t("footer.copyright")}
             </p>
-            <div className="flex items-center gap-6">
-              <button
-                onClick={() => setPrivacyOpen(true)}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {t("footer.legal.privacy")}
-              </button>
-              <button
-                onClick={() => setSubscriptionOpen(true)}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {t("footer.legal.subscription")}
-              </button>
-            </div>
+          </div>
+
+          {/* 旗下产品 - 占3列 */}
+          <div className="md:col-span-3">
+            <h4 className="font-semibold text-foreground mb-4 text-sm">
+              {t("footer.products")}
+            </h4>
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-4 bg-muted rounded animate-pulse" />
+                ))}
+              </div>
+            ) : socialLinks.length > 0 ? (
+              <ul className="space-y-2.5">
+                {socialLinks.slice(0, 6).map((link) => (
+                  <li key={link.id}>
+                    <a
+                      href={link.target_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2 group"
+                      title={link.description || link.title}
+                    >
+                      {isImageUrl(link.icon_url) ? (
+                        <img
+                          src={link.icon_url}
+                          alt={link.title}
+                          className="w-4 h-4 object-contain flex-shrink-0"
+                        />
+                      ) : (
+                        <span className="text-base flex-shrink-0">{link.icon_url}</span>
+                      )}
+                      <span className="truncate group-hover:underline">{link.title}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("footer.noProducts")}</p>
+            )}
+          </div>
+
+          {/* 下载 - 占4列 */}
+          <div className="md:col-span-4">
+            <h4 className="font-semibold text-foreground mb-4 flex items-center gap-2 text-sm">
+              <Download className="w-4 h-4" />
+              {t("footer.download")}
+            </h4>
+            {loading ? (
+              <div className="grid grid-cols-2 gap-2.5">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-14 bg-muted rounded animate-pulse" />
+                ))}
+              </div>
+            ) : releases.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2.5">
+                {releases.slice(0, 6).map((release) => (
+                  <a
+                    key={release.id}
+                    href={release.download_url || "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 rounded-lg border border-border/40 hover:border-primary/50 hover:bg-muted/50 transition-all group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Download className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-foreground truncate">
+                          {getPlatformName(release.platform)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          v{release.version}
+                        </div>
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("footer.noReleases")}</p>
+            )}
+          </div>
+
+          {/* 法律信息 - 占2列 */}
+          <div className="md:col-span-2">
+            <h4 className="font-semibold text-foreground mb-4 text-sm">
+              {t("footer.legal.title")}
+            </h4>
+            <ul className="space-y-2.5">
+              <li>
+                <button
+                  onClick={() => setPrivacyOpen(true)}
+                  className="text-sm text-muted-foreground hover:text-foreground hover:underline transition-colors text-left"
+                >
+                  {t("footer.legal.privacy")}
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => setSubscriptionOpen(true)}
+                  className="text-sm text-muted-foreground hover:text-foreground hover:underline transition-colors text-left"
+                >
+                  {t("footer.legal.subscription")}
+                </button>
+              </li>
+            </ul>
           </div>
         </div>
       </div>

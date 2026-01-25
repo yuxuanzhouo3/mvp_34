@@ -13,14 +13,20 @@ import { verifyAdminSession } from "@/utils/session";
 export interface SocialLink {
   id: string;
   name: string;
+  title?: string; // 别名，兼容旧代码
   description?: string;
   url: string;
   icon?: string;
+  icon_url?: string; // 别名，兼容旧代码
   icon_type: string;
   platform_type: string;
   region: "global" | "cn";
   status: "active" | "inactive";
+  is_active: boolean; // 兼容旧代码
   sort_order: number;
+  source?: string; // 数据来源标识
+  file_size?: number; // 文件大小
+  target_url?: string; // 目标URL
   created_at: string;
   updated_at: string;
 }
@@ -39,17 +45,24 @@ export interface SocialLinkFormData {
 
 // CloudBase 文档转 SocialLink 接口
 function cloudBaseDocToSocialLink(doc: Record<string, unknown>): SocialLink {
+  const status = (doc.status as "active" | "inactive") || "active";
   return {
     id: (doc._id as string) || "",
     name: (doc.name as string) || "",
+    title: doc.title as string | undefined || doc.name as string | undefined,
     description: doc.description as string | undefined,
     url: (doc.url as string) || "",
     icon: doc.icon as string | undefined,
+    icon_url: doc.icon_url as string | undefined || doc.icon as string | undefined,
     icon_type: (doc.icon_type as string) || "url",
     platform_type: (doc.platform_type as string) || "website",
     region: (doc.region as "global" | "cn") || "cn",
-    status: (doc.status as "active" | "inactive") || "active",
+    status,
+    is_active: status === "active",
     sort_order: (doc.sort_order as number) || 0,
+    source: doc.source as string | undefined || "cn",
+    file_size: doc.file_size as number | undefined,
+    target_url: doc.target_url as string | undefined || doc.url as string | undefined,
     created_at: (doc.created_at as string) || (doc.createdAt as string) || new Date().toISOString(),
     updated_at: (doc.updated_at as string) || (doc.updatedAt as string) || new Date().toISOString(),
   };
@@ -74,7 +87,14 @@ async function getSupabaseSocialLinks(): Promise<SocialLink[]> {
       return [];
     }
 
-    return (data || []).map((item) => ({ ...item, region: item.region || "global" }));
+    return (data || []).map((item) => ({
+      ...item,
+      region: item.region || "global",
+      title: item.title || item.name,
+      icon_url: item.icon_url || item.icon,
+      is_active: item.status === "active",
+      target_url: item.target_url || item.url,
+    }));
   } catch (err) {
     console.error("[getSupabaseSocialLinks] Unexpected error:", err);
     return [];
@@ -214,7 +234,7 @@ export async function getSocialLinks(region?: string): Promise<SocialLink[]> {
  * 根据 region 字段决定存储到哪个数据库
  */
 export async function createSocialLink(
-  formData: SocialLinkFormData
+  formData: any
 ): Promise<{ success: boolean; error?: string; id?: string }> {
   // 权限验证
   if (!(await verifyAdminSession())) {
@@ -274,7 +294,7 @@ export async function createSocialLink(
  */
 export async function updateSocialLink(
   id: string,
-  formData: Partial<SocialLinkFormData>,
+  formData: any,
   region?: string
 ): Promise<{ success: boolean; error?: string }> {
   // 权限验证
@@ -364,5 +384,59 @@ export async function deleteSocialLink(
   } catch (err) {
     console.error("[deleteSocialLink] Unexpected error:", err);
     return { success: false, error: "删除失败" };
+  }
+}
+
+// ============================================================================
+// 函数别名（向后兼容）
+// ============================================================================
+
+/**
+ * 获取社交链接列表（向后兼容的函数别名）
+ */
+export async function listSocialLinks(region?: string): Promise<{ success: boolean; data?: SocialLink[]; error?: string }> {
+  try {
+    const data = await getSocialLinks(region);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "获取社交链接列表失败" };
+  }
+}
+
+/**
+ * 切换社交链接状态（向后兼容的函数别名）
+ */
+export async function toggleSocialLinkStatus(
+  id: string,
+  isActive: boolean,
+  region?: string
+): Promise<{ success: boolean; error?: string }> {
+  const status = isActive ? "active" : "inactive";
+  return updateSocialLink(id, { status }, region);
+}
+
+/**
+ * 更新社交链接排序（向后兼容的函数别名）
+ */
+export async function updateSocialLinksOrder(
+  links: Array<{ id: string; sort_order: number }>,
+  region?: string
+): Promise<{ success: boolean; error?: string }> {
+  // 权限验证
+  if (!(await verifyAdminSession())) {
+    return { success: false, error: "未授权访问" };
+  }
+
+  try {
+    // 批量更新排序
+    for (const link of links) {
+      await updateSocialLink(link.id, { sort_order: link.sort_order }, region);
+    }
+
+    revalidatePath("/admin/social-links");
+    return { success: true };
+  } catch (err) {
+    console.error("[updateSocialLinksOrder] Error:", err);
+    return { success: false, error: "更新排序失败" };
   }
 }
