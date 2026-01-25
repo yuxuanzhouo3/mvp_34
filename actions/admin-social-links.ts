@@ -243,9 +243,15 @@ export async function createSocialLink(
   }
 
   try {
+    // 字段映射：前端使用 title，数据库使用 name
+    const name = formData.title || formData.name;
+    if (!name) {
+      return { success: false, error: "标题不能为空" };
+    }
+
     // 国内版存储到 CloudBase
     if (formData.region === "cn") {
-      const result = await createCloudBaseSocialLink(formData);
+      const result = await createCloudBaseSocialLink({ ...formData, name });
       if (result.success) {
         revalidatePath("/admin/social-links");
       }
@@ -260,7 +266,7 @@ export async function createSocialLink(
     const { data, error } = await supabaseAdmin
       .from("social_links")
       .insert({
-        name: formData.name,
+        name,
         description: formData.description,
         url: formData.url,
         icon: formData.icon,
