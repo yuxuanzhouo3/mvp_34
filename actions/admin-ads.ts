@@ -77,7 +77,7 @@ function cloudBaseDocToAd(doc: Record<string, unknown>): Ad {
     end_at: doc.end_at as string | undefined,
     impressions: (doc.impressions as number) || 0,
     clicks: (doc.clicks as number) || 0,
-    source: region === "both" ? "both" : "cloudbase",
+    source: "cloudbase",
     file_size: doc.file_size as number | undefined,
     created_at: (doc.created_at as string) || (doc.createdAt as string) || new Date().toISOString(),
     updated_at: (doc.updated_at as string) || (doc.updatedAt as string) || new Date().toISOString(),
