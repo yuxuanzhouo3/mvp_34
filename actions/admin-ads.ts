@@ -555,7 +555,6 @@ export async function createAd(
           end_at: getData("end_at") as string || null,
           impressions: 0,
           clicks: 0,
-          file_size: fileSize,
         })
         .select("id")
         .single();
@@ -652,7 +651,6 @@ export async function createAd(
         end_at: getData("end_at") as string || null,
         impressions: 0,
         clicks: 0,
-        file_size: fileSize,
       })
       .select("id")
       .single();
@@ -674,12 +672,12 @@ export async function createAd(
  * 更新广告
  * @param id - 广告ID
  * @param formData - 更新数据
- * @param region - 区域标识，用于确定数据库
+ * @param source - 数据源标识（supabase/cloudbase/both），用于确定数据库
  */
 export async function updateAd(
   id: string,
   formData: any,
-  region?: string
+  source?: string
 ): Promise<{ success: boolean; error?: string }> {
   // 权限验证
   if (!(await verifyAdminSession())) {
@@ -688,8 +686,13 @@ export async function updateAd(
   }
 
   try {
+    // 将source转换为region以保持内部逻辑一致
+    let region = source;
+    if (source === "supabase") region = "global";
+    if (source === "cloudbase") region = "cn";
+
     // 国内版更新 CloudBase
-    if (region === "cn") {
+    if (region === "cn" || region === "cloudbase") {
       const result = await updateCloudBaseAd(id, formData);
       if (result.success) {
         revalidatePath("/admin/ads");
@@ -726,11 +729,11 @@ export async function updateAd(
 /**
  * 删除广告
  * @param id - 广告ID
- * @param region - 区域标识，用于确定数据库
+ * @param source - 数据源标识（supabase/cloudbase/both），用于确定数据库
  */
 export async function deleteAd(
   id: string,
-  region?: string
+  source?: string
 ): Promise<{ success: boolean; error?: string }> {
   // 权限验证
   if (!(await verifyAdminSession())) {
@@ -739,11 +742,16 @@ export async function deleteAd(
   }
 
   try {
+    // 将source转换为region以保持内部逻辑一致
+    let region = source;
+    if (source === "supabase") region = "global";
+    if (source === "cloudbase") region = "cn";
+
     // 先获取广告信息以便删除存储文件
     let mediaUrl: string | null = null;
 
     // 国内版删除 CloudBase
-    if (region === "cn") {
+    if (region === "cn" || region === "cloudbase") {
       // 获取文件URL
       try {
         const connector = new CloudBaseConnector();
@@ -905,11 +913,11 @@ export async function deleteAd(
 export async function toggleAdStatus(
   id: string,
   status: "active" | "inactive" | boolean,
-  region?: string
+  source?: string
 ): Promise<{ success: boolean; error?: string }> {
   // 兼容boolean类型参数
   const statusStr = typeof status === "boolean" ? (status ? "active" : "inactive") : status;
-  return updateAd(id, { status: statusStr }, region);
+  return updateAd(id, { status: statusStr }, source);
 }
 
 // ============================================================================

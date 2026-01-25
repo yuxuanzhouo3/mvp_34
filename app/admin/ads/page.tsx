@@ -251,7 +251,7 @@ export default function AdsManagementPage() {
     setError(null);
 
     const formData = new FormData(e.currentTarget);
-    const result = await updateAdvertisement(editing.id, formData);
+    const result = await updateAdvertisement(editing.id, formData, editing.source);
 
     if (result.success) {
       setEditDialogOpen(false);
@@ -264,9 +264,9 @@ export default function AdsManagementPage() {
   }
 
   // 删除广告
-  async function handleDelete(id: string) {
-    setDeleting(id);
-    const result = await deleteAdvertisement(id);
+  async function handleDelete(ad: Advertisement) {
+    setDeleting(ad.id);
+    const result = await deleteAdvertisement(ad.id, ad.source);
     if (result.success) {
       loadAds();
     } else {
@@ -276,9 +276,9 @@ export default function AdsManagementPage() {
   }
 
   // 切换状态
-  async function handleToggle(id: string, currentStatus: boolean) {
-    setToggling(id);
-    const result = await toggleAdvertisementStatus(id, !currentStatus);
+  async function handleToggle(ad: Advertisement) {
+    setToggling(ad.id);
+    const result = await toggleAdvertisementStatus(ad.id, !ad.is_active, ad.source);
     if (result.success) {
       loadAds();
     } else {
@@ -646,7 +646,6 @@ export default function AdsManagementPage() {
                     <TableHead className="w-32">数据源</TableHead>
                     <TableHead className="w-28">位置</TableHead>
                     <TableHead className="w-24">类型</TableHead>
-                    <TableHead className="w-24">大小</TableHead>
                     <TableHead className="w-40">上传时间</TableHead>
                     <TableHead className="w-20 text-center">优先级</TableHead>
                     <TableHead className="w-24">状态</TableHead>
@@ -723,11 +722,6 @@ export default function AdsManagementPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                          {formatFileSize(ad.file_size)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
                         {ad.created_at ? (
                           <div className="flex flex-col leading-tight">
                             <span className="text-xs tabular-nums text-foreground/90 whitespace-nowrap">
@@ -762,7 +756,7 @@ export default function AdsManagementPage() {
                               ? "text-green-600"
                               : "text-muted-foreground"
                           }`}
-                          onClick={() => handleToggle(ad.id, ad.is_active)}
+                          onClick={() => handleToggle(ad)}
                           disabled={toggling === ad.id}
                         >
                           {toggling === ad.id ? (
@@ -808,7 +802,7 @@ export default function AdsManagementPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>取消</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => handleDelete(ad.id)}
+                                  onClick={() => handleDelete(ad)}
                                   className="bg-red-600 hover:bg-red-700"
                                 >
                                   {deleting === ad.id ? (
