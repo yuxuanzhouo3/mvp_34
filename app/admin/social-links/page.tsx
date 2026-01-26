@@ -303,7 +303,7 @@ export default function SocialLinksManagementPage() {
                 新增链接
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>新增社交链接</DialogTitle>
                 <DialogDescription>
@@ -410,7 +410,7 @@ export default function SocialLinksManagementPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="sortOrder">排序顺序</Label>
                     <Input
@@ -445,7 +445,7 @@ export default function SocialLinksManagementPage() {
                   </div>
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="gap-2 sm:gap-0">
                   <Button
                     type="button"
                     variant="outline"
@@ -483,7 +483,7 @@ export default function SocialLinksManagementPage() {
       {/* 搜索和筛选栏 */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-4">
             {/* 搜索框 */}
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -497,7 +497,7 @@ export default function SocialLinksManagementPage() {
 
             {/* 数据源筛选 */}
             <Select value={filterSource} onValueChange={setFilterSource}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue placeholder="数据源" />
               </SelectTrigger>
               <SelectContent>
@@ -523,7 +523,7 @@ export default function SocialLinksManagementPage() {
 
             {/* 状态筛选 */}
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-full sm:w-[120px]">
                 <SelectValue placeholder="状态" />
               </SelectTrigger>
               <SelectContent>
@@ -535,7 +535,7 @@ export default function SocialLinksManagementPage() {
 
             {/* 清除筛选按钮 */}
             {hasFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full sm:w-auto">
                 <X className="h-4 w-4 mr-1" />
                 清除筛选
               </Button>
@@ -726,7 +726,7 @@ export default function SocialLinksManagementPage() {
 
       {/* 编辑对话框 */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>编辑社交链接</DialogTitle>
             <DialogDescription>

@@ -719,7 +719,7 @@ const TERMS_CN_DOMESTIC = `
 <li><strong>在线客服</strong>：工作日 9:00-18:00</li>
 </ul>
 <hr />
-<p><strong>Copyright © 2026 Yuxuan Zhou. All Rights Reserved.</strong></p>
+<p><strong>© 2026 MornClient. All rights reserved.</strong></p>
 `;
 
 // 国内版英文订阅规则
@@ -1090,5 +1090,5 @@ Calculation:
 <li><strong>Live Chat</strong>: Weekdays 9:00 AM - 6:00 PM</li>
 </ul>
 <hr />
-<p><strong>Copyright © 2026 Yuxuan Zhou. All Rights Reserved.</strong></p>
+<p><strong>© 2026 MornClient. All rights reserved.</strong></p>
 `;

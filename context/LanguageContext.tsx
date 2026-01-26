@@ -71,7 +71,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     // 页脚
     "footer.slogan": "让应用开发更简单",
-    "footer.copyright": "Copyright © 2026 Yuxuan Zhou. All Rights Reserved.",
+    "footer.copyright": "© 2026 MornClient. All rights reserved.",
     "footer.product": "产品",
     "footer.product.features": "功能特性",
     "footer.product.pricing": "订阅方案",
@@ -152,7 +152,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     // Footer
     "footer.slogan": "Making app development easier",
-    "footer.copyright": "Copyright © 2026 Yuxuan Zhou. All Rights Reserved.",
+    "footer.copyright": "© 2026 MornClient. All rights reserved.",
     "footer.product": "Product",
     "footer.product.features": "Features",
     "footer.product.pricing": "Pricing",

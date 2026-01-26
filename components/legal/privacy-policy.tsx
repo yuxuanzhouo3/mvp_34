@@ -614,7 +614,7 @@ const PRIVACY_CN_DOMESTIC = `
 <li><strong>服务时间</strong>：周一至周五 9:00-18:00（北京时间）</li>
 </ul>
 <hr />
-<p><strong>Copyright © 2026 Yuxuan Zhou. All Rights Reserved.</strong></p>
+<p><strong>© 2026 MornClient. All rights reserved.</strong></p>
 `;
 
 // 国内版英文隐私条款
@@ -946,5 +946,5 @@ const PRIVACY_EN_INTERNATIONAL = `
 </ul>
 <p>For EU residents, you also have the right to lodge a complaint with a supervisory authority.</p>
 <hr />
-<p><strong>Copyright © 2026 Yuxuan Zhou. All Rights Reserved.</strong></p>
+<p><strong>© 2026 MornClient. All rights reserved.</strong></p>
 `;

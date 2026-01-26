@@ -286,7 +286,7 @@ export default function ReleasesManagementPage() {
                 新增版本
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>新增发布版本</DialogTitle>
                 <DialogDescription>

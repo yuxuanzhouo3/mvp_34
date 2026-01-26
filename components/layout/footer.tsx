@@ -112,13 +112,13 @@ export function Footer() {
               {t("footer.products")}
             </h4>
             {loading ? (
-              <div className="grid grid-cols-8 gap-2">
+              <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                   <div key={i} className="w-full aspect-square rounded-md bg-muted animate-pulse" />
                 ))}
               </div>
             ) : socialLinks.length > 0 ? (
-              <div className="grid grid-cols-8 gap-2">
+              <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
                 {socialLinks.map((link) => (
                   <Popover key={link.id}>
                     <PopoverTrigger asChild>
@@ -212,13 +212,13 @@ export function Footer() {
               {t("footer.download")}
             </h4>
             {loading ? (
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                   <div key={i} className="h-12 rounded-md bg-muted animate-pulse" />
                 ))}
               </div>
             ) : releases.length > 0 ? (
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                 {releases.slice(0, 8).map((release) => (
                   <Popover key={release.id}>
                     <PopoverTrigger asChild>

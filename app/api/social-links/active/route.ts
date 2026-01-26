@@ -81,13 +81,13 @@ export async function GET(request: NextRequest) {
         }
       }
     } else {
-      // 国际版：从 Supabase 获取
+      // 国际版：从 Supabase 获取（包括 region='global' 和 region='both'）
       if (supabaseAdmin) {
         const { data, error } = await supabaseAdmin
           .from("social_links")
           .select("*")
           .eq("status", "active")
-          .eq("region", "global")
+          .in("region", ["global", "both"])
           .order("sort_order", { ascending: true })
           .limit(50);
 

@@ -315,7 +315,7 @@ export default function AdsManagementPage() {
                 新增广告
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>新增广告</DialogTitle>
                 <DialogDescription>
