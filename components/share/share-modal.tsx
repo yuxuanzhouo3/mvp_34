@@ -810,7 +810,7 @@ export function ShareModal({
                   <Button
                     size="icon"
                     variant="outline"
-                    onClick={() => handleCopy(viewQrShare.secret, `secret-${viewQrShare.id}`)}
+                    onClick={() => handleCopy(viewQrShare.secret!, `secret-${viewQrShare.id}`)}
                   >
                     {copiedId === `secret-${viewQrShare.id}` ? (
                       <Check className="h-4 w-4 text-green-500" />
