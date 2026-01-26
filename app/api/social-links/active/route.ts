@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const isDomestic = searchParams.get("isDomestic") === "true";
 
-    let links = [];
+    let links: any[] = [];
 
     if (isDomestic) {
       // 国内版：从 CloudBase 获取
