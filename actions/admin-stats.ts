@@ -154,8 +154,8 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       failedOrders = failedCount.total || 0;
 
       // 处理已支付订单的收入统计
-      const paidOrders = paidOrdersResult.data || [];
-      paidOrders.forEach((o: { amount?: number; paid_at?: string }) => {
+      const paidOrdersData = paidOrdersResult.data || [];
+      paidOrdersData.forEach((o: { amount?: number; paid_at?: string }) => {
         const amount = Number(o.amount || 0);
         const paidAt = o.paid_at ? new Date(o.paid_at) : null;
 
@@ -168,7 +168,7 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
         }
       });
 
-      paidOrders = paidOrders.length;
+      paidOrders = paidOrdersData.length;
     } catch {
       // orders 集合可能不存在，忽略错误
     }
