@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
       version_code: parseInt(versionCode),
       url,
       privacy_policy: privacyPolicy,
-      icon_path: iconPath,
+      icon_path: null,
       output_file_path: null,
       download_url: null,
       error_message: null,
@@ -148,22 +148,31 @@ export async function POST(request: NextRequest) {
     const buildId = result.id;
 
     // 上传图标到 CloudBase 存储（使用正确的路径格式）
+    let iconPath: string | null = null;
     if (iconBuffer) {
+      console.log(`[Domestic Android Build] Starting icon upload for build ${buildId}, icon size: ${iconBuffer.length} bytes`);
       try {
         const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
         const storage = getCloudBaseStorage();
-        const iconPath = `user-builds/builds/${buildId}/icon.png`;
+        iconPath = `user-builds/builds/${buildId}/icon.png`;
+        console.log(`[Domestic Android Build] Uploading icon to path: ${iconPath}`);
+
         await storage.uploadFile(iconPath, iconBuffer);
+        console.log(`[Domestic Android Build] Icon uploaded successfully to ${iconPath}`);
 
         // 更新构建记录的 icon_path
+        console.log(`[Domestic Android Build] Updating build record with icon_path: ${iconPath}`);
         await db.collection("builds").doc(buildId).update({
           icon_path: iconPath,
           updated_at: new Date().toISOString(),
         });
+        console.log(`[Domestic Android Build] Build record updated successfully with icon_path`);
       } catch (error) {
         console.error("[Domestic Android Build] Icon upload error:", error);
         // 图标上传失败不影响构建继续
       }
+    } else {
+      console.log(`[Domestic Android Build] No icon provided for build ${buildId}`);
     }
 
     // 异步处理构建（不阻塞响应）

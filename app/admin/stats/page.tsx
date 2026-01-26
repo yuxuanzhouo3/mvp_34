@@ -211,17 +211,16 @@ export default function StatsPage() {
               <CardContent>
                 {source === "all" ? (
                   <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-bold">${stats.revenue.total.toFixed(2)}</span>
-                      <span className="text-lg font-semibold text-muted-foreground">+</span>
-                      <span className="text-2xl font-bold">¥{stats.revenueCny.total.toFixed(2)}</span>
+                    <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
+                      <span className="text-xl sm:text-2xl font-bold">${stats.revenue.total.toFixed(2)}</span>
+                      <span className="text-base sm:text-lg font-semibold text-muted-foreground hidden sm:inline">+</span>
+                      <span className="text-xl sm:text-2xl font-bold">¥{stats.revenueCny.total.toFixed(2)}</span>
                     </div>
-                    <div className="flex items-center gap-3 mt-2 text-xs">
+                    <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                       <div className="flex flex-col">
                         <span className="text-muted-foreground">美元今日</span>
                         <span className="font-semibold text-green-600">+${stats.revenue.today.toFixed(2)}</span>
                       </div>
-                      <div className="w-px h-6 bg-border" />
                       <div className="flex flex-col">
                         <span className="text-muted-foreground">人民币今日</span>
                         <span className="font-semibold text-red-600">+¥{stats.revenueCny.today.toFixed(2)}</span>
@@ -315,7 +314,7 @@ export default function StatsPage() {
                 value={timeRange.toString()}
                 onValueChange={(v) => setTimeRange(Number(v))}
               >
-                <SelectTrigger className="w-full sm:w-[120px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <Calendar className="h-4 w-4 mr-2" />
                   <SelectValue />
                 </SelectTrigger>
