@@ -131,42 +131,44 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       }
     });
 
-    // 订单统计 - 从 orders 集合查询
+    // 订单统计 - 从 orders 集合查询（使用聚合查询避免 limit 限制）
     let totalOrders = 0, todayOrders = 0, paidOrders = 0, pendingOrders = 0, failedOrders = 0;
     let totalRevenue = 0, todayRevenue = 0, weekRevenue = 0, monthRevenue = 0;
 
     // 从 orders 集合获取订单/收入数据
     try {
       const ordersCollection = db.collection("orders");
-      const ordersResult = await ordersCollection.limit(10000).get();
-      const orders = ordersResult.data || [];
 
-      totalOrders = orders.length;
-      orders.forEach((o: { payment_status?: string; amount?: number; paid_at?: string; created_at?: string }) => {
+      // 使用聚合查询获取统计数据
+      const [totalCount, todayOrdersResult, paidOrdersResult, pendingCount, failedCount] = await Promise.all([
+        ordersCollection.count(),
+        ordersCollection.where({ created_at: _.gte(todayStart.toISOString()) }).count(),
+        ordersCollection.where({ payment_status: "paid" }).field({ amount: true, paid_at: true }).get(),
+        ordersCollection.where({ payment_status: "pending" }).count(),
+        ordersCollection.where({ payment_status: _.in(["failed", "cancelled"]) }).count(),
+      ]);
+
+      totalOrders = totalCount.total || 0;
+      todayOrders = todayOrdersResult.total || 0;
+      pendingOrders = pendingCount.total || 0;
+      failedOrders = failedCount.total || 0;
+
+      // 处理已支付订单的收入统计
+      const paidOrders = paidOrdersResult.data || [];
+      paidOrders.forEach((o: { amount?: number; paid_at?: string }) => {
         const amount = Number(o.amount || 0);
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
         const paidAt = o.paid_at ? new Date(o.paid_at) : null;
 
-        // 统计今日订单（基于创建时间，不论支付状态）
-        if (createdAt && createdAt >= todayStart) {
-          todayOrders++;
-        }
-
-        if (o.payment_status === "paid") {
-          paidOrders++;
-          totalRevenue += amount;
-          // 收入统计基于支付时间
-          if (paidAt) {
-            if (paidAt >= todayStart) todayRevenue += amount;
-            if (paidAt >= weekAgo) weekRevenue += amount;
-            if (paidAt >= monthAgo) monthRevenue += amount;
-          }
-        } else if (o.payment_status === "pending") {
-          pendingOrders++;
-        } else if (o.payment_status === "failed" || o.payment_status === "cancelled") {
-          failedOrders++;
+        totalRevenue += amount;
+        // 收入统计基于支付时间
+        if (paidAt) {
+          if (paidAt >= todayStart) todayRevenue += amount;
+          if (paidAt >= weekAgo) weekRevenue += amount;
+          if (paidAt >= monthAgo) monthRevenue += amount;
         }
       });
+
+      paidOrders = paidOrders.length;
     } catch {
       // orders 集合可能不存在，忽略错误
     }

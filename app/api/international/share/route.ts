@@ -162,9 +162,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 构建分享URL（直接下载链接）
+    // 构建分享URL - 指向前端展示页面
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const shareUrl = `${appUrl}/api/international/share/d/${shareCode}`;
+    const shareUrl = `${appUrl}/share/${shareCode}`;
 
     return NextResponse.json({
       success: true,
@@ -246,7 +246,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       shares: (shares || []).map((s) => ({
         ...s,
-        shareUrl: `${appUrl}/api/international/share/d/${s.share_code}`,
+        shareUrl: `${appUrl}/share/${s.share_code}`,
         expired: new Date(s.expires_at).getTime() < Date.now(),
       })),
     });

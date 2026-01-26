@@ -272,25 +272,27 @@ async function getCloudBaseOrderStats(): Promise<{
     const connector = new CloudBaseConnector();
     await connector.initialize();
     const db = connector.getClient();
+    const _ = db.command;
 
-    const result = await db
-      .collection("orders")
-      .field({ payment_status: true, amount: true, risk_level: true })
-      .limit(1000)
-      .get();
+    // 使用聚合查询而非全量查询，避免 limit 限制
+    const [totalCount, paidResult, pendingCount, failedCount, highRiskCount] = await Promise.all([
+      db.collection("orders").count(),
+      db.collection("orders").where({ payment_status: "paid" }).field({ amount: true }).get(),
+      db.collection("orders").where({ payment_status: "pending" }).count(),
+      db.collection("orders").where({ payment_status: "failed" }).count(),
+      db.collection("orders").where({ risk_level: _.in(["high", "blocked"]) }).count(),
+    ]);
 
-    const orders = result.data || [];
+    const paidOrders = paidResult.data || [];
+    const totalAmount = paidOrders.reduce((sum: number, o: Record<string, unknown>) => sum + Number(o.amount || 0), 0);
+
     return {
-      total: orders.length,
-      paid: orders.filter((o: Record<string, unknown>) => o.payment_status === "paid").length,
-      pending: orders.filter((o: Record<string, unknown>) => o.payment_status === "pending").length,
-      failed: orders.filter((o: Record<string, unknown>) => o.payment_status === "failed").length,
-      totalAmount: orders
-        .filter((o: Record<string, unknown>) => o.payment_status === "paid")
-        .reduce((sum: number, o: Record<string, unknown>) => sum + Number(o.amount || 0), 0),
-      highRisk: orders.filter(
-        (o: Record<string, unknown>) => o.risk_level === "high" || o.risk_level === "blocked"
-      ).length,
+      total: totalCount.total || 0,
+      paid: paidOrders.length,
+      pending: pendingCount.total || 0,
+      failed: failedCount.total || 0,
+      totalAmount,
+      highRisk: highRiskCount.total || 0,
     };
   } catch (err) {
     console.error("[getCloudBaseOrderStats] Error:", err);

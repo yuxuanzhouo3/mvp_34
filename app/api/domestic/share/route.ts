@@ -158,9 +158,9 @@ export async function POST(request: NextRequest) {
 
     const result = await db.collection("build_shares").add(shareData);
 
-    // 构建分享URL
+    // 构建分享URL - 指向前端展示页面
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const shareUrl = `${appUrl}/api/domestic/share/d/${shareCode}`;
+    const shareUrl = `${appUrl}/share/${shareCode}`;
 
     return NextResponse.json({
       success: true,
@@ -242,7 +242,7 @@ export async function GET(request: NextRequest) {
         share_type: s.share_type,
         expires_at: s.expires_at,
         access_count: s.access_count || 0,
-        shareUrl: `${appUrl}/api/domestic/share/d/${s.share_code}`,
+        shareUrl: `${appUrl}/share/${s.share_code}`,
         expired: new Date(s.expires_at).getTime() < Date.now(),
       })),
     });

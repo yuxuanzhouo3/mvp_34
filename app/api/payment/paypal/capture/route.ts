@@ -20,7 +20,7 @@ import {
 } from "@/lib/payment/payment-record-helper";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
 import { trackPaymentAndSubscription } from "@/lib/payment/analytics-helper";
-import { assessPaymentRisk } from "@/services/orders";
+import { createOrder, markOrderPaid } from "@/services/orders";
 
 /**
  * 解析 customId
@@ -273,58 +273,37 @@ export async function POST(request: NextRequest) {
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || "";
 
-    // 生成订单号
-    const orderNoGen = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-
     // 确定订单类型
     const productType = parsed.isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
 
-    // 风控评估
+    // 获取支付者国家信息
     const payerCountry = result.payer?.address?.country_code || "";
-    const riskAssess = assessPaymentRisk({
+
+    // 创建订单记录（使用统一的订单服务）
+    const orderResult = await createOrder({
       userId,
       userEmail,
+      productName: `${plan} Plan (${period})`,
+      productType: productType as "subscription" | "one_time" | "upgrade",
+      plan,
+      period,
       amount: amountValue,
+      currency,
+      originalAmount: amountValue,
+      discountAmount: 0,
+      paymentMethod: "paypal",
+      source: "global",
       ipAddress,
       userAgent,
       country: payerCountry,
     });
 
-    console.log(`[PayPal][CAPTURE] Risk assessment: score=${riskAssess.riskScore}, level=${riskAssess.riskLevel}, factors=${riskAssess.riskFactors.join(",")}`);
-
-    // 插入订单记录
-    const { error: orderInsertError } = await supabaseAdmin.from("orders").insert({
-      order_no: orderNoGen,
-      user_id: userId,
-      user_email: userEmail,
-      product_name: `${plan} Plan (${period})`,
-      product_type: productType,
-      plan,
-      period,
-      amount: amountValue,
-      currency,
-      original_amount: amountValue,
-      discount_amount: 0,
-      payment_method: "paypal",
-      payment_status: "paid",
-      paid_at: nowIso,
-      provider_order_id: orderId,
-      provider_transaction_id: capture?.id || null,
-      risk_score: riskAssess.riskScore,
-      risk_level: riskAssess.riskLevel,
-      risk_factors: riskAssess.riskFactors,
-      ip_address: ipAddress || null,
-      user_agent: userAgent || null,
-      country: payerCountry || null,
-      source: "global",
-      created_at: nowIso,
-      updated_at: nowIso,
-    });
-
-    if (orderInsertError) {
-      console.error("[PayPal][CAPTURE] Order insert failed:", orderInsertError);
+    if (orderResult.success && orderResult.orderId) {
+      // 标记订单为已支付
+      await markOrderPaid(orderResult.orderId, orderId, capture?.id || undefined);
+      console.log(`[PayPal][CAPTURE] Order created: ${orderResult.orderNo}`);
     } else {
-      console.log(`[PayPal][CAPTURE] Order created: ${orderNoGen}`);
+      console.error("[PayPal][CAPTURE] Order creation failed:", orderResult.error);
     }
 
     // 降级处理：延迟生效

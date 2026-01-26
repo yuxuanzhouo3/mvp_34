@@ -61,8 +61,15 @@ export default function SharePage() {
 
     const fetchShare = async () => {
       try {
-        const res = await fetch(`/api/international/share/${code}`);
-        const json = await res.json();
+        // 尝试国内版 API
+        let res = await fetch(`/api/domestic/share/${code}`);
+        let json = await res.json();
+
+        // 如果国内版失败，尝试国际版 API
+        if (!res.ok) {
+          res = await fetch(`/api/international/share/${code}`);
+          json = await res.json();
+        }
 
         if (!res.ok) {
           if (json.expired) {
@@ -270,6 +277,15 @@ export default function SharePage() {
               Download Unavailable
             </Button>
           )}
+
+          {/* Visit Website button */}
+          <Button
+            variant="outline"
+            className="w-full h-11"
+            onClick={() => window.open(process.env.NEXT_PUBLIC_APP_URL || "/", "_blank")}
+          >
+            Visit Official Website
+          </Button>
 
           {/* Footer note */}
           <p className="text-xs text-center text-muted-foreground">

@@ -109,8 +109,21 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // TODO: 上传图标到 CloudBase 存储
-      // iconPath = await uploadToCloudBase(icon, user.id);
+      // 上传图标到 CloudBase 存储
+      try {
+        const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
+        const storage = getCloudBaseStorage();
+        const iconBuffer = Buffer.from(await icon.arrayBuffer());
+        const iconFileName = `icon-${Date.now()}.png`;
+        iconPath = `user-builds/icons/${user.id}/${iconFileName}`;
+        await storage.uploadFile(iconPath, iconBuffer);
+      } catch (error) {
+        console.error("[Domestic Android Build] Icon upload error:", error);
+        return NextResponse.json(
+          { error: "Icon upload failed", message: "Failed to upload icon to storage" },
+          { status: 500 }
+        );
+      }
     }
 
     // 连接 CloudBase 数据库

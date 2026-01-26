@@ -82,16 +82,34 @@ export async function GET(request: NextRequest) {
       .limit(safeLimit)
       .get();
 
-    // Process builds: mark expired ones and map _id to id
-    const buildsWithStatus = (builds || []).map((build: any) => {
-      const { _id, ...rest } = build;
-      const mapped = { id: _id, ...rest };
-      // Check if build is expired
-      if (build.expires_at && isExpired(build.expires_at)) {
+    // Process builds: mark expired ones, map _id to id, and generate icon URLs
+    const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
+    const storage = getCloudBaseStorage();
+
+    const buildsWithStatus = await Promise.all(
+      (builds || []).map(async (build: any) => {
+        const { _id, ...rest } = build;
+        const mapped = { id: _id, ...rest };
+
+        // Check if build is expired
+        if (build.expires_at && isExpired(build.expires_at)) {
+          return { ...mapped, icon_url: null };
+        }
+
+        // Generate icon URL if icon_path exists
+        if (build.icon_path) {
+          try {
+            const iconUrl = await storage.getTempDownloadUrl(build.icon_path);
+            return { ...mapped, icon_url: iconUrl };
+          } catch (error) {
+            console.error(`[Domestic Builds API] Failed to get icon URL for ${build.icon_path}:`, error);
+            return { ...mapped, icon_url: null };
+          }
+        }
+
         return { ...mapped, icon_url: null };
-      }
-      return { ...mapped, icon_url: build.icon_url || null };
-    });
+      })
+    );
 
     // Get counts for stats
     const { data: allBuilds } = await db
