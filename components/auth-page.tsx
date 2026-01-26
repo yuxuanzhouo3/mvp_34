@@ -337,7 +337,7 @@ export function AuthPage({ mode }: AuthPageProps) {
   const isLoginMode = mode === "login";
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center px-4 py-6 sm:py-8">
       {/* 背景效果 */}
       <div className="fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-cyan-950/20" />
@@ -346,26 +346,14 @@ export function AuthPage({ mode }: AuthPageProps) {
       </div>
 
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex justify-center mb-8">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <Layers className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              MornClient
-            </span>
-          </Link>
-        </div>
-
         {/* 表单卡片 */}
-        <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-8 shadow-xl">
+        <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-5 sm:p-6 shadow-xl">
           <h1 className="text-2xl font-bold text-center mb-2">
             {isLoginMode
               ? isZhText ? "欢迎回来" : "Welcome Back"
               : isZhText ? "创建账号" : "Create Account"}
           </h1>
-          <p className="text-muted-foreground text-center mb-6">
+          <p className="text-muted-foreground text-center mb-4">
             {isLoginMode
               ? isZhText ? "登录以继续使用" : "Sign in to continue"
               : isZhText ? "注册以开始使用" : "Sign up to get started"}
@@ -378,7 +366,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                 // 国内版：微信登录
                 <Button
                   type="button"
-                  className="w-full h-11 rounded-xl gap-3 mb-6 bg-[#00c060] hover:bg-[#00a654] text-white"
+                  className="w-full h-11 rounded-xl gap-3 mb-4 bg-[#00c060] hover:bg-[#00a654] text-white"
                   onClick={handleWechatSignIn}
                   disabled={isLoading || !agreePrivacy}
                 >
@@ -394,7 +382,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-11 rounded-xl gap-3 mb-6"
+                  className="w-full h-11 rounded-xl gap-3 mb-4"
                   onClick={handleGoogleSignIn}
                   disabled={isLoading || !agreePrivacy}
                 >
@@ -408,7 +396,7 @@ export function AuthPage({ mode }: AuthPageProps) {
               )}
 
               {/* 分割线 */}
-              <div className="relative mb-6">
+              <div className="relative mb-4">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-border"></div>
                 </div>
@@ -572,55 +560,8 @@ export function AuthPage({ mode }: AuthPageProps) {
             </Button>
           </form>
 
-          {/* 注册页面也显示第三方登录 */}
-          {!isLoginMode && (
-            <>
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border"></div>
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">
-                    {isZhText ? "或" : "or"}
-                  </span>
-                </div>
-              </div>
-
-              {isDomesticVersion ? (
-                <Button
-                  type="button"
-                  className="w-full h-11 rounded-xl gap-3 bg-[#00c060] hover:bg-[#00a654] text-white"
-                  onClick={handleWechatSignIn}
-                  disabled={isLoading || !agreePrivacy}
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <WechatIcon className="h-5 w-5" />
-                  )}
-                  {isZhText ? "使用微信登录" : "Sign up with WeChat"}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full h-11 rounded-xl gap-3"
-                  onClick={handleGoogleSignIn}
-                  disabled={isLoading || !agreePrivacy}
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <GoogleIcon className="h-5 w-5" />
-                  )}
-                  {isZhText ? "使用 Google 登录" : "Sign up with Google"}
-                </Button>
-              )}
-            </>
-          )}
-
           {/* 切换登录/注册 */}
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <p className="text-center text-sm text-muted-foreground mt-4">
             {isLoginMode ? (
               <>
                 {isZhText ? "还没有账号？" : "Don't have an account?"}{" "}

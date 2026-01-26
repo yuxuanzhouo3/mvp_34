@@ -87,8 +87,8 @@ export function RegisterForm() {
 
   return (
     <div className="w-full max-w-md mx-auto">
-      <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-8 shadow-xl">
-        <div className="text-center mb-8">
+      <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-6 sm:p-8 shadow-xl">
+        <div className="text-center mb-6">
           <h1 className="text-2xl font-bold mb-2">
             {currentLanguage === "zh" ? "创建账户" : "Create Account"}
           </h1>
@@ -99,7 +99,7 @@ export function RegisterForm() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
               {error}
@@ -196,7 +196,7 @@ export function RegisterForm() {
           </Button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-muted-foreground">
+        <div className="mt-4 text-center text-sm text-muted-foreground">
           {currentLanguage === "zh" ? "已有账户？" : "Already have an account?"}{" "}
           <Link
             href="/auth/login"

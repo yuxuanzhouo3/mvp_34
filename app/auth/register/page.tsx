@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 function RegisterContent() {
   return (
-    <div className="min-h-screen relative overflow-hidden pt-20 pb-12">
+    <div className="min-h-screen relative overflow-hidden py-8 sm:py-12">
       {/* Background Effects */}
       <div className="fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-cyan-950/20" />
@@ -15,8 +15,8 @@ function RegisterContent() {
       </div>
 
       <div className="container mx-auto px-4">
-        <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 text-cyan-400 text-sm font-medium mb-8">
+        <div className="flex flex-col items-center justify-start py-4">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 text-cyan-400 text-sm font-medium mb-4">
             <Sparkles className="h-4 w-4" />
             <span>MornClient</span>
           </div>

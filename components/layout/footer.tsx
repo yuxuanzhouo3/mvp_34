@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PrivacyPolicy } from "@/components/legal/privacy-policy";
 import { SubscriptionTerms } from "@/components/legal/subscription-terms";
+import { PrivacyInternational } from "@/components/legal/privacy-international";
+import { SubscriptionInternational } from "@/components/legal/subscription-international";
 
 interface SocialLink {
   id: string;
@@ -350,7 +352,11 @@ export function Footer() {
             </DialogHeader>
 
             <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-slate-800/50">
-              <PrivacyPolicy currentLanguage={currentLanguage} />
+              {isDomesticVersion ? (
+                <PrivacyPolicy currentLanguage={currentLanguage} />
+              ) : (
+                <PrivacyInternational />
+              )}
             </div>
           </div>
         </DialogContent>
@@ -379,7 +385,11 @@ export function Footer() {
             </DialogHeader>
 
             <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-slate-800/50">
-              <SubscriptionTerms currentLanguage={currentLanguage} />
+              {isDomesticVersion ? (
+                <SubscriptionTerms currentLanguage={currentLanguage} />
+              ) : (
+                <SubscriptionInternational />
+              )}
             </div>
           </div>
         </DialogContent>
