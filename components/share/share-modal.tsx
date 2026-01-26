@@ -53,6 +53,7 @@ interface ShareItem {
   access_count: number;
   shareUrl: string;
   expired: boolean;
+  secret?: string;
 }
 
 export function ShareModal({
