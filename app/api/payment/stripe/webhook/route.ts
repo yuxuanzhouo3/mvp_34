@@ -18,7 +18,7 @@ import {
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
 import { trackPaymentAndSubscription } from "@/lib/payment/analytics-helper";
-import { assessPaymentRisk } from "@/services/orders";
+import { createOrder, markOrderPaid } from "@/services/orders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -150,60 +150,38 @@ export async function POST(req: Request) {
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || "";
 
-    // 生成订单号
-    const orderNo = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-
     // 确定订单类型
     const productType = isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
 
-    // 风控评估
-    const riskAssess = assessPaymentRisk({
+    // 创建订单记录（使用统一的订单服务）
+    const orderResult = await createOrder({
       userId,
       userEmail,
+      productName: `${plan} Plan (${period})`,
+      productType: productType as "subscription" | "one_time" | "upgrade",
+      plan,
+      period,
       amount,
+      currency,
+      originalAmount: amount,
+      discountAmount: 0,
+      paymentMethod: "stripe",
+      source: "global",
       ipAddress: metadata.ipAddress,
       userAgent: metadata.userAgent,
       country: metadata.country,
     });
 
-    console.log(`[Stripe][WEBHOOK] Risk assessment: score=${riskAssess.riskScore}, level=${riskAssess.riskLevel}, factors=${riskAssess.riskFactors.join(",")}`);
-
-    // 插入订单记录
-    const { error: orderInsertError } = await supabaseAdmin.from("orders").insert({
-      order_no: orderNo,
-      user_id: userId,
-      user_email: userEmail,
-      product_name: `${plan} Plan (${period})`,
-      product_type: productType,
-      plan,
-      period,
-      amount,
-      currency,
-      original_amount: amount,
-      discount_amount: 0,
-      payment_method: "stripe",
-      payment_status: "paid",
-      paid_at: nowIso,
-      provider_order_id: session.id,
-      provider_transaction_id: typeof session.payment_intent === 'string'
+    if (orderResult.success && orderResult.orderId) {
+      // 标记订单为已支付
+      const paymentIntentId = typeof session.payment_intent === 'string'
         ? session.payment_intent
-        : (session.payment_intent?.id || null),
-      risk_score: riskAssess.riskScore,
-      risk_level: riskAssess.riskLevel,
-      risk_factors: riskAssess.riskFactors,
-      ip_address: metadata.ipAddress || null,
-      user_agent: metadata.userAgent || null,
-      country: metadata.country || null,
-      source: "global",
-      created_at: nowIso,
-      updated_at: nowIso,
-    });
-
-    if (orderInsertError) {
-      console.error("[Stripe][WEBHOOK] Order insert failed:", orderInsertError);
-      // 订单插入失败不应阻止订阅处理，但需要记录错误
+        : (session.payment_intent?.id || undefined);
+      await markOrderPaid(orderResult.orderId, session.id, paymentIntentId);
+      console.log(`[Stripe][WEBHOOK] Order created: ${orderResult.orderNo}`);
     } else {
-      console.log(`[Stripe][WEBHOOK] Order created: ${orderNo}`);
+      console.error("[Stripe][WEBHOOK] Order creation failed:", orderResult.error);
+      // 订单创建失败不应阻止订阅处理，但需要记录错误
     }
 
     // 降级处理：延迟生效

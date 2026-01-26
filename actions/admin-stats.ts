@@ -102,9 +102,9 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
     try {
       const analyticsCollection = db.collection("user_analytics");
       const [dauData, wauData, mauData] = await Promise.all([
-        analyticsCollection.where({ created_at: _.gte(todayStart.toISOString()) }).limit(10000).get(),
-        analyticsCollection.where({ created_at: _.gte(weekAgo.toISOString()) }).limit(10000).get(),
-        analyticsCollection.where({ created_at: _.gte(monthAgo.toISOString()) }).limit(10000).get(),
+        analyticsCollection.where({ created_at: _.gte(todayStart.toISOString()), source: "cn" }).limit(10000).get(),
+        analyticsCollection.where({ created_at: _.gte(weekAgo.toISOString()), source: "cn" }).limit(10000).get(),
+        analyticsCollection.where({ created_at: _.gte(monthAgo.toISOString()), source: "cn" }).limit(10000).get(),
       ]);
       const dauUsers = new Set((dauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
       const wauUsers = new Set((wauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
@@ -144,16 +144,22 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       totalOrders = orders.length;
       orders.forEach((o: { payment_status?: string; amount?: number; paid_at?: string; created_at?: string }) => {
         const amount = Number(o.amount || 0);
-        const paidAt = o.paid_at || o.created_at;
-        const date = paidAt ? new Date(paidAt) : null;
+        const createdAt = o.created_at ? new Date(o.created_at) : null;
+        const paidAt = o.paid_at ? new Date(o.paid_at) : null;
+
+        // 统计今日订单（基于创建时间，不论支付状态）
+        if (createdAt && createdAt >= todayStart) {
+          todayOrders++;
+        }
 
         if (o.payment_status === "paid") {
           paidOrders++;
           totalRevenue += amount;
-          if (date) {
-            if (date >= todayStart) { todayOrders++; todayRevenue += amount; }
-            if (date >= weekAgo) weekRevenue += amount;
-            if (date >= monthAgo) monthRevenue += amount;
+          // 收入统计基于支付时间
+          if (paidAt) {
+            if (paidAt >= todayStart) todayRevenue += amount;
+            if (paidAt >= weekAgo) weekRevenue += amount;
+            if (paidAt >= monthAgo) monthRevenue += amount;
           }
         } else if (o.payment_status === "pending") {
           pendingOrders++;
@@ -165,14 +171,18 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       // orders 集合可能不存在，忽略错误
     }
 
-    // 设备统计
+    // 设备统计（使用与 Supabase 一致的时间范围：最近30天）
     const byOs: Record<string, number> = {};
     const byDeviceType: Record<string, number> = {};
 
     try {
       const analyticsCollection = db.collection("user_analytics");
       const sessionsData = await analyticsCollection
-        .where({ event_type: "session_start" })
+        .where({
+          event_type: "session_start",
+          created_at: _.gte(monthAgo.toISOString()),
+          source: "cn"
+        })
         .limit(10000)
         .get();
       const sessions = sessionsData.data || [];
@@ -229,8 +239,10 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
 
     users.forEach((u: { createdAt?: string; created_at?: string; _id?: string }) => {
       const dateStr = u.createdAt || u.created_at;
-      const date = dateStr ? new Date(dateStr).toISOString().split("T")[0] : null;
-      if (!date) return;
+      if (!dateStr) return;
+      // 使用本地时区获取日期，避免UTC转换问题
+      const dateObj = new Date(dateStr);
+      const date = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
       if (!dateMap.has(date)) {
         dateMap.set(date, { activeUsers: new Set(), newUsers: 0, sessions: 0 });
       }
@@ -243,15 +255,17 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
     try {
       const analyticsData = await db
         .collection("user_analytics")
-        .where({ created_at: _.gte(startDate.toISOString()) })
+        .where({ created_at: _.gte(startDate.toISOString()), source: "cn" })
         .limit(10000)
         .get();
 
       const analytics = analyticsData.data || [];
 
       analytics.forEach((a: { created_at?: string; user_id?: string; event_type?: string }) => {
-        const date = a.created_at ? new Date(a.created_at).toISOString().split("T")[0] : null;
-        if (!date) return;
+        if (!a.created_at) return;
+        // 使用本地时区获取日期，避免UTC转换问题
+        const dateObj = new Date(a.created_at);
+        const date = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
         if (!dateMap.has(date)) {
           dateMap.set(date, { activeUsers: new Set(), newUsers: 0, sessions: 0 });
         }
@@ -293,7 +307,7 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
     try {
       const ordersData = await db
         .collection("orders")
-        .where({ payment_status: "paid" })
+        .where({ payment_status: "paid", source: "cn" })
         .limit(10000)
         .get();
 
@@ -301,11 +315,13 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
 
       orders.forEach((o: { paid_at?: string; created_at?: string; amount?: number; user_id?: string }) => {
         const dateStr = o.paid_at || o.created_at;
-        const date = dateStr ? new Date(dateStr).toISOString().split("T")[0] : null;
-        if (!date) return;
+        if (!dateStr) return;
 
-        const orderDate = new Date(dateStr!);
+        const orderDate = new Date(dateStr);
         if (orderDate < startDate) return;
+
+        // 使用本地时区获取日期，避免UTC转换问题
+        const date = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
 
         if (!dateMap.has(date)) {
           dateMap.set(date, { amount: 0, orderCount: 0, payingUsers: new Set() });
@@ -446,6 +462,76 @@ async function getSupabaseDailyRevenue(source: "all" | "global", days: number): 
 // ============================================================================
 // 合并工具函数
 // ============================================================================
+
+/**
+ * 生成完整的日期范围（从 startDate 到今天）
+ * 对于没有数据的日期，填充默认值
+ */
+function fillDateRange(data: DailyStats[], days: number): DailyStats[] {
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - days + 1);
+
+  const dateMap = new Map<string, DailyStats>();
+  data.forEach(item => dateMap.set(item.date, item));
+
+  const result: DailyStats[] = [];
+  const current = new Date(startDate);
+
+  while (current <= today) {
+    const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+
+    if (dateMap.has(dateStr)) {
+      result.push(dateMap.get(dateStr)!);
+    } else {
+      result.push({
+        date: dateStr,
+        activeUsers: 0,
+        newUsers: 0,
+        sessions: 0,
+      });
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
+}
+
+/**
+ * 生成完整的日期范围（从 startDate 到今天）- 收入数据
+ */
+function fillRevenueDateRange(data: RevenueStats[], days: number): RevenueStats[] {
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - days + 1);
+
+  const dateMap = new Map<string, RevenueStats>();
+  data.forEach(item => dateMap.set(item.date, item));
+
+  const result: RevenueStats[] = [];
+  const current = new Date(startDate);
+
+  while (current <= today) {
+    const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+
+    if (dateMap.has(dateStr)) {
+      result.push(dateMap.get(dateStr)!);
+    } else {
+      result.push({
+        date: dateStr,
+        amount: 0,
+        amountCny: 0,
+        orderCount: 0,
+        payingUsers: 0,
+      });
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return result;
+}
 
 function mergeStats(a: DashboardStats | null, b: DashboardStats | null): DashboardStats | null {
   if (!a && !b) return null;
@@ -602,17 +688,20 @@ export async function getDailyActiveUsers(
   }
 
   try {
+    let result: DailyStats[];
     if (source === "cn") {
-      return await getCloudBaseDailyUsers(days);
+      result = await getCloudBaseDailyUsers(days);
     } else if (source === "global") {
-      return await getSupabaseDailyUsers("global", days);
+      result = await getSupabaseDailyUsers("global", days);
     } else {
       const [supabaseData, cloudbaseData] = await Promise.all([
         getSupabaseDailyUsers("global", days),
         getCloudBaseDailyUsers(days),
       ]);
-      return mergeDailyStats(supabaseData, cloudbaseData);
+      result = mergeDailyStats(supabaseData, cloudbaseData);
     }
+    // 填充完整的日期范围，确保横坐标统一且到今天
+    return fillDateRange(result, days);
   } catch (err) {
     console.error("[getDailyActiveUsers] Unexpected error:", err);
     return [];
@@ -633,17 +722,20 @@ export async function getDailyRevenue(
   }
 
   try {
+    let result: RevenueStats[];
     if (source === "cn") {
-      return await getCloudBaseDailyRevenue(days);
+      result = await getCloudBaseDailyRevenue(days);
     } else if (source === "global") {
-      return await getSupabaseDailyRevenue("global", days);
+      result = await getSupabaseDailyRevenue("global", days);
     } else {
       const [supabaseData, cloudbaseData] = await Promise.all([
         getSupabaseDailyRevenue("global", days),
         getCloudBaseDailyRevenue(days),
       ]);
-      return mergeRevenueStats(supabaseData, cloudbaseData);
+      result = mergeRevenueStats(supabaseData, cloudbaseData);
     }
+    // 填充完整的日期范围，确保横坐标统一且到今天
+    return fillRevenueDateRange(result, days);
   } catch (err) {
     console.error("[getDailyRevenue] Unexpected error:", err);
     return [];

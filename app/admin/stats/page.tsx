@@ -184,17 +184,12 @@ export default function StatsPage() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">活跃用户</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">日活跃用户</CardTitle>
                 <Activity className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(stats.users.mau)}</div>
+                <div className="text-2xl font-bold">{formatNumber(stats.users.dau)}</div>
                 <div className="flex items-center gap-3 mt-2 text-xs">
-                  <div className="flex flex-col">
-                    <span className="text-muted-foreground">日活</span>
-                    <span className="font-semibold text-blue-600">{formatNumber(stats.users.dau)}</span>
-                  </div>
-                  <div className="w-px h-6 bg-border" />
                   <div className="flex flex-col">
                     <span className="text-muted-foreground">周活</span>
                     <span className="font-semibold text-green-600">{formatNumber(stats.users.wau)}</span>
@@ -384,17 +379,32 @@ export default function StatsPage() {
                           <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} className="text-xs" />
                           <YAxis className="text-xs" />
                           <Tooltip
-                            contentStyle={{
-                              backgroundColor: "hsl(var(--background))",
-                              border: "1px solid hsl(var(--border))",
-                              borderRadius: "8px",
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload || !payload.length) return null;
+                              return (
+                                <div
+                                  style={{
+                                    backgroundColor: "hsl(var(--background))",
+                                    border: "1px solid hsl(var(--border))",
+                                    borderRadius: "8px",
+                                    padding: "12px",
+                                    color: "hsl(var(--foreground))",
+                                  }}
+                                >
+                                  <p style={{ marginBottom: "8px", fontWeight: 500 }}>日期: {label}</p>
+                                  {payload.map((entry: any, index: number) => (
+                                    <p key={index} style={{ margin: "4px 0", color: "hsl(var(--foreground))" }}>
+                                      <span style={{ fontWeight: 500 }}>{entry.name}:</span>{" "}
+                                      <span style={{ fontWeight: 600 }}>
+                                        {entry.name.includes("美元") || entry.name.includes("$")
+                                          ? `$${entry.value.toFixed(2)}`
+                                          : `¥${entry.value.toFixed(2)}`}
+                                      </span>
+                                    </p>
+                                  ))}
+                                </div>
+                              );
                             }}
-                            formatter={(value: number, name: string) => {
-                              if (name.includes("美元") || name.includes("$")) return [`$${value.toFixed(2)}`, name];
-                              if (name.includes("人民币") || name.includes("¥")) return [`¥${value.toFixed(2)}`, name];
-                              return [value.toLocaleString(), name];
-                            }}
-                            labelFormatter={(label) => `日期: ${label}`}
                           />
                           <Legend />
                           {(source === "all" || source === "global") && (
