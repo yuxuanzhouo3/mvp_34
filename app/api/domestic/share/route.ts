@@ -12,6 +12,11 @@ import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getPlanShareExpireDays } from "@/utils/plan-limits";
 import { nanoid } from "nanoid";
 
+// 生成8位大写秘钥
+function generateSecret() {
+  return nanoid(8).toUpperCase();
+}
+
 /**
  * POST /api/domestic/share
  * 创建分享链接
@@ -19,10 +24,12 @@ import { nanoid } from "nanoid";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { buildId, expireDays, shareType = "link" } = body as {
+    const { buildId, expireDays, shareType = "link", makePublic = false, expiresInDays = 7 } = body as {
       buildId: string;
       expireDays: number;
       shareType?: "link" | "qrcode";
+      makePublic?: boolean;
+      expiresInDays?: number;
     };
 
     if (!buildId || !expireDays) {
@@ -129,8 +136,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 验证并限制 expiresInDays 范围（1-30天）
+    const validExpiresInDays = Math.max(1, Math.min(30, expiresInDays));
+
     // 计算实际分享有效期
-    const actualExpireDays = Math.min(expireDays, maxShareDays, buildRemainingDays);
+    const actualExpireDays = Math.min(expireDays, maxShareDays, buildRemainingDays, validExpiresInDays);
 
     if (actualExpireDays <= 0) {
       return NextResponse.json(
@@ -142,6 +152,9 @@ export async function POST(request: NextRequest) {
     // 生成分享码
     const shareCode = nanoid(12);
 
+    // 生成秘钥（如果不是公开分享）
+    const secret = makePublic ? null : generateSecret();
+
     // 计算分享过期时间
     const shareExpiresAt = new Date(now.getTime() + actualExpireDays * 24 * 60 * 60 * 1000);
 
@@ -151,6 +164,9 @@ export async function POST(request: NextRequest) {
       build_id: buildId,
       user_id: user.id,
       share_type: shareType,
+      is_public: makePublic,
+      secret: secret,
+      expires_in_days: validExpiresInDays,
       expires_at: shareExpiresAt.toISOString(),
       access_count: 0,
       created_at: now.toISOString(),
@@ -169,6 +185,8 @@ export async function POST(request: NextRequest) {
         shareCode,
         shareUrl,
         shareType,
+        isPublic: makePublic,
+        secret: secret || "",
         expiresAt: shareExpiresAt.toISOString(),
         actualExpireDays,
         maxShareDays,
@@ -242,6 +260,8 @@ export async function GET(request: NextRequest) {
         share_type: s.share_type,
         expires_at: s.expires_at,
         access_count: s.access_count || 0,
+        is_public: s.is_public || false,
+        secret: s.secret || null,
         shareUrl: `${appUrl}/share/${s.share_code}`,
         expired: new Date(s.expires_at).getTime() < Date.now(),
       })),

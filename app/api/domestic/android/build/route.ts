@@ -91,8 +91,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 处理图标上传
-    let iconPath: string | null = null;
+    // 验证图标（稍后上传）
+    let iconBuffer: Buffer | null = null;
     if (icon && icon.size > 0) {
       if (!isIconUploadEnabled()) {
         return NextResponse.json(
@@ -109,21 +109,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 上传图标到 CloudBase 存储
-      try {
-        const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
-        const storage = getCloudBaseStorage();
-        const iconBuffer = Buffer.from(await icon.arrayBuffer());
-        const iconFileName = `icon-${Date.now()}.png`;
-        iconPath = `user-builds/icons/${user.id}/${iconFileName}`;
-        await storage.uploadFile(iconPath, iconBuffer);
-      } catch (error) {
-        console.error("[Domestic Android Build] Icon upload error:", error);
-        return NextResponse.json(
-          { error: "Icon upload failed", message: "Failed to upload icon to storage" },
-          { status: 500 }
-        );
-      }
+      // 读取图标数据，稍后上传
+      iconBuffer = Buffer.from(await icon.arrayBuffer());
     }
 
     // 连接 CloudBase 数据库
@@ -159,6 +146,25 @@ export async function POST(request: NextRequest) {
 
     const result = await db.collection("builds").add(buildData);
     const buildId = result.id;
+
+    // 上传图标到 CloudBase 存储（使用正确的路径格式）
+    if (iconBuffer) {
+      try {
+        const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
+        const storage = getCloudBaseStorage();
+        const iconPath = `user-builds/builds/${buildId}/icon.png`;
+        await storage.uploadFile(iconPath, iconBuffer);
+
+        // 更新构建记录的 icon_path
+        await db.collection("builds").doc(buildId).update({
+          icon_path: iconPath,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("[Domestic Android Build] Icon upload error:", error);
+        // 图标上传失败不影响构建继续
+      }
+    }
 
     // 异步处理构建（不阻塞响应）
     // 注意：实际生产环境应使用消息队列或云函数

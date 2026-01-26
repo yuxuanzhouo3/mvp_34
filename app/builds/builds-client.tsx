@@ -361,21 +361,12 @@ export default function BuildsClient() {
     if (newSelected.has(buildId)) {
       newSelected.delete(buildId);
     } else {
-      // Free 用户只能选择一个
-      if (!batchBuildEnabled) {
-        newSelected.clear();
-      }
       newSelected.add(buildId);
     }
     setSelectedBuilds(newSelected);
   };
 
   const toggleSelectAll = () => {
-    // Free 用户点击全选时弹出订阅界面
-    if (!batchBuildEnabled) {
-      window.dispatchEvent(new CustomEvent("open-subscription-modal"));
-      return;
-    }
     if (selectedBuilds.size === filteredBuilds.length && filteredBuilds.length > 0) {
       setSelectedBuilds(new Set());
     } else {

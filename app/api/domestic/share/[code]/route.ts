@@ -19,6 +19,7 @@ export async function GET(
 ) {
   try {
     const { code } = await params;
+    const secret = request.nextUrl.searchParams.get("secret");
 
     if (!code) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
@@ -47,6 +48,14 @@ export async function GET(
       return NextResponse.json(
         { error: "Share has expired", expired: true },
         { status: 410 }
+      );
+    }
+
+    // 验证秘钥（如果不是公开分享）
+    if (!share.is_public && share.secret !== secret) {
+      return NextResponse.json(
+        { error: "Invalid secret", needsSecret: true },
+        { status: 403 }
       );
     }
 

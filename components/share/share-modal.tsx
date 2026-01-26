@@ -30,9 +30,12 @@ import {
   Crown,
   Download,
   AlertCircle,
+  Lock,
+  Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface ShareModalProps {
   open: boolean;
@@ -67,12 +70,15 @@ export function ShareModal({
   const [maxShareDays, setMaxShareDays] = useState(0);
   const [buildRemainingDays, setBuildRemainingDays] = useState(0);
   const [expireDays, setExpireDays] = useState(1);
+  const [expiresInDays, setExpiresInDays] = useState(7);
+  const [makePublic, setMakePublic] = useState(false);
   const [shareType, setShareType] = useState<"link" | "qrcode">("link");
   const [creating, setCreating] = useState(false);
   const [shares, setShares] = useState<ShareItem[]>([]);
   const [loadingShares, setLoadingShares] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [newShareUrl, setNewShareUrl] = useState<string | null>(null);
+  const [newShareSecret, setNewShareSecret] = useState<string | null>(null);
   const [newShareExpiresAt, setNewShareExpiresAt] = useState<string | null>(null);
   const [viewQrShare, setViewQrShare] = useState<ShareItem | null>(null);
   const [planError, setPlanError] = useState(false); // API 请求失败
@@ -135,6 +141,7 @@ export function ShareModal({
       // 设置默认有效期
       const defaultDays = Math.min(maxDays, remainingDays, 7);
       setExpireDays(defaultDays > 0 ? defaultDays : 1);
+      setExpiresInDays(7); // 默认7天
     };
 
     fetchPlan();
@@ -172,6 +179,7 @@ export function ShareModal({
 
     setCreating(true);
     setNewShareUrl(null);
+    setNewShareSecret(null);
     setNewShareExpiresAt(null);
 
     try {
@@ -184,6 +192,8 @@ export function ShareModal({
           buildId,
           expireDays,
           shareType,
+          makePublic,
+          expiresInDays,
         }),
       });
 
@@ -193,8 +203,6 @@ export function ShareModal({
         throw new Error(data.error || "Failed to create share");
       }
 
-      setNewShareUrl(data.share.shareUrl);
-      setNewShareExpiresAt(data.share.expiresAt);
       toast.success(isZh ? "分享链接已创建" : "Share link created");
 
       // 刷新分享列表
@@ -244,6 +252,14 @@ export function ShareModal({
     }
   };
 
+  // 监听 makePublic 变化,自动刷新分享链接
+  useEffect(() => {
+    // 只有在已经生成了分享链接的情况下才重新生成
+    if (newShareUrl && open) {
+      handleCreateShare();
+    }
+  }, [makePublic]);
+
   // 计算实际可用的最大天数
   const actualMaxDays = Math.min(maxShareDays, buildRemainingDays);
   const isTeam = (plan || "").toLowerCase() === "team";
@@ -252,7 +268,7 @@ export function ShareModal({
   if (plan === null && !planError) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="h-5 w-5" />
@@ -274,7 +290,7 @@ export function ShareModal({
   if (planError) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="h-5 w-5" />
@@ -310,7 +326,7 @@ export function ShareModal({
   if (maxShareDays === 0) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="h-5 w-5" />
@@ -345,15 +361,15 @@ export function ShareModal({
   return (
   <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
             {isZh ? "分享构建" : "Share Build"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 overflow-hidden">
+        <div className="space-y-6 overflow-y-auto overflow-x-hidden pr-2 -mr-2">
           {/* 构建信息 */}
           <div className="p-3 rounded-lg bg-muted/50">
             <p className="font-medium truncate">{buildName}</p>
@@ -387,24 +403,58 @@ export function ShareModal({
             {/* 有效期设置 */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label>{isZh ? "有效期" : "Expires in"}</Label>
+                <Label>{isZh ? "分享链接有效期" : "Share Link Expires in"}</Label>
                 <span className="text-sm font-medium">
-                  {expireDays} {isZh ? "天" : expireDays === 1 ? "day" : "days"}
+                  {expiresInDays} {isZh ? "天" : expiresInDays === 1 ? "day" : "days"}
                 </span>
               </div>
               <Slider
-                value={[expireDays]}
-                onValueChange={([v]) => setExpireDays(v)}
+                value={[expiresInDays]}
+                onValueChange={([v]) => setExpiresInDays(v)}
                 min={1}
-                max={actualMaxDays}
+                max={30}
                 step={1}
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
                 {isZh
-                  ? `最长 ${actualMaxDays} 天（套餐限制 ${maxShareDays} 天，构建剩余 ${buildRemainingDays} 天）`
-                  : `Max ${actualMaxDays} days (plan limit: ${maxShareDays}, build expires: ${buildRemainingDays})`}
+                  ? `可选择 1-30 天（实际有效期受套餐限制 ${maxShareDays} 天和构建剩余 ${buildRemainingDays} 天影响）`
+                  : `Choose 1-30 days (actual expiry limited by plan: ${maxShareDays} days, build: ${buildRemainingDays} days)`}
               </p>
+            </div>
+
+            {/* 公开/私密分享选择 */}
+            <div className="space-y-3">
+              <Label>{isZh ? "分享类型" : "Share Type"}</Label>
+              <RadioGroup
+                value={makePublic ? "public" : "private"}
+                onValueChange={(value) => setMakePublic(value === "public")}
+              >
+                <div className="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-muted/50">
+                  <RadioGroupItem value="private" id="private" />
+                  <Label htmlFor="private" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Lock className="h-4 w-4 text-blue-500" />
+                    <div>
+                      <p className="font-medium">{isZh ? "私密分享" : "Private Share"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isZh ? "需要密钥才能访问" : "Requires secret key"}
+                      </p>
+                    </div>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 rounded-lg border cursor-pointer hover:bg-muted/50">
+                  <RadioGroupItem value="public" id="public" />
+                  <Label htmlFor="public" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Globe className="h-4 w-4 text-green-500" />
+                    <div>
+                      <p className="font-medium">{isZh ? "公开分享" : "Public Share"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isZh ? "任何人都可以访问" : "Anyone can access"}
+                      </p>
+                    </div>
+                  </Label>
+                </div>
+              </RadioGroup>
             </div>
 
             {/* 创建按钮 */}
@@ -425,7 +475,7 @@ export function ShareModal({
 
             {/* 新创建的分享 */}
             {newShareUrl && (
-              <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10 overflow-hidden">
+              <div className="p-4 rounded-lg border border-green-500/30 bg-green-500/10 overflow-hidden space-y-3">
                 {shareType === "qrcode" ? (
                   <div className="flex flex-col items-center gap-4">
                     <QRCodeSVG id="share-qrcode" value={newShareUrl} size={160} />
@@ -468,6 +518,38 @@ export function ShareModal({
                         {isZh ? "下载二维码" : "Download"}
                       </Button>
                     </div>
+
+                    {/* 秘钥显示（私密分享） */}
+                    {newShareSecret && (
+                      <div className="w-full p-3 rounded-lg border border-blue-500/30 bg-blue-500/10">
+                        <div className="flex items-center gap-2 mb-2 justify-center">
+                          <Lock className="h-4 w-4 text-blue-500" />
+                          <Label className="text-sm font-medium">
+                            {isZh ? "访问密钥" : "Access Secret"}
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 px-3 py-2 rounded-md border bg-background font-mono text-lg font-bold tracking-wider text-center">
+                            {newShareSecret}
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => handleCopy(newShareSecret, "secret")}
+                          >
+                            {copiedId === "secret" ? (
+                              <Check className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2 text-center">
+                          {isZh ? "请妥善保管此密钥，访问者需要输入密钥才能查看分享内容" : "Keep this secret safe. Visitors need it to access the share"}
+                        </p>
+                      </div>
+                    )}
+
                     {newShareExpiresAt && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -476,7 +558,7 @@ export function ShareModal({
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center gap-2 w-full">
                       <div className="flex-1 min-w-0 px-3 py-2 rounded-md border bg-muted/50 overflow-hidden">
                         <p className="text-sm truncate">{newShareUrl}</p>
@@ -494,6 +576,38 @@ export function ShareModal({
                         )}
                       </Button>
                     </div>
+
+                    {/* 秘钥显示（私密分享） */}
+                    {newShareSecret && (
+                      <div className="p-3 rounded-lg border border-blue-500/30 bg-blue-500/10">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Lock className="h-4 w-4 text-blue-500" />
+                          <Label className="text-sm font-medium">
+                            {isZh ? "访问密钥" : "Access Secret"}
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 px-3 py-2 rounded-md border bg-background font-mono text-lg font-bold tracking-wider text-center">
+                            {newShareSecret}
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => handleCopy(newShareSecret, "secret")}
+                          >
+                            {copiedId === "secret" ? (
+                              <Check className="h-4 w-4 text-green-500" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {isZh ? "请妥善保管此密钥，访问者需要输入密钥才能查看分享内容" : "Keep this secret safe. Visitors need it to access the share"}
+                        </p>
+                      </div>
+                    )}
+
                     {newShareExpiresAt && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -525,11 +639,18 @@ export function ShareModal({
                     <div className="flex items-center justify-between gap-2 overflow-hidden">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         {share.share_type === "qrcode" ? (
-                          <QrCode className="h-4 w-4 shrink-0" />
+                          <>
+                            <QrCode className="h-4 w-4 shrink-0" />
+                            <span className="text-sm font-medium">
+                              {isZh ? "二维码分享" : "QR Code Share"}
+                            </span>
+                          </>
                         ) : (
-                          <Link2 className="h-4 w-4 shrink-0" />
+                          <>
+                            <Link2 className="h-4 w-4 shrink-0" />
+                            <span className="text-sm truncate">{share.shareUrl}</span>
+                          </>
                         )}
-                        <span className="text-sm truncate">{share.shareUrl}</span>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {!share.expired && share.share_type === "qrcode" && (
@@ -542,7 +663,7 @@ export function ShareModal({
                             <QrCode className="h-4 w-4" />
                           </Button>
                         )}
-                        {!share.expired && (
+                        {!share.expired && share.share_type !== "qrcode" && (
                           <Button
                             size="icon"
                             variant="ghost"
@@ -566,6 +687,34 @@ export function ShareModal({
                         </Button>
                       </div>
                     </div>
+
+                    {/* 秘钥显示（私密分享 - 仅链接分享） */}
+                    {share.secret && share.share_type !== "qrcode" && (
+                      <div className="mt-2 p-2 rounded-md border border-blue-500/30 bg-blue-500/10">
+                        <div className="flex items-center gap-2">
+                          <Lock className="h-3 w-3 text-blue-500 shrink-0" />
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {isZh ? "密钥:" : "Secret:"}
+                          </span>
+                          <code className="flex-1 text-xs font-mono font-bold tracking-wider">
+                            {share.secret}
+                          </code>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() => handleCopy(share.secret, `list-secret-${share.id}`)}
+                          >
+                            {copiedId === `list-secret-${share.id}` ? (
+                              <Check className="h-3 w-3 text-green-500" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -594,7 +743,7 @@ export function ShareModal({
 
     {/* 二维码查看弹窗 */}
     <Dialog open={!!viewQrShare} onOpenChange={() => setViewQrShare(null)}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <QrCode className="h-5 w-5" />
@@ -643,6 +792,38 @@ export function ShareModal({
                 {isZh ? "下载" : "Download"}
               </Button>
             </div>
+
+            {/* 秘钥显示（私密分享） */}
+            {viewQrShare.secret && (
+              <div className="w-full p-3 rounded-lg border border-blue-500/30 bg-blue-500/10">
+                <div className="flex items-center gap-2 mb-2 justify-center">
+                  <Lock className="h-4 w-4 text-blue-500" />
+                  <Label className="text-sm font-medium">
+                    {isZh ? "访问密钥" : "Access Secret"}
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3 py-2 rounded-md border bg-background font-mono text-lg font-bold tracking-wider text-center">
+                    {viewQrShare.secret}
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => handleCopy(viewQrShare.secret, `secret-${viewQrShare.id}`)}
+                  >
+                    {copiedId === `secret-${viewQrShare.id}` ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  {isZh ? "请妥善保管此密钥，访问者需要输入密钥才能查看分享内容" : "Keep this secret safe. Visitors need it to access the share"}
+                </p>
+              </div>
+            )}
+
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="h-3 w-3" />
               {isZh ? "有效期至" : "Expires"}: {new Date(viewQrShare.expires_at).toLocaleDateString()}

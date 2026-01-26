@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Download,
   Loader2,
@@ -20,6 +21,7 @@ import {
   Terminal,
   Package,
   HardDrive,
+  Lock,
 } from "lucide-react";
 
 interface ShareData {
@@ -49,48 +51,83 @@ function formatFileSize(bytes: number | null): string {
 
 export default function SharePage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const code = params.code as string;
+  const urlSecret = searchParams.get("secret");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
+  const [needsSecret, setNeedsSecret] = useState(false);
+  const [secret, setSecret] = useState(urlSecret || "");
   const [data, setData] = useState<ShareData | null>(null);
+
+  const fetchShare = async (secretKey?: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 构建URL，如果有秘钥则添加到查询参数
+      const buildUrl = (baseUrl: string) => {
+        const url = new URL(baseUrl, window.location.origin);
+        if (secretKey) {
+          url.searchParams.set("secret", secretKey);
+        }
+        return url.toString();
+      };
+
+      // 尝试国内版 API
+      let res = await fetch(buildUrl(`/api/domestic/share/${code}`));
+      let json = await res.json();
+
+      // 如果国内版返回需要秘钥，直接处理
+      if (res.status === 403 || json.needsSecret) {
+        setNeedsSecret(true);
+        setError("需要密钥才能访问此分享");
+        return;
+      }
+
+      // 如果国内版失败（非403），尝试国际版 API
+      if (!res.ok) {
+        res = await fetch(buildUrl(`/api/international/share/${code}`));
+        json = await res.json();
+
+        // 检查国际版是否需要秘钥
+        if (res.status === 403 || json.needsSecret) {
+          setNeedsSecret(true);
+          setError("需要密钥才能访问此分享");
+          return;
+        }
+      }
+
+      if (!res.ok) {
+        if (json.expired) {
+          setExpired(true);
+        } else {
+          setError(json.error || "Failed to load share");
+        }
+        return;
+      }
+
+      setData(json);
+      setNeedsSecret(false);
+    } catch (err) {
+      console.error("Fetch share error:", err);
+      setError("Failed to load share");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!code) return;
+    fetchShare(urlSecret || undefined);
+  }, [code, urlSecret]);
 
-    const fetchShare = async () => {
-      try {
-        // 尝试国内版 API
-        let res = await fetch(`/api/domestic/share/${code}`);
-        let json = await res.json();
-
-        // 如果国内版失败，尝试国际版 API
-        if (!res.ok) {
-          res = await fetch(`/api/international/share/${code}`);
-          json = await res.json();
-        }
-
-        if (!res.ok) {
-          if (json.expired) {
-            setExpired(true);
-          } else {
-            setError(json.error || "Failed to load share");
-          }
-          return;
-        }
-
-        setData(json);
-      } catch (err) {
-        console.error("Fetch share error:", err);
-        setError("Failed to load share");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchShare();
-  }, [code]);
+  const handleSecretSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchShare(secret);
+  };
 
   const getPlatformIcon = (platform: string) => {
     switch (platform) {
@@ -175,6 +212,45 @@ export default function SharePage() {
           <p className="text-muted-foreground">
             This share link has expired and is no longer available.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Secret input state
+  if (needsSecret && !data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
+        <div className="max-w-md w-full bg-card rounded-2xl border shadow-xl p-8">
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center">
+              <Lock className="h-8 w-8 text-blue-500" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-center mb-2">需要密钥</h1>
+          <p className="text-muted-foreground text-center mb-6">
+            此分享受密钥保护，请输入密钥以查看内容
+          </p>
+          <form onSubmit={handleSecretSubmit} className="space-y-4">
+            <Input
+              type="text"
+              placeholder="输入密钥"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              className="text-center font-mono text-lg tracking-wider uppercase"
+              maxLength={8}
+            />
+            {error && (
+              <p className="text-red-500 text-sm text-center">{error}</p>
+            )}
+            <Button
+              type="submit"
+              className="w-full h-12 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500"
+              disabled={!secret}
+            >
+              访问分享
+            </Button>
+          </form>
         </div>
       </div>
     );
