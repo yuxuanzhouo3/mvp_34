@@ -26,6 +26,8 @@ interface Release {
   download_url?: string;
   platform: string;
   published_at?: string;
+  file_size?: number;
+  release_notes?: string;
 }
 
 export function Footer() {

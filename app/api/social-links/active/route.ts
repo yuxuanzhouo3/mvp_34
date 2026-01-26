@@ -2,12 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 
+interface SocialLink {
+  id: string;
+  title: string;
+  description: string;
+  icon_url: string;
+  target_url: string;
+  sort_order: number;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const isDomestic = searchParams.get("isDomestic") === "true";
 
-    let links: any[] = [];
+    let links: SocialLink[] = [];
 
     if (isDomestic) {
       // 国内版：从 CloudBase 获取
