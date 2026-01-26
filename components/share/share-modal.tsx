@@ -704,7 +704,7 @@ export function ShareModal({
                             size="icon"
                             variant="ghost"
                             className="h-6 w-6 shrink-0"
-                            onClick={() => handleCopy(share.secret, `list-secret-${share.id}`)}
+                            onClick={() => handleCopy(share.secret!, `list-secret-${share.id}`)}
                           >
                             {copiedId === `list-secret-${share.id}` ? (
                               <Check className="h-3 w-3 text-green-500" />
