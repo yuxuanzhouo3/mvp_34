@@ -16,10 +16,21 @@ export function MpLoginHandler() {
   const router = useRouter();
 
   const handleMpLoginCallback = useCallback(async () => {
-    if (typeof window === "undefined") return;
+    console.log("[MpLoginHandler] Component mounted, checking for login callback");
 
+    if (typeof window === "undefined") {
+      console.log("[MpLoginHandler] Window is undefined, skipping");
+      return;
+    }
+
+    console.log("[MpLoginHandler] Current URL:", window.location.href);
     const callback = parseWxMpLoginCallback();
-    if (!callback) return;
+    console.log("[MpLoginHandler] Parsed callback:", callback);
+
+    if (!callback) {
+      console.log("[MpLoginHandler] No login callback found, skipping");
+      return;
+    }
 
     console.log("[MpLoginHandler] Processing mini program login callback:", callback);
 
