@@ -9,7 +9,6 @@ import { AuthProvider } from "@/context/AuthContext";
 import { Header, Footer } from "@/components/layout";
 import { DEFAULT_LANGUAGE } from "@/config";
 import "./globals.css";
-import "./miniprogram-fix.css";
 
 export const metadata: Metadata = {
   title: "MornClient",
