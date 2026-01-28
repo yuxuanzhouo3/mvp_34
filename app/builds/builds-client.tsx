@@ -281,6 +281,16 @@ export default function BuildsClient() {
       }
 
       if (data.build?.downloadUrl) {
+        // 在小程序环境中，拦截外部下载链接
+        if (typeof window !== "undefined" && (window as any).wx?.miniProgram) {
+          const mp = (window as any).wx.miniProgram;
+          if (typeof mp.navigateTo === "function") {
+            const linkCopyPageUrl = "/pages/qrcode/qrcode?url=" + encodeURIComponent(data.build.downloadUrl);
+            mp.navigateTo({ url: linkCopyPageUrl });
+            return;
+          }
+        }
+        // 非小程序环境，正常打开下载链接
         window.open(data.build.downloadUrl, "_blank");
       } else {
         throw new Error("No download URL available");
