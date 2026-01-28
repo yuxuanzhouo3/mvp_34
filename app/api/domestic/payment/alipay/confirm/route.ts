@@ -10,6 +10,7 @@ import { AlipayProvider } from "@/lib/payment/providers/alipay-provider";
 import { applySubscriptionPayment } from "@/lib/payment/apply-subscription";
 import { normalizePlanName } from "@/utils/plan-utils";
 import { trackPaymentEvent, trackSubscriptionEvent } from "@/services/analytics";
+import { createOrder, markOrderPaid } from "@/services/orders";
 
 export async function POST(request: NextRequest) {
   try {
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
     const period = (paymentRecord.period || paymentRecord?.metadata?.billingCycle || "monthly") as "monthly" | "annual";
     const days = Number(paymentRecord?.metadata?.days) || (period === "annual" ? 365 : 30);
     const planName = normalizePlanName(paymentRecord.plan || paymentRecord?.metadata?.planName || "Pro") || "Pro";
+    const totalAmount = Number(paymentRecord.amount) || 0;
 
     console.log("[Alipay Confirm] Processing subscription:", {
       userId,
@@ -105,6 +107,33 @@ export async function POST(request: NextRequest) {
       period,
       days,
     });
+
+    // 创建订单记录
+    const orderResult = await createOrder({
+      userId,
+      userEmail: paymentRecord.userEmail || paymentRecord.user_email,
+      productName: `${planName} Plan (${period})`,
+      productType: "subscription",
+      plan: planName,
+      period,
+      amount: totalAmount,
+      currency: "CNY",
+      originalAmount: totalAmount,
+      discountAmount: 0,
+      paymentMethod: "alipay",
+      source: "cn",
+      ipAddress: paymentRecord.metadata?.ipAddress,
+      userAgent: paymentRecord.metadata?.userAgent,
+      country: paymentRecord.metadata?.country,
+    });
+
+    if (orderResult.success && orderResult.orderId) {
+      // 标记订单为已支付
+      await markOrderPaid(orderResult.orderId, outTradeNo, alipayStatus?.trade_no);
+      console.log(`[Alipay Confirm] Order created: ${orderResult.orderNo}`);
+    } else {
+      console.error("[Alipay Confirm] Order creation failed:", orderResult.error);
+    }
 
     await applySubscriptionPayment({
       userId,
@@ -116,7 +145,6 @@ export async function POST(request: NextRequest) {
     });
 
     // 埋点：记录支付和订阅事件
-    const totalAmount = Number(paymentRecord.amount) || 0;
     trackPaymentEvent(userId, {
       amount: totalAmount,
       currency: "CNY",

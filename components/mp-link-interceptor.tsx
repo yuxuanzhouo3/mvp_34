@@ -84,9 +84,37 @@ export function MpLinkInterceptor() {
       return originalOpen.call(this, url, ...args);
     };
 
+    // 拦截 window.location.href 赋值
+    const originalLocationDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
+    let currentLocation = window.location.href;
+
+    Object.defineProperty(window, 'location', {
+      get() {
+        return originalLocationDescriptor?.get?.call(window) || window.location;
+      },
+      set(value) {
+        const urlStr = String(value);
+        if (isExternalUrl(urlStr)) {
+          console.log("[mp-link-interceptor] 拦截 window.location.href:", urlStr);
+          navigateToLinkCopyPage(urlStr);
+          return;
+        }
+        if (originalLocationDescriptor?.set) {
+          originalLocationDescriptor.set.call(window, value);
+        } else {
+          window.location.href = value;
+        }
+      },
+      configurable: true,
+    });
+
     return () => {
       document.removeEventListener("click", handleClick, true);
       window.open = originalOpen;
+      // 恢复 location 属性
+      if (originalLocationDescriptor) {
+        Object.defineProperty(window, 'location', originalLocationDescriptor);
+      }
     };
   }, [isExternalUrl, navigateToLinkCopyPage]);
 

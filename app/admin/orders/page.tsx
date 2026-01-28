@@ -126,7 +126,7 @@ export default function AdminOrdersPage() {
   });
 
   const [filters, setFilters] = useState<OrderFilters>({
-    source: "global",
+    source: "all",
     payment_status: "all",
     risk_level: "all",
     payment_method: "all",
