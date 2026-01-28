@@ -10,6 +10,7 @@ import { PrivacyPolicy } from "@/components/legal/privacy-policy";
 import { SubscriptionTerms } from "@/components/legal/subscription-terms";
 import { PrivacyInternational } from "@/components/legal/privacy-international";
 import { SubscriptionInternational } from "@/components/legal/subscription-international";
+import { isMiniProgram, getWxMiniProgram } from "@/lib/wechat-mp";
 
 interface SocialLink {
   id: string;
@@ -278,6 +279,17 @@ export function Footer() {
                         <button
                           onClick={() => {
                             if (release.download_url) {
+                              // 在小程序环境中，拦截外部下载链接
+                              if (isMiniProgram()) {
+                                const mp = getWxMiniProgram();
+                                if (mp && typeof mp.navigateTo === "function") {
+                                  const linkCopyPageUrl = "/pages/qrcode/qrcode?url=" + encodeURIComponent(release.download_url);
+                                  console.log("[Footer] 拦截下载链接，跳转到小程序链接复制页面:", linkCopyPageUrl);
+                                  mp.navigateTo({ url: linkCopyPageUrl });
+                                  return;
+                                }
+                              }
+                              // 非小程序环境，正常下载
                               window.location.href = release.download_url;
                             }
                           }}

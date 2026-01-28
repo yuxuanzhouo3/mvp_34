@@ -10,6 +10,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { Header, Footer } from "@/components/layout";
 import { DEFAULT_LANGUAGE, IS_DOMESTIC_VERSION } from "@/config";
 import { MpLinkInterceptor } from "@/components/mp-link-interceptor";
+import { MpLoginHandler } from "@/components/mp-login-handler";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -53,6 +54,8 @@ export default async function RootLayout({
             // 主站路由：显示完整布局
             <AuthProvider>
               <LanguageProvider>
+                {/* 微信小程序登录处理器 - 全局处理登录回调 */}
+                {IS_DOMESTIC_VERSION && <MpLoginHandler />}
                 {/* 微信小程序外部链接拦截器 - 仅在小程序环境中生效 */}
                 {IS_DOMESTIC_VERSION && <MpLinkInterceptor />}
                 <div className="flex min-h-screen flex-col">
