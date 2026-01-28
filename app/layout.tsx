@@ -11,6 +11,7 @@ import { Header, Footer } from "@/components/layout";
 import { DEFAULT_LANGUAGE, IS_DOMESTIC_VERSION } from "@/config";
 import { MpLinkInterceptor } from "@/components/mp-link-interceptor";
 import { MpLoginHandler } from "@/components/mp-login-handler";
+import { DynamicTitle } from "@/components/DynamicTitle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -54,6 +55,8 @@ export default async function RootLayout({
             // 主站路由：显示完整布局
             <AuthProvider>
               <LanguageProvider>
+                {/* 动态标题 - 小程序环境显示"晨佑端转化工具" */}
+                {IS_DOMESTIC_VERSION && <DynamicTitle />}
                 {/* 微信小程序登录处理器 - 全局处理登录回调 */}
                 {IS_DOMESTIC_VERSION && <MpLoginHandler />}
                 {/* 微信小程序外部链接拦截器 - 仅在小程序环境中生效 */}
