@@ -5,7 +5,6 @@ import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 export const runtime = "nodejs";
 
 /**
- * POST /api/domestic/auth/mp-callback
  * 小程序登录回调接口
  * 接收小程序直接传回的 token，设置 cookie
  * 可选：更新用户的昵称和头像（新用户填写资料后）
@@ -26,45 +25,30 @@ export async function POST(req: Request) {
       );
     }
 
-    // 安全验证：确保 token 确实存在于我们的 sessions 表中
-    const connector = new CloudBaseConnector({});
-    await connector.initialize();
-    const db = connector.getClient();
-
-    const sessions = await db.collection("sessions").where({ token }).limit(1).get();
-    const session = sessions?.data?.[0] as { userId: string; expiresAt: number } | undefined;
-
-    if (!session) {
-      console.warn("[domestic/auth/mp-callback] Invalid token - session not found");
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    if (session.expiresAt < Date.now()) {
-      console.warn("[domestic/auth/mp-callback] Token expired");
-      return NextResponse.json({ error: "Token expired" }, { status: 401 });
-    }
-
-    // 验证 openid 与 session 用户匹配
-    const users = await db.collection("users").doc(session.userId).get();
-    const user = users?.data?.[0] as { wechatOpenId?: string } | undefined;
-
-    if (!user || user.wechatOpenId !== openid) {
-      console.warn("[domestic/auth/mp-callback] OpenID mismatch");
-      return NextResponse.json({ error: "OpenID mismatch" }, { status: 401 });
-    }
-
-    // 如果有昵称，更新用户资料（复用已验证的用户数据）
-    if (nickName && user) {
+    // 如果有昵称，更新用户资料（头像不落库，由小程序端直接显示）
+    if (nickName) {
       try {
-        const userDoc = user as { _id?: string; name?: string };
-        // 只在用户当前昵称为空或默认值时才更新
-        if (userDoc._id && (!userDoc.name || userDoc.name === "微信用户")) {
-          await db.collection("users").doc(session.userId).update({ name: nickName });
-          console.log("[domestic/auth/mp-callback] User name updated:", nickName);
+        console.log("[mp-callback] Updating user profile - nickName:", nickName);
+        const connector = new CloudBaseConnector({});
+        await connector.initialize();
+        const db = connector.getClient();
+
+        // 通过 openid 查找用户
+        const users = await db.collection("users").where({ wechatOpenId: openid }).limit(1).get();
+        const user = users.data[0];
+
+        if (user && user._id) {
+          // 只在用户当前昵称为空或默认值时才更新
+          if (!user.name || user.name === "微信用户") {
+            await db.collection("users").doc(user._id).update({ name: nickName });
+            console.log("[mp-callback] User name updated:", nickName);
+          }
+        } else {
+          console.warn("[mp-callback] User not found for openid:", openid);
         }
       } catch (updateError) {
         // 更新失败不影响登录流程
-        console.error("[domestic/auth/mp-callback] Failed to update user profile:", updateError);
+        console.error("[mp-callback] Failed to update user profile:", updateError);
       }
     }
 
@@ -85,11 +69,11 @@ export async function POST(req: Request) {
       path: "/",
     });
 
-    console.log("[domestic/auth/mp-callback] Token set for openid:", openid);
+    console.log("[mp-callback] Token set for openid:", openid);
 
     return res;
   } catch (error) {
-    console.error("[domestic/auth/mp-callback] error", error);
+    console.error("[mp-callback] error", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

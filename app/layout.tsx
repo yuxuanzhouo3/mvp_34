@@ -3,11 +3,13 @@ import { headers } from "next/headers";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Analytics } from "@vercel/analytics/next";
+import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { Header, Footer } from "@/components/layout";
-import { DEFAULT_LANGUAGE } from "@/config";
+import { DEFAULT_LANGUAGE, IS_DOMESTIC_VERSION } from "@/config";
+import { MpLinkInterceptor } from "@/components/mp-link-interceptor";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,6 +34,13 @@ export default async function RootLayout({
   return (
     <html lang={DEFAULT_LANGUAGE} suppressHydrationWarning>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}>
+        {/* 微信 JS-SDK - 仅国内版加载，用于小程序 web-view 环境 */}
+        {IS_DOMESTIC_VERSION && (
+          <Script
+            src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"
+            strategy="beforeInteractive"
+          />
+        )}
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -44,6 +53,8 @@ export default async function RootLayout({
             // 主站路由：显示完整布局
             <AuthProvider>
               <LanguageProvider>
+                {/* 微信小程序外部链接拦截器 - 仅在小程序环境中生效 */}
+                {IS_DOMESTIC_VERSION && <MpLinkInterceptor />}
                 <div className="flex min-h-screen flex-col">
                   <Header />
                   <main className="flex-1">{children}</main>

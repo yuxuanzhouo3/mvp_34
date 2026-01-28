@@ -244,7 +244,7 @@ export async function exchangeCodeForToken(
   error?: string;
 }> {
   try {
-    const response = await fetch("/api/domestic/wxlogin", {
+    const response = await fetch("/api/domestic/wxlogin/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include", // 确保 cookie 能被存储
