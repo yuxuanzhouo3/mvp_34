@@ -288,11 +288,6 @@ export default function StatsPage() {
                     <span className="text-muted-foreground">已付款</span>
                     <span className="font-semibold text-blue-600">{formatNumber(stats.orders.paid)}</span>
                   </div>
-                  <div className="w-px h-6 bg-border" />
-                  <div className="flex flex-col">
-                    <span className="text-muted-foreground">待付款</span>
-                    <span className="font-semibold text-orange-600">{formatNumber(stats.orders.pending)}</span>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -338,8 +333,8 @@ export default function StatsPage() {
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={dailyUsers}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                          <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} className="text-xs" />
-                          <YAxis className="text-xs" allowDecimals={false} />
+                          <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} className="text-xs" interval={1} angle={-45} textAnchor="end" height={60} />
+                          <YAxis className="text-xs" allowDecimals={false} domain={[0, 100]} />
                           <Tooltip
                             contentStyle={{
                               backgroundColor: "hsl(var(--background))",
@@ -352,7 +347,7 @@ export default function StatsPage() {
                           <Legend />
                           <Line type="monotone" dataKey="activeUsers" name="活跃用户" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                           <Line type="monotone" dataKey="newUsers" name="新增用户" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                          <Line type="monotone" dataKey="sessions" name="会话数" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                          <Line type="monotone" dataKey="sessions" name="构建数" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                         </LineChart>
                       </ResponsiveContainer>
                     ) : (
@@ -376,7 +371,7 @@ export default function StatsPage() {
                         <BarChart data={dailyRevenue}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} className="text-xs" />
-                          <YAxis className="text-xs" />
+                          <YAxis className="text-xs" domain={[0, 300]} />
                           <Tooltip
                             content={({ active, payload, label }) => {
                               if (!active || !payload || !payload.length) return null;

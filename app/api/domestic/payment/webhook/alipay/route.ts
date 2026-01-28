@@ -80,12 +80,6 @@ export async function POST(request: NextRequest) {
   try {
     console.log("🔔 [Alipay Webhook] 收到 webhook 请求");
 
-    // 获取风控信息（从请求头中）
-    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-      || request.headers.get("x-real-ip")
-      || "";
-    const userAgent = request.headers.get("user-agent") || "";
-
     // 支付宝在 POST body 中以 form-urlencoded 格式传递数据
     const formData = await request.formData();
     const params: Record<string, string> = {};
@@ -203,7 +197,7 @@ export async function POST(request: NextRequest) {
       planName,
     });
 
-    // 创建订单记录
+    // 创建订单记录（从保存的metadata中读取风控信息）
     const orderResult = await createOrder({
       userId,
       userEmail: paymentRecord?.metadata?.userEmail || undefined,
@@ -216,8 +210,9 @@ export async function POST(request: NextRequest) {
       currency: "CNY",
       paymentMethod: "alipay",
       source: "cn",
-      ipAddress,
-      userAgent,
+      ipAddress: paymentRecord?.metadata?.ipAddress || "",
+      userAgent: paymentRecord?.metadata?.userAgent || "",
+      country: paymentRecord?.metadata?.country || "",
     });
 
     if (orderResult.success && orderResult.orderId) {

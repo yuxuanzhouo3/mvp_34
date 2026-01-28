@@ -124,6 +124,15 @@ export async function POST(request: NextRequest) {
     // 获取用户信息
     const userInfo = await getUserInfo(userId);
 
+    // 采集风控信息（从用户请求头中）
+    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "";
+    const userAgent = request.headers.get("user-agent") || "";
+    const country = request.headers.get("x-vercel-ip-country")
+      || request.headers.get("cf-ipcountry")
+      || "";
+
     const metadata = {
       userId,
       days,
@@ -134,6 +143,9 @@ export async function POST(request: NextRequest) {
       originalAmount: baseAmount,
       userEmail: userInfo.email,
       isWechatUser: userInfo.isWechatUser,
+      ipAddress,
+      userAgent,
+      country,
     };
 
     // 创建支付宝支付提供商

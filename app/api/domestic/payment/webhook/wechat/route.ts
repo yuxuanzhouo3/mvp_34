@@ -93,12 +93,6 @@ export async function POST(request: NextRequest) {
     const timestamp = request.headers.get("Wechatpay-Timestamp") || "";
     const nonce = request.headers.get("Wechatpay-Nonce") || "";
 
-    // 获取风控信息（从请求头中）
-    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-      || request.headers.get("x-real-ip")
-      || "";
-    const userAgent = request.headers.get("user-agent") || "";
-
     // 2. 读取请求体
     const body = await request.text();
 
@@ -230,7 +224,7 @@ export async function POST(request: NextRequest) {
       planName,
     });
 
-    // 创建订单记录
+    // 创建订单记录（从保存的metadata中读取风控信息）
     const orderResult = await createOrder({
       userId: effectiveUserId,
       userEmail: paymentRecord?.metadata?.userEmail || undefined,
@@ -243,8 +237,9 @@ export async function POST(request: NextRequest) {
       currency: "CNY",
       paymentMethod: "wechat",
       source: "cn",
-      ipAddress,
-      userAgent,
+      ipAddress: paymentRecord?.metadata?.ipAddress || "",
+      userAgent: paymentRecord?.metadata?.userAgent || "",
+      country: paymentRecord?.metadata?.country || "",
     });
 
     if (orderResult.success && orderResult.orderId) {

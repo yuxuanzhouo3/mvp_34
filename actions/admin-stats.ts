@@ -74,57 +74,89 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
     const db = connector.getClient();
     const _ = db.command;
 
+    // 国内版使用北京时间(UTC+8)进行统计,符合国内用户习惯
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const weekAgo = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const monthAgo = new Date(todayStart.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const beijingOffsetMs = 8 * 60 * 60 * 1000; // 北京时间偏移量（毫秒）
+
+    // 计算北京时间的今天0点（UTC毫秒数）
+    const beijingNow = new Date(now.getTime() + beijingOffsetMs);
+    const todayStartUtc = Date.UTC(
+      beijingNow.getUTCFullYear(),
+      beijingNow.getUTCMonth(),
+      beijingNow.getUTCDate(),
+      0, 0, 0, 0
+    ) - beijingOffsetMs;
+    const weekAgoUtc = todayStartUtc - 7 * 24 * 60 * 60 * 1000;
+    const monthAgoUtc = todayStartUtc - 30 * 24 * 60 * 60 * 1000;
 
     // 用户统计 - 支持 createdAt 和 created_at 两种字段名
     const usersCollection = db.collection("users");
-    const [totalUsers, todayUsers, weekUsers, monthUsers] = await Promise.all([
-      usersCollection.count().then((r: { total: number }) => r.total).catch(() => 0),
-      usersCollection.where(_.or([
-        { createdAt: _.gte(todayStart.toISOString()) },
-        { created_at: _.gte(todayStart.toISOString()) }
-      ])).count().then((r: { total: number }) => r.total).catch(() => 0),
-      usersCollection.where(_.or([
-        { createdAt: _.gte(weekAgo.toISOString()) },
-        { created_at: _.gte(weekAgo.toISOString()) }
-      ])).count().then((r: { total: number }) => r.total).catch(() => 0),
-      usersCollection.where(_.or([
-        { createdAt: _.gte(monthAgo.toISOString()) },
-        { created_at: _.gte(monthAgo.toISOString()) }
-      ])).count().then((r: { total: number }) => r.total).catch(() => 0),
-    ]);
+    const totalUsers = await usersCollection.count().then((r: { total: number }) => r.total).catch(() => 0);
+
+    // 获取最近一个月的用户数据用于统计
+    const recentUsersData = await usersCollection
+      .where(_.or([
+        { createdAt: _.gte(new Date(monthAgoUtc).toISOString()) },
+        { created_at: _.gte(new Date(monthAgoUtc).toISOString()) }
+      ]))
+      .limit(10000)
+      .get()
+      .catch(() => ({ data: [] }));
+
+    const recentUsers = recentUsersData.data || [];
+
+    // 本地过滤统计,使用UTC毫秒数进行比较
+    let todayUsers = 0, weekUsers = 0, monthUsers = 0;
+    recentUsers.forEach((u: { createdAt?: string; created_at?: string }) => {
+      const dateStr = u.createdAt || u.created_at;
+      if (!dateStr) return;
+      const userTimeUtc = new Date(dateStr).getTime();
+      if (userTimeUtc >= todayStartUtc) todayUsers++;
+      if (userTimeUtc >= weekAgoUtc) weekUsers++;
+      if (userTimeUtc >= monthAgoUtc) monthUsers++;
+    });
 
     // 活跃用户统计 (DAU/WAU/MAU) - 从 user_analytics 表查询
     let dau = 0, wau = 0, mau = 0;
     try {
       const analyticsCollection = db.collection("user_analytics");
-      const [dauData, wauData, mauData] = await Promise.all([
-        analyticsCollection.where({ created_at: _.gte(todayStart.toISOString()), source: "cn" }).limit(10000).get(),
-        analyticsCollection.where({ created_at: _.gte(weekAgo.toISOString()), source: "cn" }).limit(10000).get(),
-        analyticsCollection.where({ created_at: _.gte(monthAgo.toISOString()), source: "cn" }).limit(10000).get(),
-      ]);
-      const dauUsers = new Set((dauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
-      const wauUsers = new Set((wauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
-      const mauUsers = new Set((mauData.data || []).map((a: { user_id?: string }) => a.user_id).filter(Boolean));
+      const analyticsData = await analyticsCollection
+        .where({ created_at: _.gte(new Date(monthAgoUtc).toISOString()), source: "cn" })
+        .limit(10000)
+        .get();
+
+      const analytics = analyticsData.data || [];
+      const dauUsers = new Set<string>();
+      const wauUsers = new Set<string>();
+      const mauUsers = new Set<string>();
+
+      // 本地过滤,使用UTC毫秒数进行比较
+      analytics.forEach((a: { created_at?: string; user_id?: string }) => {
+        if (!a.created_at || !a.user_id) return;
+        const activityTimeUtc = new Date(a.created_at).getTime();
+        if (activityTimeUtc >= todayStartUtc) dauUsers.add(a.user_id);
+        if (activityTimeUtc >= weekAgoUtc) wauUsers.add(a.user_id);
+        if (activityTimeUtc >= monthAgoUtc) mauUsers.add(a.user_id);
+      });
+
       dau = dauUsers.size;
       wau = wauUsers.size;
       mau = mauUsers.size;
+
     } catch {
       // user_analytics 集合可能不存在
     }
 
-    // 订阅统计 - CloudBase 中 wallet 是 users 的嵌套字段
-    // 查询 wallet.plan 不为 Free/free 的用户
+    // 订阅统计 - CloudBase 中 plan 存储在用户对象的 plan 字段
+    // 查询 plan 不为 Free/free 的用户
     const allUsersResult = await usersCollection.limit(10000).get().catch(() => ({ data: [] }));
     const allUsers = allUsersResult.data || [];
     const byPlan: Record<string, number> = {};
     let subscriptionCount = 0;
 
-    allUsers.forEach((u: { wallet?: { plan?: string } }) => {
-      const plan = u.wallet?.plan;
+    allUsers.forEach((u: { plan?: string; wallet?: { plan?: string } }) => {
+      // 优先使用 u.plan，如果不存在则使用 u.wallet.plan
+      const plan = u.plan || u.wallet?.plan;
       if (plan && plan.toLowerCase() !== "free") {
         subscriptionCount++;
         byPlan[plan] = (byPlan[plan] || 0) + 1;
@@ -140,32 +172,33 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       const ordersCollection = db.collection("orders");
 
       // 使用聚合查询获取统计数据
-      const [totalCount, todayOrdersResult, paidOrdersResult, pendingCount, failedCount] = await Promise.all([
+      const [totalCount, pendingCount, failedCount, paidOrdersResult] = await Promise.all([
         ordersCollection.count(),
-        ordersCollection.where({ created_at: _.gte(todayStart.toISOString()) }).count(),
-        ordersCollection.where({ payment_status: "paid" }).field({ amount: true, paid_at: true }).get(),
         ordersCollection.where({ payment_status: "pending" }).count(),
         ordersCollection.where({ payment_status: _.in(["failed", "cancelled"]) }).count(),
+        ordersCollection.where({ payment_status: "paid" }).field({ amount: true, paid_at: true, created_at: true }).get(),
       ]);
 
       totalOrders = totalCount.total || 0;
-      todayOrders = todayOrdersResult.total || 0;
       pendingOrders = pendingCount.total || 0;
       failedOrders = failedCount.total || 0;
 
-      // 处理已支付订单的收入统计
+      // 处理已支付订单的收入统计 - 使用UTC毫秒数进行比较
       const paidOrdersData = paidOrdersResult.data || [];
-      paidOrdersData.forEach((o: { amount?: number; paid_at?: string }) => {
+      paidOrdersData.forEach((o: { amount?: number; paid_at?: string; created_at?: string }) => {
         const amount = Number(o.amount || 0);
-        const paidAt = o.paid_at ? new Date(o.paid_at) : null;
+        const paidAtStr = o.paid_at || o.created_at;
+        if (!paidAtStr) return;
 
+        const paidAtUtc = new Date(paidAtStr).getTime();
         totalRevenue += amount;
-        // 收入统计基于支付时间
-        if (paidAt) {
-          if (paidAt >= todayStart) todayRevenue += amount;
-          if (paidAt >= weekAgo) weekRevenue += amount;
-          if (paidAt >= monthAgo) monthRevenue += amount;
+
+        if (paidAtUtc >= todayStartUtc) {
+          todayRevenue += amount;
+          todayOrders++;
         }
+        if (paidAtUtc >= weekAgoUtc) weekRevenue += amount;
+        if (paidAtUtc >= monthAgoUtc) monthRevenue += amount;
       });
 
       paidOrders = paidOrdersData.length;
@@ -174,30 +207,43 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
     }
 
     // 设备统计（使用与 Supabase 一致的时间范围：最近30天）
-    const byOs: Record<string, number> = {};
-    const byDeviceType: Record<string, number> = {};
+    const byOs: Record<string, Set<string>> = {};
+    const byDeviceType: Record<string, Set<string>> = {};
 
     try {
       const analyticsCollection = db.collection("user_analytics");
       const sessionsData = await analyticsCollection
         .where({
           event_type: "session_start",
-          created_at: _.gte(monthAgo.toISOString()),
+          created_at: _.gte(new Date(monthAgoUtc).toISOString()),
           source: "cn"
         })
         .limit(10000)
         .get();
       const sessions = sessionsData.data || [];
 
-      sessions.forEach((s: { os?: string; device_type?: string }) => {
+      sessions.forEach((s: { os?: string; device_type?: string; user_id?: string }) => {
+        if (!s.user_id) return;
         const os = s.os || "Unknown";
         const deviceType = s.device_type || "Unknown";
-        byOs[os] = (byOs[os] || 0) + 1;
-        byDeviceType[deviceType] = (byDeviceType[deviceType] || 0) + 1;
+        if (!byOs[os]) byOs[os] = new Set();
+        if (!byDeviceType[deviceType]) byDeviceType[deviceType] = new Set();
+        byOs[os].add(s.user_id);
+        byDeviceType[deviceType].add(s.user_id);
       });
     } catch {
       // user_analytics 集合可能不存在，忽略错误
     }
+
+    // 转换 Set 为数字
+    const byOsCount: Record<string, number> = {};
+    const byDeviceTypeCount: Record<string, number> = {};
+    Object.entries(byOs).forEach(([key, userSet]) => {
+      byOsCount[key] = userSet.size;
+    });
+    Object.entries(byDeviceType).forEach(([key, userSet]) => {
+      byDeviceTypeCount[key] = userSet.size;
+    });
 
     return {
       users: { total: totalUsers, today: todayUsers, thisWeek: weekUsers, thisMonth: monthUsers, dau, wau, mau },
@@ -205,7 +251,7 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       revenueCny: { total: totalRevenue, today: todayRevenue, thisWeek: weekRevenue, thisMonth: monthRevenue },
       subscriptions: { total: subscriptionCount, byPlan },
       orders: { total: totalOrders, today: todayOrders, paid: paidOrders, pending: pendingOrders, failed: failedOrders },
-      devices: { byOs, byDeviceType },
+      devices: { byOs: byOsCount, byDeviceType: byDeviceTypeCount },
     };
   } catch (err) {
     console.error("[getCloudBaseStats] Error:", err);
@@ -220,15 +266,26 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
     const db = connector.getClient();
     const _ = db.command;
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    // 使用北京时间计算起始日期（与卡片数据统一的逻辑）
+    const now = new Date();
+    const beijingOffsetMs = 8 * 60 * 60 * 1000;
+
+    // 计算北京时间的今天0点（UTC毫秒数）
+    const beijingNow = new Date(now.getTime() + beijingOffsetMs);
+    const todayStartUtc = Date.UTC(
+      beijingNow.getUTCFullYear(),
+      beijingNow.getUTCMonth(),
+      beijingNow.getUTCDate(),
+      0, 0, 0, 0
+    ) - beijingOffsetMs;
+    const startDateUtc = todayStartUtc - (days - 1) * 24 * 60 * 60 * 1000;
 
     // 获取用户数据 - 支持 createdAt 和 created_at 两种字段名
     const usersData = await db
       .collection("users")
       .where(_.or([
-        { createdAt: _.gte(startDate.toISOString()) },
-        { created_at: _.gte(startDate.toISOString()) }
+        { createdAt: _.gte(new Date(startDateUtc).toISOString()) },
+        { created_at: _.gte(new Date(startDateUtc).toISOString()) }
       ]))
       .limit(10000)
       .get()
@@ -236,28 +293,35 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
 
     const users = usersData.data || [];
 
-    // 按日期聚合新用户
+    // 按日期聚合新用户 - 使用统一的北京时间转换逻辑
     const dateMap = new Map<string, { activeUsers: Set<string>; newUsers: number; sessions: number }>();
 
     users.forEach((u: { createdAt?: string; created_at?: string; _id?: string }) => {
       const dateStr = u.createdAt || u.created_at;
       if (!dateStr) return;
-      // 使用本地时区获取日期，避免UTC转换问题
-      const dateObj = new Date(dateStr);
-      const date = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+      const userTimeUtc = new Date(dateStr).getTime();
+
+      // 计算该用户属于哪一天（北京时间）
+      const daysSinceStart = Math.floor((userTimeUtc - todayStartUtc) / (24 * 60 * 60 * 1000));
+      const dayStartUtc = todayStartUtc + daysSinceStart * 24 * 60 * 60 * 1000;
+
+      // 转换为北京时间日期字符串
+      const beijingDate = new Date(dayStartUtc + beijingOffsetMs);
+      const date = `${beijingDate.getUTCFullYear()}-${String(beijingDate.getUTCMonth() + 1).padStart(2, '0')}-${String(beijingDate.getUTCDate()).padStart(2, '0')}`;
+
       if (!dateMap.has(date)) {
         dateMap.set(date, { activeUsers: new Set(), newUsers: 0, sessions: 0 });
       }
       const entry = dateMap.get(date)!;
       entry.newUsers++;
-      if (u._id) entry.activeUsers.add(u._id);
+      // 注意：不在这里添加到activeUsers，活跃用户只从analytics统计
     });
 
     // 尝试获取 analytics 数据
     try {
       const analyticsData = await db
         .collection("user_analytics")
-        .where({ created_at: _.gte(startDate.toISOString()), source: "cn" })
+        .where({ created_at: _.gte(new Date(startDateUtc).toISOString()), source: "cn" })
         .limit(10000)
         .get();
 
@@ -265,16 +329,28 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
 
       analytics.forEach((a: { created_at?: string; user_id?: string; event_type?: string }) => {
         if (!a.created_at) return;
-        // 使用本地时区获取日期，避免UTC转换问题
-        const dateObj = new Date(a.created_at);
-        const date = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+        const activityTimeUtc = new Date(a.created_at).getTime();
+
+        // 计算该活动属于哪一天（北京时间）
+        const daysSinceStart = Math.floor((activityTimeUtc - todayStartUtc) / (24 * 60 * 60 * 1000));
+        const dayStartUtc = todayStartUtc + daysSinceStart * 24 * 60 * 60 * 1000;
+
+        // 转换为北京时间日期字符串
+        const beijingDate = new Date(dayStartUtc + beijingOffsetMs);
+        const date = `${beijingDate.getUTCFullYear()}-${String(beijingDate.getUTCMonth() + 1).padStart(2, '0')}-${String(beijingDate.getUTCDate()).padStart(2, '0')}`;
+
         if (!dateMap.has(date)) {
           dateMap.set(date, { activeUsers: new Set(), newUsers: 0, sessions: 0 });
         }
         const entry = dateMap.get(date)!;
         if (a.user_id) entry.activeUsers.add(a.user_id);
-        if (a.event_type === "session_start") entry.sessions++;
+        if (a.event_type === "build_complete") entry.sessions++;
       });
+
+      // 调试日志：输出CloudBase折线图统计详情
+      const todayBj = new Date(todayStartUtc + beijingOffsetMs);
+      const todayStr = `${todayBj.getUTCFullYear()}-${String(todayBj.getUTCMonth() + 1).padStart(2, '0')}-${String(todayBj.getUTCDate()).padStart(2, '0')}`;
+      const todayData = dateMap.get(todayStr);
     } catch {
       // user_analytics 集合可能不存在
     }
@@ -299,8 +375,14 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
     await connector.initialize();
     const db = connector.getClient();
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    // 使用北京时间计算起始日期
+    const now = new Date();
+    const beijingOffset = 8 * 60;
+    const localOffset = now.getTimezoneOffset();
+    const offsetDiff = (beijingOffset + localOffset) * 60 * 1000;
+    const beijingNow = new Date(now.getTime() + offsetDiff);
+
+    const startDate = new Date(beijingNow.getTime() - days * 24 * 60 * 60 * 1000);
 
     // 按日期聚合
     const dateMap = new Map<string, { amount: number; orderCount: number; payingUsers: Set<string> }>();
@@ -322,8 +404,9 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
         const orderDate = new Date(dateStr);
         if (orderDate < startDate) return;
 
-        // 使用本地时区获取日期，避免UTC转换问题
-        const date = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}-${String(orderDate.getDate()).padStart(2, '0')}`;
+        // 转换为北京时间
+        const beijingDate = new Date(orderDate.getTime() + offsetDiff);
+        const date = `${beijingDate.getFullYear()}-${String(beijingDate.getMonth() + 1).padStart(2, '0')}-${String(beijingDate.getDate()).padStart(2, '0')}`;
 
         if (!dateMap.has(date)) {
           dateMap.set(date, { amount: 0, orderCount: 0, payingUsers: new Set() });
@@ -360,8 +443,10 @@ async function getSupabaseStats(source: "all" | "global"): Promise<DashboardStat
   if (!supabaseAdmin) return null;
 
   try {
+    // 传入 UTC 时间，数据库函数负责转换为北京时间
     const { data, error } = await supabaseAdmin.rpc("get_admin_dashboard_stats", {
-      p_source: source === "all" ? "global" : source, // 只查询 global 数据
+      p_source: source === "all" ? "global" : source,
+      p_timezone_offset: 8, // 北京时间 UTC+8
     });
 
     if (error) {
@@ -415,6 +500,7 @@ async function getSupabaseDailyUsers(source: "all" | "global", days: number): Pr
     const { data, error } = await supabaseAdmin.rpc("get_daily_active_users", {
       p_source: source === "all" ? "global" : source,
       p_days: days,
+      p_timezone_offset: 8, // 北京时间 UTC+8
     });
 
     if (error) {
@@ -422,6 +508,13 @@ async function getSupabaseDailyUsers(source: "all" | "global", days: number): Pr
       return [];
     }
 
+    // 调试日志：输出Supabase折线图统计详情
+    const todayData = (data || []).find((row: Record<string, unknown>) => {
+      const date = String(row.stat_date || '');
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      return date === todayStr;
+    });
     return (data || []).map((row: Record<string, unknown>) => ({
       date: row.stat_date as string,
       activeUsers: Number(row.active_users || 0),
@@ -441,6 +534,7 @@ async function getSupabaseDailyRevenue(source: "all" | "global", days: number): 
     const { data, error } = await supabaseAdmin.rpc("get_daily_revenue", {
       p_source: source === "all" ? "global" : source,
       p_days: days,
+      p_timezone_offset: 8, // 北京时间 UTC+8
     });
 
     if (error) {
@@ -555,13 +649,32 @@ function mergeStats(a: DashboardStats | null, b: DashboardStats | null): Dashboa
     mergedByDeviceType[type] = (mergedByDeviceType[type] || 0) + count;
   });
 
+  // 计算总用户数和设备统计
+  const totalUsers = a.users.total + b.users.total;
+
+  // 计算有操作系统信息的用户总数
+  const totalOsUsers = Object.values(mergedByOs).reduce((sum, count) => sum + count, 0);
+  const unknownOsUsers = totalUsers - totalOsUsers;
+  if (unknownOsUsers > 0) {
+    mergedByOs['未知'] = unknownOsUsers;
+  }
+
+  // 计算有设备信息的用户总数
+  const totalDeviceUsers = Object.values(mergedByDeviceType).reduce((sum, count) => sum + count, 0);
+  const unknownDeviceUsers = totalUsers - totalDeviceUsers;
+  if (unknownDeviceUsers > 0) {
+    mergedByDeviceType['未知'] = unknownDeviceUsers;
+  }
+
+  const mergedDau = a.users.dau + b.users.dau;
+
   return {
     users: {
       total: a.users.total + b.users.total,
       today: a.users.today + b.users.today,
       thisWeek: a.users.thisWeek + b.users.thisWeek,
       thisMonth: a.users.thisMonth + b.users.thisMonth,
-      dau: a.users.dau + b.users.dau,
+      dau: mergedDau,
       wau: a.users.wau + b.users.wau,
       mau: a.users.mau + b.users.mau,
     },
@@ -613,6 +726,7 @@ function mergeDailyStats(a: DailyStats[], b: DailyStats[]): DailyStats[] {
     }
   });
 
+  // 调试日志：输出折线图数据合并详情
   return Array.from(dateMap.values()).sort((x, y) => x.date.localeCompare(y.date)); // 升序排列
 }
 
@@ -664,11 +778,11 @@ export async function getDashboardStats(
       return await getSupabaseStats("global");
     } else {
       // 查询两个数据源并合并
-      const [supabaseData, cloudbaseData] = await Promise.all([
-        getSupabaseStats("global"),
+      const [cloudbaseData, supabaseData] = await Promise.all([
         getCloudBaseStats(),
+        getSupabaseStats("global"),
       ]);
-      return mergeStats(supabaseData, cloudbaseData);
+      return mergeStats(cloudbaseData, supabaseData);
     }
   } catch (err) {
     console.error("[getDashboardStats] Unexpected error:", err);
@@ -696,11 +810,11 @@ export async function getDailyActiveUsers(
     } else if (source === "global") {
       result = await getSupabaseDailyUsers("global", days);
     } else {
-      const [supabaseData, cloudbaseData] = await Promise.all([
-        getSupabaseDailyUsers("global", days),
+      const [cloudbaseData, supabaseData] = await Promise.all([
         getCloudBaseDailyUsers(days),
+        getSupabaseDailyUsers("global", days),
       ]);
-      result = mergeDailyStats(supabaseData, cloudbaseData);
+      result = mergeDailyStats(cloudbaseData, supabaseData);
     }
     // 填充完整的日期范围，确保横坐标统一且到今天
     return fillDateRange(result, days);
@@ -730,11 +844,11 @@ export async function getDailyRevenue(
     } else if (source === "global") {
       result = await getSupabaseDailyRevenue("global", days);
     } else {
-      const [supabaseData, cloudbaseData] = await Promise.all([
-        getSupabaseDailyRevenue("global", days),
+      const [cloudbaseData, supabaseData] = await Promise.all([
         getCloudBaseDailyRevenue(days),
+        getSupabaseDailyRevenue("global", days),
       ]);
-      result = mergeRevenueStats(supabaseData, cloudbaseData);
+      result = mergeRevenueStats(cloudbaseData, supabaseData);
     }
     // 填充完整的日期范围，确保横坐标统一且到今天
     return fillRevenueDateRange(result, days);

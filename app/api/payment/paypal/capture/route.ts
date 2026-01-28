@@ -95,6 +95,9 @@ export async function POST(request: NextRequest) {
       || request.headers.get("x-real-ip")
       || "";
     const userAgent = request.headers.get("user-agent") || "";
+    const country = request.headers.get("x-vercel-ip-country")
+      || request.headers.get("cf-ipcountry")
+      || "";
 
     // 幂等性检查：先检查是否已处理过此订单
     if (supabaseAdmin) {
@@ -276,9 +279,6 @@ export async function POST(request: NextRequest) {
     // 确定订单类型
     const productType = parsed.isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
 
-    // 获取支付者国家信息
-    const payerCountry = result.payer?.address?.country_code || "";
-
     // 创建订单记录（使用统一的订单服务）
     const orderResult = await createOrder({
       userId,
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
       source: "global",
       ipAddress,
       userAgent,
-      country: payerCountry,
+      country,
     });
 
     if (orderResult.success && orderResult.orderId) {
