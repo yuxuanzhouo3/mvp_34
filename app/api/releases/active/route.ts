@@ -42,6 +42,38 @@ export async function GET(request: NextRequest) {
         platform: doc.platform,
         published_at: doc.published_at,
       }));
+
+      // 将 cloud:// URL 转换为临时 HTTPS 下载链接
+      const cloudbaseReleases = releases.filter(
+        (r: any) => r.download_url && r.download_url.startsWith("cloud://")
+      );
+
+      if (cloudbaseReleases.length > 0) {
+        try {
+          const app = connector.getApp();
+          const fileIds = cloudbaseReleases.map((r: any) => r.download_url);
+          const urlResult = await app.getTempFileURL({ fileList: fileIds });
+
+          if (urlResult.fileList && Array.isArray(urlResult.fileList)) {
+            const urlMap = new Map<string, string>();
+            for (const fileInfo of urlResult.fileList) {
+              if (fileInfo.tempFileURL && fileInfo.code === "SUCCESS") {
+                urlMap.set(fileInfo.fileID, fileInfo.tempFileURL);
+              }
+            }
+
+            // 更新 releases 中的 download_url
+            for (const release of cloudbaseReleases) {
+              const tempUrl = urlMap.get(release.download_url);
+              if (tempUrl) {
+                release.download_url = tempUrl;
+              }
+            }
+          }
+        } catch (urlErr) {
+          console.error("[API] getTempFileURL error:", urlErr);
+        }
+      }
     } else {
       // 国际版：从 Supabase 获取
       if (supabaseAdmin) {
