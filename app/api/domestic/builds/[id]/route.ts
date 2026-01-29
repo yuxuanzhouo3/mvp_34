@@ -76,11 +76,22 @@ export async function GET(
       });
     }
 
-    // 返回构建详情（国内版使用 CloudBase 存储，下载 URL 需要单独处理）
+    // 实时生成新的临时下载链接（CloudBase 临时链接有效期约2小时）
+    let downloadUrl: string | null = null;
+    if (build.output_file_path && build.status === "completed") {
+      try {
+        const storage = getCloudBaseStorage();
+        downloadUrl = await storage.getTempDownloadUrl(build.output_file_path);
+      } catch (error) {
+        console.error("[Domestic Build API] Failed to generate download URL:", error);
+      }
+    }
+
+    // 返回构建详情
     return NextResponse.json({
       build: {
         ...build,
-        downloadUrl: build.download_url || null,
+        downloadUrl,
       },
     });
   } catch (error) {

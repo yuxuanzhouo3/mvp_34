@@ -204,7 +204,7 @@ export function GuestBuildHistory() {
                     className="shrink-0"
                   >
                     <Download className="h-4 w-4 mr-1" />
-                    {currentLanguage === "zh" ? "下载" : "Download"}
+                    {currentLanguage === "zh" ? "下载源码" : "Download Source"}
                   </Button>
                 )}
                 <Button

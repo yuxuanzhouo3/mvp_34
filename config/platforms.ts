@@ -34,7 +34,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: "android",
     name: { zh: "Android", en: "Android" },
-    description: { zh: "安卓应用 (APK)", en: "Android App (APK)" },
+    description: { zh: "Android Source", en: "Android Source" },
     category: "mobile",
     icon: Smartphone,
     color: "from-green-500 to-green-600",
@@ -43,7 +43,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: "ios",
     name: { zh: "iOS", en: "iOS" },
-    description: { zh: "苹果应用 (IPA)", en: "iOS App (IPA)" },
+    description: { zh: "iOS Source", en: "iOS Source" },
     category: "mobile",
     icon: Apple,
     color: "from-gray-700 to-gray-900",
@@ -52,7 +52,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: "harmonyos",
     name: { zh: "HarmonyOS", en: "HarmonyOS" },
-    description: { zh: "鸿蒙应用 (HAP)", en: "HarmonyOS App (HAP)" },
+    description: { zh: "Harmony Source", en: "Harmony Source" },
     category: "mobile",
     icon: Hexagon,
     color: "from-red-500 to-red-600",

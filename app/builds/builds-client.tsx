@@ -867,7 +867,7 @@ export default function BuildsClient() {
                             onClick={() => handleDownload(build.id)}
                           >
                             <Download className="h-4 w-4" />
-                            {currentLanguage === "zh" ? "下载" : "Download"}
+                            {currentLanguage === "zh" ? "下载源码" : "Download Source"}
                           </Button>
                           <Button
                             size="sm"

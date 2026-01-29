@@ -304,6 +304,30 @@ export function IOSConfig({
             : "Privacy policy will be displayed in the app's privacy policy page"}
         </p>
       </div>
+
+      {/* Usage Instructions */}
+      <div className="rounded-xl border border-gray-500/20 bg-gray-500/5 p-4">
+        <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">
+          {currentLanguage === "zh" ? "构建说明" : "Build Instructions"}
+        </h4>
+        <ul className="text-sm text-muted-foreground space-y-1">
+          <li>
+            {currentLanguage === "zh"
+              ? "• 构建完成后将生成 iOS 源码工程压缩包"
+              : "• Build generates iOS source project archive"}
+          </li>
+          <li>
+            {currentLanguage === "zh"
+              ? "• 下载后需使用 Xcode 打开工程并编译生成 IPA"
+              : "• Use Xcode to open the project and build IPA"}
+          </li>
+          <li>
+            {currentLanguage === "zh"
+              ? "• 源码工程可自由修改和二次开发"
+              : "• Source code can be freely modified and customized"}
+          </li>
+        </ul>
+      </div>
     </div>
   );
 }
