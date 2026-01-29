@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { BuildProgressHelper } from "@/lib/build-progress";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
 import * as fs from "fs";
@@ -24,14 +25,37 @@ export async function processChromeExtensionBuild(
 ): Promise<void> {
   const supabase = createServiceClient();
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const { data: buildRecord } = await supabase
+      .from("builds")
+      .select("user_id")
+      .eq("id", buildId)
+      .single();
+
+    userId = buildRecord?.user_id || null;
+
     // 使用超时包装整个构建过程
     tempDir = await withTimeout(
       buildChromeExtension(supabase, buildId, config),
       BUILD_TIMEOUT.CHROME,
       `Chrome extension build timed out after ${BUILD_TIMEOUT.CHROME / 1000} seconds`
     );
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "chrome",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
   } catch (error) {
     console.error(`[Build ${buildId}] Build failed:`, error);
 
@@ -43,6 +67,19 @@ export async function processChromeExtensionBuild(
         error_message: error instanceof Error ? error.message : "Unknown error",
       })
       .eq("id", buildId);
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "chrome",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
   } finally {
     // Cleanup temp directory
     if (tempDir && fs.existsSync(tempDir)) {

@@ -1,6 +1,8 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv } from "@/lib/supabase/env";
 import { createStripeCheckoutSession, stripeErrorResponse } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isAfter } from "date-fns";
@@ -11,18 +13,42 @@ import { calculateSupabaseUpgradePrice } from "@/services/wallet-supabase";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    let { planName, billingPeriod, userId } = body as {
+    const { planName, billingPeriod } = body as {
       planName?: string;
       billingPeriod?: "monthly" | "annual";
-      userId?: string;
     };
 
-    if (!userId) {
+    // 验证用户身份
+    const supabaseUrl = getSupabaseUrlFromEnv();
+    const supabaseAnonKey = getSupabaseAnonKeyFromEnv();
+
+    if (!supabaseUrl || !supabaseAnonKey) {
       return NextResponse.json(
-        { success: false, error: "Missing userId (login required)" },
+        { success: false, error: "Service unavailable" },
+        { status: 503 }
+      );
+    }
+
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll() {},
+      },
+    });
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
         { status: 401 }
       );
     }
+
+    // 使用验证后的用户ID
+    const userId = user.id;
 
     // 获取风控信息
     const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()

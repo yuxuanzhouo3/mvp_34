@@ -282,7 +282,6 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
           body: JSON.stringify({
             planName: selectedPlan.id,
             billingPeriod,
-            userId,
           }),
         });
 
@@ -304,7 +303,6 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
           body: JSON.stringify({
             planName: selectedPlan.id,
             billingPeriod,
-            userId,
           }),
         });
 

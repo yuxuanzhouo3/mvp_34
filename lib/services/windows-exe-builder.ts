@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { BuildProgressHelper } from "@/lib/build-progress";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import sharp from "sharp";
 import * as fs from "fs";
 import * as path from "path";
@@ -22,8 +23,19 @@ export async function processWindowsExeBuild(
   const supabase = createServiceClient();
   const progressHelper = new BuildProgressHelper("windows");
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const { data: buildRecord } = await supabase
+      .from("builds")
+      .select("user_id")
+      .eq("id", buildId)
+      .single();
+
+    userId = buildRecord?.user_id || null;
+
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
     // Step 1: Download pre-built Tauri EXE
@@ -106,6 +118,18 @@ export async function processWindowsExeBuild(
     }
 
     console.log("[Windows Build] Build completed successfully!");
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "windows",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error("[Windows Build] Failed to track build complete event:", err);
+      });
+    }
   } catch (error) {
     console.error("[Windows Build] Error:", error);
 
@@ -116,6 +140,19 @@ export async function processWindowsExeBuild(
         error_message: error instanceof Error ? error.message : "Unknown error",
       })
       .eq("id", buildId);
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "windows",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error("[Windows Build] Failed to track build failure event:", err);
+      });
+    }
   } finally {
     if (tempDir && fs.existsSync(tempDir)) {
       try {

@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import AdmZip from "adm-zip";
 import * as fs from "fs";
 import * as path from "path";
@@ -17,8 +18,19 @@ export async function processWechatBuild(
 ): Promise<void> {
   const supabase = createServiceClient();
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const { data: buildRecord } = await supabase
+      .from("builds")
+      .select("user_id")
+      .eq("id", buildId)
+      .single();
+
+    userId = buildRecord?.user_id || null;
+
     // Update status to processing
     await updateBuildStatus(supabase, buildId, "processing", 5);
 
@@ -113,6 +125,18 @@ export async function processWechatBuild(
     }
 
     console.log(`[Build ${buildId}] Completed successfully!`);
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "wechat",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Wechat Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
   } catch (error) {
     console.error(`[Build ${buildId}] Error:`, error);
 
@@ -124,6 +148,19 @@ export async function processWechatBuild(
         error_message: error instanceof Error ? error.message : "Unknown error",
       })
       .eq("id", buildId);
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "wechat",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Wechat Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
   } finally {
     // Cleanup temp directory
     if (tempDir && fs.existsSync(tempDir)) {

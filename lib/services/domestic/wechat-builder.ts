@@ -5,6 +5,7 @@
 
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import AdmZip from "adm-zip";
 import * as fs from "fs";
 import * as path from "path";
@@ -27,8 +28,14 @@ export async function processWechatBuildDomestic(
   const storage = getCloudBaseStorage();
 
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const buildRecord = await db.collection("builds").doc(buildId).get();
+    userId = buildRecord?.data?.[0]?.user_id || null;
+
     await updateBuildStatus(db, buildId, "processing", 5);
 
     console.log(`[Domestic Wechat Build ${buildId}] Downloading wechat.zip...`);
@@ -107,6 +114,18 @@ export async function processWechatBuildDomestic(
     });
 
     console.log(`[Domestic Wechat Build ${buildId}] Completed successfully!`);
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "wechat",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Domestic Wechat Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
   } catch (error) {
     console.error(`[Domestic Wechat Build ${buildId}] Error:`, error);
 
@@ -115,6 +134,19 @@ export async function processWechatBuildDomestic(
       error_message: error instanceof Error ? error.message : "Unknown error",
       updated_at: new Date().toISOString(),
     });
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "wechat",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Domestic Wechat Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
   } finally {
     if (tempDir && fs.existsSync(tempDir)) {
       try {

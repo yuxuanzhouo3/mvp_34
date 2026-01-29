@@ -6,6 +6,7 @@
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { BuildProgressHelper } from "@/lib/build-progress";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
 import * as fs from "fs";
@@ -98,8 +99,14 @@ export async function processAndroidBuildDomestic(
   const progressHelper = new BuildProgressHelper("android");
 
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const buildRecord = await db.collection("builds").doc(buildId).get();
+    userId = buildRecord?.data?.[0]?.user_id || null;
+
     // Update status to processing
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
@@ -201,6 +208,18 @@ export async function processAndroidBuildDomestic(
     });
 
     console.log(`[Domestic Build ${buildId}] Completed successfully!`);
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "android",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Domestic Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
   } catch (error) {
     console.error(`[Domestic Build ${buildId}] Error:`, error);
 
@@ -209,6 +228,19 @@ export async function processAndroidBuildDomestic(
       error_message: error instanceof Error ? error.message : "Unknown error",
       updated_at: new Date().toISOString(),
     });
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "android",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Domestic Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
   } finally {
     if (tempDir && fs.existsSync(tempDir)) {
       try {

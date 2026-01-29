@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { BuildProgressHelper } from "@/lib/build-progress";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
 import * as fs from "fs";
@@ -95,8 +96,19 @@ export async function processAndroidBuild(
   const supabase = createServiceClient();
   const progressHelper = new BuildProgressHelper("android");
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const { data: buildRecord } = await supabase
+      .from("builds")
+      .select("user_id")
+      .eq("id", buildId)
+      .single();
+
+    userId = buildRecord?.user_id || null;
+
     // Update status to processing
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
@@ -235,6 +247,18 @@ export async function processAndroidBuild(
     }
 
     console.log(`[Build ${buildId}] Completed successfully!`);
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "android",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
   } catch (error) {
     console.error(`[Build ${buildId}] Error:`, error);
 
@@ -246,6 +270,19 @@ export async function processAndroidBuild(
         error_message: error instanceof Error ? error.message : "Unknown error",
       })
       .eq("id", buildId);
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "android",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
   } finally {
     // Cleanup temp directory
     if (tempDir && fs.existsSync(tempDir)) {

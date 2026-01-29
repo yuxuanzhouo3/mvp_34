@@ -6,6 +6,7 @@
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { BuildProgressHelper } from "@/lib/build-progress";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import sharp from "sharp";
 import * as fs from "fs";
 import * as path from "path";
@@ -28,9 +29,15 @@ export async function processLinuxAppBuildDomestic(
   const storage = getCloudBaseStorage();
 
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
   const progressHelper = new BuildProgressHelper("linux");
 
   try {
+    // 获取构建记录以获取 user_id
+    const buildRecord = await db.collection("builds").doc(buildId).get();
+    userId = buildRecord?.data?.[0]?.user_id || null;
+
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
     // Step 1: Download tar.gz template
@@ -162,6 +169,18 @@ export async function processLinuxAppBuildDomestic(
     });
 
     console.log(`[Domestic Linux Build ${buildId}] Completed successfully!`);
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "linux",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Domestic Linux Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
   } catch (error) {
     console.error(`[Domestic Linux Build ${buildId}] Error:`, error);
 
@@ -170,6 +189,19 @@ export async function processLinuxAppBuildDomestic(
       error_message: error instanceof Error ? error.message : "Unknown error",
       updated_at: new Date().toISOString(),
     });
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "linux",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Domestic Linux Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
   } finally {
     if (tempDir && fs.existsSync(tempDir)) {
       try {

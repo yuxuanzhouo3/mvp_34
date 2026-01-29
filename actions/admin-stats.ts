@@ -142,16 +142,6 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       dau = dauUsers.size;
       wau = wauUsers.size;
       mau = mauUsers.size;
-
-      // 调试日志：输出CloudBase卡片DAU统计详情
-      console.log('[CloudBase卡片统计] DAU详情:', {
-        todayStartUtc: new Date(todayStartUtc).toISOString(),
-        todayStartBeijing: new Date(todayStartUtc + beijingOffsetMs).toISOString(),
-        totalAnalyticsRecords: analytics.length,
-        dauCount: dau,
-        dauUserIds: Array.from(dauUsers).slice(0, 10), // 只输出前10个用户ID
-      });
-
     } catch {
       // user_analytics 集合可能不存在
     }
@@ -355,22 +345,6 @@ async function getCloudBaseDailyUsers(days: number): Promise<DailyStats[]> {
         if (a.user_id) entry.activeUsers.add(a.user_id);
         if (a.event_type === "build_complete") entry.sessions++;
       });
-
-      // 调试日志：输出CloudBase折线图统计详情
-      const todayBj = new Date(todayStartUtc + beijingOffsetMs);
-      const todayStr = `${todayBj.getUTCFullYear()}-${String(todayBj.getUTCMonth() + 1).padStart(2, '0')}-${String(todayBj.getUTCDate()).padStart(2, '0')}`;
-      const todayData = dateMap.get(todayStr);
-      console.log('[CloudBase折线图统计] 今日数据详情:', {
-        todayStartUtc: new Date(todayStartUtc).toISOString(),
-        startDateUtc: new Date(startDateUtc).toISOString(),
-        todayStr,
-        todayActiveUsers: todayData?.activeUsers.size || 0,
-        todayActiveUserIds: todayData ? Array.from(todayData.activeUsers).slice(0, 10) : [],
-        todayNewUsers: todayData?.newUsers || 0,
-        todaySessions: todayData?.sessions || 0,
-        totalAnalyticsRecords: analytics.length,
-        dateMapSize: dateMap.size,
-      });
     } catch {
       // user_analytics 集合可能不存在
     }
@@ -474,14 +448,6 @@ async function getSupabaseStats(source: "all" | "global"): Promise<DashboardStat
       return null;
     }
 
-    // 调试日志：输出Supabase卡片DAU统计详情
-    console.log('[Supabase卡片统计] DAU详情:', {
-      dau: data?.users?.dau || 0,
-      wau: data?.users?.wau || 0,
-      mau: data?.users?.mau || 0,
-      rawData: data?.users,
-    });
-
     return {
       users: {
         total: data?.users?.total || 0,
@@ -536,21 +502,6 @@ async function getSupabaseDailyUsers(source: "all" | "global", days: number): Pr
       return [];
     }
 
-    // 调试日志：输出Supabase折线图统计详情
-    const allDates = (data || []).map((r: Record<string, unknown>) => r.stat_date);
-    const todayData = (data || []).find((row: Record<string, unknown>) => {
-      const date = String(row.stat_date || '');
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      return date === todayStr;
-    });
-    console.log('[Supabase折线图统计] 今日数据详情:', {
-      totalRecords: (data || []).length,
-      todayData: todayData || '未找到今日数据',
-      firstDate: allDates[0],
-      lastDate: allDates[allDates.length - 1],
-      allDates: allDates,
-    });
     return (data || []).map((row: Record<string, unknown>) => ({
       date: row.stat_date as string,
       activeUsers: Number(row.active_users || 0),
@@ -617,16 +568,6 @@ function fillDateRange(data: DailyStats[], days: number): DailyStats[] {
   const dateMap = new Map<string, DailyStats>();
   data.forEach(item => dateMap.set(item.date, item));
 
-  // 调试日志：输出fillDateRange输入数据
-  const todayStr = `${todayBj.getUTCFullYear()}-${String(todayBj.getUTCMonth() + 1).padStart(2, '0')}-${String(todayBj.getUTCDate()).padStart(2, '0')}`;
-  const inputTodayData = dateMap.get(todayStr);
-  console.log('[fillDateRange] 输入数据详情:', {
-    todayStr,
-    inputDataLength: data.length,
-    inputTodayData: inputTodayData || '未找到今日数据',
-    inputDates: data.map(d => d.date).slice(0, 5),
-  });
-
   const result: DailyStats[] = [];
   const current = new Date(startDateBj);
 
@@ -646,15 +587,6 @@ function fillDateRange(data: DailyStats[], days: number): DailyStats[] {
 
     current.setUTCDate(current.getUTCDate() + 1);
   }
-
-  // 调试日志：输出fillDateRange输出数据
-  const outputTodayData = result.find(r => r.date === todayStr);
-  console.log('[fillDateRange] 输出数据详情:', {
-    todayStr,
-    outputDataLength: result.length,
-    outputTodayData: outputTodayData || '未找到今日数据',
-    outputDates: result.map(d => d.date).slice(-5), // 最后5天
-  });
 
   return result;
 }
@@ -801,19 +733,7 @@ function mergeDailyStats(a: DailyStats[], b: DailyStats[]): DailyStats[] {
     }
   });
 
-  // 调试日志：输出折线图数据合并详情
-  const result = Array.from(dateMap.values()).sort((x, y) => x.date.localeCompare(y.date));
-  const todayBj = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  const todayStr = `${todayBj.getUTCFullYear()}-${String(todayBj.getUTCMonth() + 1).padStart(2, '0')}-${String(todayBj.getUTCDate()).padStart(2, '0')}`;
-  const todayMerged = result.find(r => r.date === todayStr);
-  console.log('[mergeDailyStats] 合并后今日数据:', {
-    todayStr,
-    todayActiveUsers: todayMerged?.activeUsers || 0,
-    todayNewUsers: todayMerged?.newUsers || 0,
-    todaySessions: todayMerged?.sessions || 0,
-    totalDates: result.length,
-  });
-  return result;
+  return Array.from(dateMap.values()).sort((x, y) => x.date.localeCompare(y.date));
 }
 
 function mergeRevenueStats(a: RevenueStats[], b: RevenueStats[]): RevenueStats[] {
@@ -910,10 +830,6 @@ export async function getDailyActiveUsers(
 
       // 如果缺少今天的数据，从卡片统计中补充
       if (!hasTodayData && supabaseStats && supabaseStats.users.dau > 0) {
-        console.log('[getDailyActiveUsers] Supabase折线图缺少今日数据，从卡片统计补充:', {
-          todayStr,
-          dau: supabaseStats.users.dau,
-        });
         supabaseData.push({
           date: todayStr,
           activeUsers: supabaseStats.users.dau,

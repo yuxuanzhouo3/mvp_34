@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { BuildProgressHelper } from "@/lib/build-progress";
+import { trackBuildCompleteEvent } from "@/services/analytics";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -29,8 +30,19 @@ export async function processMacOSAppBuild(
   const supabase = createServiceClient();
   const progressHelper = new BuildProgressHelper("macos");
   let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
 
   try {
+    // 获取构建记录以获取 user_id
+    const { data: buildRecord } = await supabase
+      .from("builds")
+      .select("user_id")
+      .eq("id", buildId)
+      .single();
+
+    userId = buildRecord?.user_id || null;
+
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("initializing"));
 
     // Step 1: 下载预构建的 macOS App 模板 (ZIP 格式)
@@ -172,6 +184,18 @@ export async function processMacOSAppBuild(
     }
 
     console.log("[macOS Build] Build completed successfully!");
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "macos",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error("[macOS Build] Failed to track build complete event:", err);
+      });
+    }
   } catch (error) {
     console.error("[macOS Build] Error:", error);
 
@@ -182,6 +206,19 @@ export async function processMacOSAppBuild(
         error_message: error instanceof Error ? error.message : "Unknown error",
       })
       .eq("id", buildId);
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "macos",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error("[macOS Build] Failed to track build failure event:", err);
+      });
+    }
   } finally {
     // 清理临时目录
     if (tempDir && fs.existsSync(tempDir)) {

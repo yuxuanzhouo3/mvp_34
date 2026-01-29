@@ -281,54 +281,83 @@ export async function checkDailyBuildQuota(
 }
 
 /**
- * 消耗每日构建配额
+ * 消耗每日构建配额（使用乐观锁防止race condition）
  */
 export async function consumeDailyBuildQuota(
   userId: string,
   count: number = 1
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const connector = new CloudBaseConnector();
-    await connector.initialize();
-    const db = connector.getClient();
-    const _ = db.command;
-    const today = getTodayString();
+  const maxRetries = 3;
 
-    const userRes = await db.collection("users").doc(userId).get();
-    const userDoc = userRes?.data?.[0] || null;
-    if (!userDoc) return { success: false, error: "User not found" };
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      const _ = db.command;
+      const today = getTodayString();
 
-    const wallet = normalizeWallet(userDoc);
-    const limit = wallet.daily_builds_limit;
-    const isNewDay = wallet.daily_builds_reset_at !== today;
-    const used = isNewDay ? 0 : wallet.daily_builds_used;
-    const nextUsed = used + count;
+      const userRes = await db.collection("users").doc(userId).get();
+      const userDoc = userRes?.data?.[0] || null;
+      if (!userDoc) return { success: false, error: "User not found" };
 
-    if (nextUsed > limit) {
-      return { success: false, error: "Insufficient daily build quota" };
+      const wallet = normalizeWallet(userDoc);
+      const limit = wallet.daily_builds_limit;
+      const isNewDay = wallet.daily_builds_reset_at !== today;
+      const used = isNewDay ? 0 : wallet.daily_builds_used;
+      const nextUsed = used + count;
+
+      if (nextUsed > limit) {
+        return { success: false, error: "Insufficient daily build quota" };
+      }
+
+      const updatePayload: Record<string, any> = {
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (isNewDay) {
+        updatePayload["wallet.daily_builds_used"] = count;
+        updatePayload["wallet.daily_builds_reset_at"] = today;
+      } else {
+        updatePayload["wallet.daily_builds_used"] = _.inc(count);
+      }
+
+      // 使用条件更新：只在当前值未改变时更新
+      // 新的一天：检查reset_at不等于today且used值匹配
+      // 同一天：检查used值和reset_at都精确匹配
+      const whereCondition: Record<string, any> = {
+        _id: userId,
+        "wallet.daily_builds_used": wallet.daily_builds_used,
+        "wallet.daily_builds_reset_at": isNewDay ? _.neq(today) : today
+      };
+
+      const updateRes = await db.collection("users")
+        .where(whereCondition)
+        .update(updatePayload);
+
+      // 检查是否成功更新
+      if (updateRes.updated === 0) {
+        // 更新失败，说明数据已被其他请求修改，重试
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+          continue;
+        }
+        return { success: false, error: "Concurrent update conflict, please retry" };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("[wallet][consume-daily-build-error]", error);
+      if (attempt === maxRetries - 1) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Failed to consume daily build quota",
+        };
+      }
     }
-
-    const updatePayload: Record<string, any> = {
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (isNewDay) {
-      updatePayload["wallet.daily_builds_used"] = count;
-      updatePayload["wallet.daily_builds_reset_at"] = today;
-    } else {
-      updatePayload["wallet.daily_builds_used"] = _.inc(count);
-    }
-
-    await db.collection("users").doc(userId).update(updatePayload);
-
-    return { success: true };
-  } catch (error) {
-    console.error("[wallet][consume-daily-build-error]", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Failed to consume daily build quota",
-    };
   }
+
+  return { success: false, error: "Failed after retries" };
 }
 
 /**
