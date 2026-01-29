@@ -1,6 +1,7 @@
 "use client";
 
 import { IS_DOMESTIC_VERSION } from "@/config";
+import { useEffect, useRef } from "react";
 
 interface SubscriptionTermsProps {
   currentLanguage: string;
@@ -9,15 +10,45 @@ interface SubscriptionTermsProps {
 export function SubscriptionTerms({ currentLanguage }: SubscriptionTermsProps) {
   const isZh = currentLanguage === "zh";
   const isDomestic = IS_DOMESTIC_VERSION;
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // 根据版本和语言选择内容
   const content = isDomestic
     ? (isZh ? TERMS_CN_DOMESTIC : TERMS_EN_DOMESTIC)
     : (isZh ? TERMS_CN_INTERNATIONAL : TERMS_EN_INTERNATIONAL);
 
+  // 在内容渲染后，为所有表格添加滚动容器
+  useEffect(() => {
+    if (contentRef.current) {
+      const tables = contentRef.current.querySelectorAll('table');
+      tables.forEach(table => {
+        // 检查是否已经被包裹
+        if (table.parentElement?.classList.contains('subscription-terms-content-table-wrapper')) {
+          return;
+        }
+        // 创建包裹容器
+        const wrapper = document.createElement('div');
+        wrapper.className = 'subscription-terms-content-table-wrapper';
+        // 插入包裹容器
+        table.parentNode?.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+      });
+    }
+  }, [content]);
+
   return (
     <div className="subscription-terms-content max-w-none px-1 sm:px-2 lg:px-4">
       <style dangerouslySetInnerHTML={{__html: `
+        .subscription-terms-content-table-wrapper {
+          overflow-x: auto;
+          margin: 1rem 0;
+          -webkit-overflow-scrolling: touch;
+        }
+        @media (min-width: 640px) {
+          .subscription-terms-content-table-wrapper {
+            margin: 1.25rem 0;
+          }
+        }
         .subscription-terms-content h1 {
           font-size: 1rem;
           font-weight: 700;
@@ -222,25 +253,33 @@ export function SubscriptionTerms({ currentLanguage }: SubscriptionTermsProps) {
           }
         }
         .subscription-terms-content table {
+          display: block;
           width: 100%;
-          font-size: 0.625rem;
-          margin: 1rem 0;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          font-size: 0.5625rem;
           border-radius: 0.5rem;
           border: 1px solid rgb(229 231 235);
-          overflow: hidden;
+          border-collapse: collapse;
         }
         .dark .subscription-terms-content table {
           border-color: rgb(55 65 81);
         }
         @media (min-width: 640px) {
           .subscription-terms-content table {
-            font-size: 0.75rem;
-            margin: 1.25rem 0;
+            font-size: 0.625rem;
+          }
+        }
+        @media (min-width: 768px) {
+          .subscription-terms-content table {
+            font-size: 0.6875rem;
           }
         }
         @media (min-width: 1024px) {
           .subscription-terms-content table {
-            font-size: 0.875rem;
+            font-size: 0.75rem;
+            display: table;
+            overflow-x: visible;
           }
         }
         .subscription-terms-content thead {
@@ -360,7 +399,7 @@ export function SubscriptionTerms({ currentLanguage }: SubscriptionTermsProps) {
           }
         }
       `}} />
-      <div dangerouslySetInnerHTML={{ __html: content }} />
+      <div ref={contentRef} dangerouslySetInnerHTML={{ __html: content }} />
     </div>
   );
 }

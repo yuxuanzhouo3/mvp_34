@@ -567,114 +567,112 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
             "transition-all duration-300",
             selectedPlan && !selectedPlan.disabled && selectedPlan.id !== "free" ? "opacity-100" : "opacity-50 pointer-events-none"
           )}>
-            <div className="p-3 md:p-4 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-white/10 shadow-lg">
-              <div className="flex items-center justify-between gap-2">
-                {/* 支付方式选择 */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] md:text-xs font-medium text-gray-600 dark:text-gray-400 flex items-center">
-                    <CreditCard className="w-3 h-3 mr-1" />
-                    {isZh ? "支付:" : "Pay:"}
-                  </span>
-                  <div className="flex gap-1.5">
-                    {isDomestic ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPayment("alipay")}
-                          className={cn(
-                            "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
-                            selectedPayment === "alipay"
-                              ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow"
-                              : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
-                          )}
-                        >
-                          💳 支付宝
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPayment("wechat")}
-                          className={cn(
-                            "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
-                            selectedPayment === "wechat"
-                              ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow"
-                              : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
-                          )}
-                        >
-                          💬 微信
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPayment("stripe")}
-                          className={cn(
-                            "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
-                            selectedPayment === "stripe"
-                              ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow"
-                              : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
-                          )}
-                        >
-                          💳 Stripe
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPayment("paypal")}
-                          className={cn(
-                            "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
-                            selectedPayment === "paypal"
-                              ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow"
-                              : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
-                          )}
-                        >
-                          🅿️ PayPal
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* 订阅规则勾选 */}
-                <label className="flex items-start gap-1.5 text-[10px] text-gray-600 dark:text-gray-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={agreeTerms}
-                    onChange={(e) => setAgreeTerms(e.target.checked)}
-                    className="mt-0.5 h-3 w-3 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:bg-transparent dark:border-gray-600 cursor-pointer"
-                  />
-                  <span className="leading-snug flex flex-wrap items-center gap-0.5">
-                    {isZh ? "我已阅读并同意" : "I have read and agree to the"}
-                    <button
-                      type="button"
-                      className="underline hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                      onClick={() => setShowTermsDialog(true)}
-                    >
-                      {isZh ? "《订阅规则》" : "Subscription Terms"}
-                    </button>
-                  </span>
-                </label>
-
-                {/* 订阅按钮 */}
-                <Button
-                  disabled={isProcessing || !selectedPlan || selectedPlan.disabled || selectedPlan.id === "free" || !agreeTerms}
-                  onClick={handleSubscribe}
-                  className="h-8 md:h-9 px-4 md:px-6 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold text-xs md:text-sm rounded-lg shadow-lg shadow-indigo-500/30 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isProcessing ? (
+            <div className="p-3 md:p-4 bg-white/80 dark:bg-white/5 backdrop-blur-sm rounded-xl border border-gray-200/50 dark:border-white/10 shadow-lg space-y-3">
+              {/* 支付方式选择 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] md:text-xs font-medium text-gray-600 dark:text-gray-400 flex items-center">
+                  <CreditCard className="w-3 h-3 mr-1" />
+                  {isZh ? "支付:" : "Pay:"}
+                </span>
+                <div className="flex gap-1.5">
+                  {isDomestic ? (
                     <>
-                      <Loader2 className="w-3 h-3 md:w-4 md:h-4 animate-spin mr-1.5" />
-                      {isZh ? "处理中..." : "Processing..."}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayment("alipay")}
+                        className={cn(
+                          "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
+                          selectedPayment === "alipay"
+                            ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow"
+                            : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
+                        )}
+                      >
+                        💳 支付宝
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayment("wechat")}
+                        className={cn(
+                          "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
+                          selectedPayment === "wechat"
+                            ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow"
+                            : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
+                        )}
+                      >
+                        💬 微信
+                      </button>
                     </>
                   ) : (
                     <>
-                      <Rocket className="w-3 h-3 md:w-4 md:h-4 mr-1.5" />
-                      {pricingInfo.payable !== null
-                        ? `${pricingInfo.isSameActive ? (isZh ? "续费" : "Renew") : (isZh ? "订阅" : "Subscribe")} ${pricingInfo.symbol}${pricingInfo.payable.toFixed(2)}`
-                        : (isZh ? "确认订阅" : "Subscribe")}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayment("stripe")}
+                        className={cn(
+                          "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
+                          selectedPayment === "stripe"
+                            ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow"
+                            : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
+                        )}
+                      >
+                        💳 Stripe
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPayment("paypal")}
+                        className={cn(
+                          "px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-300",
+                          selectedPayment === "paypal"
+                            ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow"
+                            : "bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 hover:bg-gray-200"
+                        )}
+                      >
+                        🅿️ PayPal
+                      </button>
                     </>
                   )}
-                </Button>
+                </div>
               </div>
+
+              {/* 订阅规则勾选 */}
+              <label className="flex items-start gap-1.5 text-[10px] md:text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreeTerms}
+                  onChange={(e) => setAgreeTerms(e.target.checked)}
+                  className="mt-0.5 h-3 w-3 md:h-3.5 md:w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:bg-transparent dark:border-gray-600 cursor-pointer"
+                />
+                <span className="leading-snug flex flex-wrap items-center gap-0.5">
+                  {isZh ? "我已阅读并同意" : "I have read and agree to the"}
+                  <button
+                    type="button"
+                    className="underline hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    onClick={() => setShowTermsDialog(true)}
+                  >
+                    {isZh ? "《订阅规则》" : "Subscription Terms"}
+                  </button>
+                </span>
+              </label>
+
+              {/* 订阅按钮 */}
+              <Button
+                disabled={isProcessing || !selectedPlan || selectedPlan.disabled || selectedPlan.id === "free" || !agreeTerms}
+                onClick={handleSubscribe}
+                className="w-full h-9 md:h-10 px-4 md:px-6 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold text-xs md:text-sm rounded-lg shadow-lg shadow-indigo-500/30 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-3 h-3 md:w-4 md:h-4 animate-spin mr-1.5" />
+                    {isZh ? "处理中..." : "Processing..."}
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="w-3 h-3 md:w-4 md:h-4 mr-1.5" />
+                    {pricingInfo.payable !== null
+                      ? `${pricingInfo.isSameActive ? (isZh ? "续费" : "Renew") : (isZh ? "订阅" : "Subscribe")} ${pricingInfo.symbol}${pricingInfo.payable.toFixed(2)}`
+                      : (isZh ? "确认订阅" : "Subscribe")}
+                  </>
+                )}
+              </Button>
 
               {/* 升级折算提示 */}
               {pricingInfo.isUpgrade && (
@@ -722,13 +720,13 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
 
     {/* 订阅规则弹窗 */}
     <Dialog open={showTermsDialog} onOpenChange={setShowTermsDialog}>
-      <DialogContent className="w-[95vw] sm:max-w-2xl lg:max-w-4xl max-h-[90vh] sm:max-h-[85vh] overflow-hidden rounded-xl sm:rounded-2xl p-0 border-0 shadow-2xl">
+      <DialogContent className="w-[95vw] sm:max-w-2xl lg:max-w-4xl h-[90vh] sm:h-[85vh] overflow-hidden rounded-xl sm:rounded-2xl p-0 border-0 shadow-2xl flex flex-col">
         {/* 装饰性背景 */}
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/50 via-white to-teal-50/50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900" />
         <div className="absolute top-0 right-0 w-32 sm:w-48 lg:w-64 h-32 sm:h-48 lg:h-64 bg-gradient-to-br from-emerald-400/10 to-teal-500/10 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 w-32 sm:w-48 lg:w-64 h-32 sm:h-48 lg:h-64 bg-gradient-to-br from-blue-400/10 to-cyan-500/10 rounded-full blur-3xl" />
 
-        <div className="relative z-10 flex flex-col h-full max-h-[90vh] sm:max-h-[85vh]">
+        <div className="relative z-10 flex flex-col h-full">
           <DialogHeader className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200/80 dark:border-gray-700/80 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm flex-shrink-0">
             <DialogTitle className="flex items-center gap-2 sm:gap-3 text-base sm:text-lg font-bold text-gray-900 dark:text-white">
               <div className="p-1.5 sm:p-2 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg sm:rounded-xl shadow-lg shadow-emerald-500/25">
@@ -743,7 +741,7 @@ export function SubscriptionModal({ open, onOpenChange, userId, currentPlan, cur
             </p>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-slate-800/50">
+          <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-slate-800/50 min-h-0">
             <SubscriptionTerms currentLanguage={currentLanguage} />
           </div>
 

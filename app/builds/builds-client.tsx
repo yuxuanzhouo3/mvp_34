@@ -862,9 +862,9 @@ export default function BuildsClient() {
                   </div>
 
                   {/* Right: Actions & Time Info */}
-                  <div className="flex flex-row md:flex-col items-start md:items-end justify-between md:justify-start gap-3 md:shrink-0 border-t md:border-t-0 md:border-l border-border/30 pt-3 md:pt-0 md:pl-4">
+                  <div className="flex flex-col gap-3 md:shrink-0 border-t md:border-t-0 md:border-l border-border/30 pt-3 md:pt-0 md:pl-4 min-w-0 items-end">
                     {/* Buttons */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
                       {build.status === "completed" && build.expires_at && !isExpired(build.expires_at) && (
                         <>
                           <Button
@@ -873,7 +873,8 @@ export default function BuildsClient() {
                             onClick={() => handleDownload(build.id)}
                           >
                             <Download className="h-4 w-4" />
-                            {currentLanguage === "zh" ? "下载源码" : "Download Source"}
+                            <span className="hidden sm:inline">{currentLanguage === "zh" ? "下载源码" : "Download Source"}</span>
+                            <span className="sm:hidden">{currentLanguage === "zh" ? "下载" : "Download"}</span>
                           </Button>
                           <Button
                             size="sm"
@@ -889,7 +890,7 @@ export default function BuildsClient() {
                             }}
                           >
                             <Share2 className="h-4 w-4" />
-                            {currentLanguage === "zh" ? "分享" : "Share"}
+                            <span>{currentLanguage === "zh" ? "分享" : "Share"}</span>
                           </Button>
                         </>
                       )}
@@ -902,21 +903,19 @@ export default function BuildsClient() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-9 px-2.5 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                        className="h-8 sm:h-9 px-2.5 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-500/10"
                         onClick={() => handleDelete(build.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                    {/* 时间信息 - 移动端垂直排列，桌面端水平排列 */}
-                    <div className="flex flex-col md:flex-row md:items-center md:gap-3 items-end text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="h-3 w-3" />
-                        <span>{formatDate(build.created_at).date}</span>
-                        <span>{formatDate(build.created_at).time}</span>
-                      </div>
+                    {/* 时间信息 - 优化移动端显示 */}
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground min-w-0 justify-end">
+                      <Clock className="h-3 w-3 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{formatDate(build.created_at).date}</span>
+                      <span className="whitespace-nowrap">{formatDate(build.created_at).time}</span>
                       {build.expires_at && (
-                        <span className={`mt-1 md:mt-0 px-2 py-0.5 rounded-full font-medium ${
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs whitespace-nowrap ${
                           getExpiresInfo(build.expires_at).urgent
                             ? "bg-red-500/15 text-red-600 dark:text-red-400"
                             : getExpiresInfo(build.expires_at).color === "text-orange-500"
