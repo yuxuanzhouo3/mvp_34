@@ -4,6 +4,22 @@
  */
 
 // ============================================================================
+// Guest 游客配置
+// ============================================================================
+
+export function getGuestDailyLimit(): number {
+  const raw = process.env.NEXT_PUBLIC_GUEST_DAILY_LIMIT || "1";
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.min(10, n);
+}
+
+export function getGuestSupportBatchBuild(): boolean {
+  const raw = process.env.NEXT_PUBLIC_GUEST_SUPPORT_BATCH_BUILD || "false";
+  return raw.toLowerCase() === "true";
+}
+
+// ============================================================================
 // Free 套餐配置
 // ============================================================================
 
@@ -90,7 +106,7 @@ export function getTeamSupportBatchBuild(): boolean {
 // 通用辅助函数
 // ============================================================================
 
-export type PlanType = "Free" | "Pro" | "Team";
+export type PlanType = "Guest" | "Free" | "Pro" | "Team";
 
 /**
  * 根据套餐获取每日构建限额
@@ -98,6 +114,8 @@ export type PlanType = "Free" | "Pro" | "Team";
 export function getPlanDailyLimit(plan: string): number {
   const planLower = (plan || "").toLowerCase();
   switch (planLower) {
+    case "guest":
+      return getGuestDailyLimit();
     case "pro":
       return getProDailyLimit();
     case "team":
@@ -143,6 +161,8 @@ export function getPlanShareExpireDays(plan: string): number {
 export function getPlanSupportBatchBuild(plan: string): boolean {
   const planLower = (plan || "").toLowerCase();
   switch (planLower) {
+    case "guest":
+      return getGuestSupportBatchBuild();
     case "pro":
       return getProSupportBatchBuild();
     case "team":
@@ -169,6 +189,12 @@ export function getPlanConfig(plan: string) {
  */
 export function getAllPlansConfig() {
   return {
+    Guest: {
+      dailyLimit: getGuestDailyLimit(),
+      buildExpireDays: 1, // 游客构建立即过期
+      shareExpireDays: 0,
+      supportBatchBuild: getGuestSupportBatchBuild(),
+    },
     Free: {
       dailyLimit: getFreeDailyLimit(),
       buildExpireDays: getFreeBuildExpireDays(),

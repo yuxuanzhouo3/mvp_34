@@ -9,7 +9,7 @@ import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { processAndroidBuild } from "@/lib/services/android-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
-import { checkDailyBuildQuota, consumeDailyBuildQuota, getUserWallet } from "@/services/wallet";
+import { checkDailyBuildQuota, consumeDailyBuildQuota, getUserWallet, refundDailyBuildQuota } from "@/services/wallet";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 // 增加函数执行时间限制
@@ -144,7 +144,18 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    const result = await db.collection("builds").add(buildData);
+    let result;
+    try {
+      result = await db.collection("builds").add(buildData);
+    } catch (dbError) {
+      console.error("[Domestic Android Build] Database insert error:", dbError);
+      // 退还已扣除的quota
+      await refundDailyBuildQuota(user.id, 1);
+      return NextResponse.json(
+        { error: "Database error", message: "Failed to create build record" },
+        { status: 500 }
+      );
+    }
     const buildId = result.id;
 
     // 上传图标到 CloudBase 存储（使用正确的路径格式）

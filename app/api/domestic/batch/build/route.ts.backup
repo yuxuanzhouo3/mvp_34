@@ -127,11 +127,9 @@ export async function POST(request: NextRequest) {
     const db = connector.getClient();
 
     const buildIds: string[] = [];
-    const now = Date.now();
-    const totalPlatforms = platforms.length;
+    const now = new Date().toISOString();
 
-    for (let index = 0; index < platforms.length; index++) {
-      const config = platforms[index];
+    for (const config of platforms) {
       const buildData = {
         user_id: user.id,
         app_name: config.appName,
@@ -148,38 +146,12 @@ export async function POST(request: NextRequest) {
         download_url: null,
         error_message: null,
         expires_at: expiresAt,
-        // 第一个平台时间戳最大，确保按时间降序时显示在最前面
-        created_at: new Date(now + (totalPlatforms - index)).toISOString(),
-        updated_at: new Date(now + (totalPlatforms - index)).toISOString(),
+        created_at: now,
+        updated_at: now,
       };
 
-      let result;
-      try {
-        result = await db.collection("builds").add(buildData);
-      } catch (dbError) {
-        console.error(`[Domestic Batch Build] Database insert error for ${config.platform}:`, dbError);
-        // 如果是第一个平台就失败，退还所有配额
-        if (buildIds.length === 0) {
-          await refundDailyBuildQuota(user.id, platformCount);
-          return NextResponse.json(
-            { error: "Database error", message: "Failed to create build record" },
-            { status: 500 }
-          );
-        }
-        // 如果已经有成功的平台，只退还当前失败的配额，继续处理已成功的平台
-        await refundDailyBuildQuota(user.id, 1);
-        console.warn(`[Domestic Batch Build] Skipping ${config.platform} due to database error, continuing with ${buildIds.length} successful platforms`);
-        continue;
-      }
+      const result = await db.collection("builds").add(buildData);
       buildIds.push(result.id);
-    }
-
-    // 如果所有平台都失败了
-    if (buildIds.length === 0) {
-      return NextResponse.json(
-        { error: "Database error", message: "Failed to create any build records" },
-        { status: 500 }
-      );
     }
 
     // 7. 异步处理构建
@@ -371,7 +343,6 @@ async function startPlatformBuild(
       break;
 
     default:
-      console.error(`[Domestic Batch] Unknown platform: ${platform}`);
-      throw new Error(`Unsupported platform: ${platform}`);
+      console.warn(`[Domestic Batch] Unknown platform: ${platform}`);
   }
 }

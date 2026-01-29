@@ -475,6 +475,14 @@ export async function deductBuildQuota(
 ): Promise<{ success: boolean; remaining?: number; error?: string }> {
   if (!supabaseAdmin) return { success: false, error: "supabaseAdmin not available" };
 
+  // 参数验证
+  if (!userId || typeof userId !== "string") {
+    return { success: false, error: "Invalid userId" };
+  }
+  if (!Number.isFinite(count) || count <= 0 || count > 1000) {
+    return { success: false, error: "Invalid count: must be between 1 and 1000" };
+  }
+
   try {
     // 确保用户钱包存在
     const wallet = await getSupabaseUserWallet(userId);
@@ -537,11 +545,24 @@ export async function refundBuildQuota(
 ): Promise<{ success: boolean; error?: string }> {
   if (!supabaseAdmin) return { success: false, error: "supabaseAdmin not available" };
 
+  // 参数验证
+  if (!userId || typeof userId !== "string") {
+    return { success: false, error: "Invalid userId" };
+  }
+  if (!Number.isFinite(count) || count <= 0 || count > 1000) {
+    return { success: false, error: "Invalid count: must be between 1 and 1000" };
+  }
+
   try {
     const wallet = await getSupabaseUserWallet(userId);
     if (!wallet) return { success: false, error: "Wallet not found" };
 
     const newUsed = Math.max(0, (wallet.daily_builds_used || 0) - count);
+
+    // 记录异常退款情况
+    if ((wallet.daily_builds_used || 0) < count) {
+      console.warn(`[wallet-supabase] Refunding more quota than used: userId=${userId}, used=${wallet.daily_builds_used}, refund=${count}`);
+    }
 
     const { error } = await supabaseAdmin
       .from("user_wallets")

@@ -287,6 +287,14 @@ export async function consumeDailyBuildQuota(
   userId: string,
   count: number = 1
 ): Promise<{ success: boolean; error?: string }> {
+  // 参数验证
+  if (!userId || typeof userId !== "string") {
+    return { success: false, error: "Invalid userId" };
+  }
+  if (!Number.isFinite(count) || count <= 0 || count > 1000) {
+    return { success: false, error: "Invalid count: must be between 1 and 1000" };
+  }
+
   const maxRetries = 3;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -367,6 +375,14 @@ export async function refundDailyBuildQuota(
   userId: string,
   count: number = 1
 ): Promise<{ success: boolean; error?: string }> {
+  // 参数验证
+  if (!userId || typeof userId !== "string") {
+    return { success: false, error: "Invalid userId" };
+  }
+  if (!Number.isFinite(count) || count <= 0 || count > 1000) {
+    return { success: false, error: "Invalid count: must be between 1 and 1000" };
+  }
+
   try {
     const connector = new CloudBaseConnector();
     await connector.initialize();
@@ -378,6 +394,11 @@ export async function refundDailyBuildQuota(
 
     const wallet = normalizeWallet(userDoc);
     const newUsed = Math.max(0, wallet.daily_builds_used - count);
+
+    // 记录异常退款情况
+    if (wallet.daily_builds_used < count) {
+      console.warn(`[wallet] Refunding more quota than used: userId=${userId}, used=${wallet.daily_builds_used}, refund=${count}`);
+    }
 
     await db.collection("users").doc(userId).update({
       "wallet.daily_builds_used": newUsed,

@@ -347,6 +347,7 @@ async function startPlatformBuild(
       break;
 
     default:
-      console.warn(`[Batch] Unknown platform: ${platform}`);
+      console.error(`[Batch] Unknown platform: ${platform}`);
+      throw new Error(`Unsupported platform: ${platform}`);
   }
 }

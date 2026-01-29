@@ -6,7 +6,7 @@
 import { cookies } from "next/headers";
 import { CloudBaseAuthService, CloudBaseAuthUser } from "@/lib/cloudbase/auth";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
-import { checkDailyBuildQuota, consumeDailyBuildQuota, getUserWallet } from "@/services/wallet";
+import { checkDailyBuildQuota, consumeDailyBuildQuota, getUserWallet, refundDailyBuildQuota } from "@/services/wallet";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 export interface BuildAuthResult {
@@ -125,7 +125,17 @@ export async function createBuildRecord(params: CreateBuildParams): Promise<{ su
       ...params.extraData,
     };
 
-    const result = await db.collection("builds").add(buildData);
+    let result;
+    try {
+      result = await db.collection("builds").add(buildData);
+    } catch (dbError) {
+      console.error(`[Domestic ${params.platform} Build] Database insert error:`, dbError);
+      await refundDailyBuildQuota(params.userId, 1);
+      return {
+        success: false,
+        error: "Failed to create build record",
+      };
+    }
 
     return { success: true, buildId: result.id };
   } catch (error) {
