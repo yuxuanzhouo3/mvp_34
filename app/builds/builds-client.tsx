@@ -281,8 +281,13 @@ export default function BuildsClient() {
       }
 
       if (data.build?.downloadUrl) {
+        // 更严格的微信小程序环境检测
+        const isMiniProgram = typeof window !== "undefined" &&
+          (window as any).wx?.miniProgram &&
+          (window as any).__wxjs_environment === 'miniprogram';
+
         // 在小程序环境中，拦截外部下载链接
-        if (typeof window !== "undefined" && (window as any).wx?.miniProgram) {
+        if (isMiniProgram) {
           const mp = (window as any).wx.miniProgram;
           if (typeof mp.navigateTo === "function") {
             const linkCopyPageUrl = "/pages/qrcode/qrcode?url=" + encodeURIComponent(data.build.downloadUrl);
@@ -290,6 +295,7 @@ export default function BuildsClient() {
             return;
           }
         }
+
         // 非小程序环境，正常打开下载链接
         window.open(data.build.downloadUrl, "_blank");
       } else {
