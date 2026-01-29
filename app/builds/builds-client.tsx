@@ -778,7 +778,7 @@ export default function BuildsClient() {
                     : "border-border/50 hover:border-border"
                 }`}
               >
-                <div className="flex flex-col md:flex-row gap-3 sm:gap-4">
+                <div className="flex flex-col md:flex-row gap-3 sm:gap-4 items-start">
                   {/* Left: Checkbox + Icon & Main Info */}
                   <div className="flex items-start gap-2 sm:gap-3 flex-1 min-w-0">
                     {/* Checkbox */}
@@ -862,9 +862,9 @@ export default function BuildsClient() {
                   </div>
 
                   {/* Right: Actions & Time Info */}
-                  <div className="flex flex-col gap-3 md:shrink-0 border-t md:border-t-0 md:border-l border-border/30 pt-3 md:pt-0 md:pl-4 min-w-0 items-end">
+                  <div className="flex flex-col gap-3 md:shrink-0 border-t md:border-t-0 md:border-l border-border/30 pt-3 md:pt-0 md:pl-4 min-w-0 items-start md:items-end">
                     {/* Buttons */}
-                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <div className="flex items-center gap-2 flex-wrap justify-start md:justify-end">
                       {build.status === "completed" && build.expires_at && !isExpired(build.expires_at) && (
                         <>
                           <Button
@@ -910,7 +910,7 @@ export default function BuildsClient() {
                       </Button>
                     </div>
                     {/* 时间信息 - 优化移动端显示 */}
-                    <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground min-w-0 justify-end">
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground min-w-0 justify-center md:justify-end">
                       <Clock className="h-3 w-3 flex-shrink-0" />
                       <span className="whitespace-nowrap">{formatDate(build.created_at).date}</span>
                       <span className="whitespace-nowrap">{formatDate(build.created_at).time}</span>

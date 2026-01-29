@@ -91,33 +91,20 @@ export async function GET(request: NextRequest) {
         const { _id, ...rest } = build;
         const mapped = { id: _id, ...rest };
 
-        console.log(`[Domestic Builds API] Processing build ${_id}:`, {
-          app_name: build.app_name,
-          icon_path: build.icon_path,
-          expires_at: build.expires_at,
-          is_expired: build.expires_at ? isExpired(build.expires_at) : false,
-        });
-
         // Check if build is expired
         if (build.expires_at && isExpired(build.expires_at)) {
-          console.log(`[Domestic Builds API] Build ${_id} is expired, skipping icon URL generation`);
           return { ...mapped, icon_url: null };
         }
 
         // Generate icon URL if icon_path exists
         if (build.icon_path) {
-          console.log(`[Domestic Builds API] Generating icon URL for build ${_id}, icon_path: ${build.icon_path}`);
           try {
             const iconUrl = await storage.getTempDownloadUrl(build.icon_path);
-            console.log(`[Domestic Builds API] Successfully generated icon URL for build ${_id}:`, iconUrl);
             return { ...mapped, icon_url: iconUrl };
           } catch (error) {
-            console.error(`[Domestic Builds API] Failed to get icon URL for ${build.icon_path}:`, error);
             return { ...mapped, icon_url: null };
           }
         }
-
-        console.log(`[Domestic Builds API] Build ${_id} has no icon_path, setting icon_url to null`);
         return { ...mapped, icon_url: null };
       })
     );
@@ -156,7 +143,6 @@ export async function GET(request: NextRequest) {
       platformStats,
     });
   } catch (error) {
-    console.error("[Domestic Builds API] Error:", error);
     return NextResponse.json(
       { error: "Internal server error", message: "An unexpected error occurred" },
       { status: 500 }

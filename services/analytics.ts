@@ -61,7 +61,8 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 重要事件类型（立即写入，不缓冲）
 // session_start 用于 DAU 统计，必须立即写入
-const IMMEDIATE_EVENT_TYPES: AnalyticsEventType[] = ["session_start", "register", "payment", "subscription"];
+// build_complete 用于构件数统计，必须立即写入
+const IMMEDIATE_EVENT_TYPES: AnalyticsEventType[] = ["session_start", "register", "payment", "subscription", "build_complete"];
 
 /**
  * 启动定时刷新

@@ -253,13 +253,11 @@ export function SubscriptionTerms({ currentLanguage }: SubscriptionTermsProps) {
           }
         }
         .subscription-terms-content table {
-          display: block;
           width: 100%;
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
           font-size: 0.5625rem;
           border-radius: 0.5rem;
           border: 1px solid rgb(229 231 235);
+          overflow: hidden;
           border-collapse: collapse;
         }
         .dark .subscription-terms-content table {
