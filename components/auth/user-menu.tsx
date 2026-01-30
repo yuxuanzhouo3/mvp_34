@@ -259,7 +259,7 @@ export function UserMenu() {
           <div className="flex items-center justify-between text-xs px-1">
             <span className="text-muted-foreground">{isZh ? "文件保留" : "File Retention"}</span>
             <span className="font-medium">
-              {wallet?.file_retention_days || 3} {isZh ? "天" : "days"}
+              {wallet?.file_retention_days || getFreeBuildExpireDays()} {isZh ? "天" : "days"}
             </span>
           </div>
 
