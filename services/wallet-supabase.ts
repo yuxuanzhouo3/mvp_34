@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   getPlanDailyLimit,
   getPlanBuildExpireDays,
+  getPlanShareExpireDays,
   getPlanSupportBatchBuild,
 } from "@/utils/plan-limits";
 
@@ -23,6 +24,8 @@ export interface SupabaseUserWallet {
   daily_builds_reset_at: string | null;
   file_retention_days: number;
   batch_build_enabled: boolean;
+  share_enabled: boolean;
+  share_duration_days: number;
   pending_downgrade: string | null;
   updated_at: string;
 }
@@ -66,6 +69,7 @@ export function addCalendarMonths(baseDate: Date, months: number, anchorDay?: nu
 
 export function createDefaultSupabaseWallet(userId: string): Partial<SupabaseUserWallet> {
   const today = getTodayString();
+  const shareDuration = getPlanShareExpireDays("Free");
   return {
     user_id: userId,
     plan: "Free",
@@ -75,6 +79,8 @@ export function createDefaultSupabaseWallet(userId: string): Partial<SupabaseUse
     daily_builds_reset_at: today,
     file_retention_days: getPlanBuildExpireDays("Free"),
     batch_build_enabled: getPlanSupportBatchBuild("Free"),
+    share_enabled: shareDuration > 0,
+    share_duration_days: shareDuration,
     pending_downgrade: null,
     updated_at: new Date().toISOString(),
   };
@@ -185,6 +191,7 @@ async function applySupabasePendingDowngradeIfNeeded(params: {
   const monthsToAdd = firstPending?.period === "annual" ? 12 : 1;
   const nextExpireIso = firstPending?.expiresAt || addCalendarMonths(effectiveAt, monthsToAdd).toISOString();
   const nowIso = now.toISOString();
+  const shareDuration = getPlanShareExpireDays(targetPlan);
 
   // 更新钱包
   const { error: walletUpdateError } = await supabaseAdmin
@@ -196,6 +203,8 @@ async function applySupabasePendingDowngradeIfNeeded(params: {
       daily_builds_used: 0,
       file_retention_days: getPlanBuildExpireDays(targetPlan),
       batch_build_enabled: getPlanSupportBatchBuild(targetPlan),
+      share_enabled: shareDuration > 0,
+      share_duration_days: shareDuration,
       pending_downgrade: newPendingDowngrade,
       updated_at: nowIso,
     })
@@ -288,6 +297,7 @@ export async function seedSupabaseWalletForPlan(
 
   // 新钱包初始化
   if (!wallet) {
+    const shareDuration = getPlanShareExpireDays(planLabel);
     const newWallet: Partial<SupabaseUserWallet> = {
       user_id: userId,
       plan: planLabel,
@@ -297,6 +307,8 @@ export async function seedSupabaseWalletForPlan(
       daily_builds_reset_at: today,
       file_retention_days: getPlanBuildExpireDays(planLabel),
       batch_build_enabled: getPlanSupportBatchBuild(planLabel),
+      share_enabled: shareDuration > 0,
+      share_duration_days: shareDuration,
       pending_downgrade: null,
       updated_at: nowIso,
     };
@@ -324,11 +336,36 @@ export async function seedSupabaseWalletForPlan(
   if (walletPlanLower !== effectivePlan) {
     updatePayload.plan = planLabel;
     updatePayload.plan_exp = effectivePlanExp;
-    updatePayload.daily_builds_limit = getPlanDailyLimit(planLabel);
     updatePayload.daily_builds_used = 0;
-    updatePayload.file_retention_days = getPlanBuildExpireDays(planLabel);
-    updatePayload.batch_build_enabled = getPlanSupportBatchBuild(planLabel);
     updatePayload.daily_builds_reset_at = today;
+    needUpdate = true;
+  }
+
+  // 同步环境变量配额到数据库
+  const envDailyLimit = getPlanDailyLimit(planLabel);
+  const envRetentionDays = getPlanBuildExpireDays(planLabel);
+  const envBatchEnabled = getPlanSupportBatchBuild(planLabel);
+  const envShareDuration = getPlanShareExpireDays(planLabel);
+  const envShareEnabled = envShareDuration > 0;
+
+  if (wallet.daily_builds_limit !== envDailyLimit) {
+    updatePayload.daily_builds_limit = envDailyLimit;
+    needUpdate = true;
+  }
+  if (wallet.file_retention_days !== envRetentionDays) {
+    updatePayload.file_retention_days = envRetentionDays;
+    needUpdate = true;
+  }
+  if (wallet.batch_build_enabled !== envBatchEnabled) {
+    updatePayload.batch_build_enabled = envBatchEnabled;
+    needUpdate = true;
+  }
+  if (wallet.share_enabled !== envShareEnabled) {
+    updatePayload.share_enabled = envShareEnabled;
+    needUpdate = true;
+  }
+  if (wallet.share_duration_days !== envShareDuration) {
+    updatePayload.share_duration_days = envShareDuration;
     needUpdate = true;
   }
 
@@ -377,6 +414,7 @@ export async function updateSupabaseSubscription(
   try {
     await ensureSupabaseUserWallet(userId);
     const planLabel = normalizeSupabasePlanLabel(plan);
+    const shareDuration = getPlanShareExpireDays(planLabel);
     const { error } = await supabaseAdmin
       .from("user_wallets")
       .update({
@@ -385,6 +423,8 @@ export async function updateSupabaseSubscription(
         daily_builds_limit: getPlanDailyLimit(planLabel),
         file_retention_days: getPlanBuildExpireDays(planLabel),
         batch_build_enabled: getPlanSupportBatchBuild(planLabel),
+        share_enabled: shareDuration > 0,
+        share_duration_days: shareDuration,
         pending_downgrade: pendingDowngrade,
         updated_at: new Date().toISOString(),
       })
@@ -412,6 +452,7 @@ export async function upgradeSupabaseQuota(
     await ensureSupabaseUserWallet(userId);
     const planLabel = normalizeSupabasePlanLabel(plan);
     const today = getTodayString();
+    const shareDuration = getPlanShareExpireDays(planLabel);
 
     const { error } = await supabaseAdmin
       .from("user_wallets")
@@ -422,6 +463,8 @@ export async function upgradeSupabaseQuota(
         daily_builds_reset_at: today,
         file_retention_days: getPlanBuildExpireDays(planLabel),
         batch_build_enabled: getPlanSupportBatchBuild(planLabel),
+        share_enabled: shareDuration > 0,
+        share_duration_days: shareDuration,
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId);
@@ -605,7 +648,8 @@ export async function checkBuildQuota(
     if (!wallet) return { allowed: false, remaining: 0, limit: 0 };
   }
 
-  const limit = wallet.daily_builds_limit || getPlanDailyLimit(wallet.plan);
+  // 始终从环境变量读取配额限制，确保环境变量更新后立即生效
+  const limit = getPlanDailyLimit(wallet.plan);
   const isNewDay = wallet.daily_builds_reset_at !== today;
   const used = isNewDay ? 0 : (wallet.daily_builds_used || 0);
   const remaining = Math.max(0, limit - used);
