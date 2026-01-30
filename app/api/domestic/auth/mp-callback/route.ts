@@ -25,10 +25,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 如果有昵称，更新用户资料（头像不落库，由小程序端直接显示）
-    if (nickName) {
+    // 如果有昵称或头像，更新用户资料
+    if (nickName || avatarUrl) {
       try {
-        console.log("[mp-callback] Updating user profile - nickName:", nickName);
+        console.log("[mp-callback] Updating user profile - nickName:", nickName, "avatarUrl:", avatarUrl ? "***" : null);
         const connector = new CloudBaseConnector({});
         await connector.initialize();
         const db = connector.getClient();
@@ -38,10 +38,21 @@ export async function POST(req: Request) {
         const user = users.data[0];
 
         if (user && user._id) {
+          const updateData: Record<string, string> = {};
+
           // 只在用户当前昵称为空或默认值时才更新
-          if (!user.name || user.name === "微信用户") {
-            await db.collection("users").doc(user._id).update({ name: nickName });
-            console.log("[mp-callback] User name updated:", nickName);
+          if (nickName && (!user.name || user.name === "微信用户")) {
+            updateData.name = nickName;
+          }
+
+          // 只在用户当前头像为空或默认值时才更新
+          if (avatarUrl && !user.avatar) {
+            updateData.avatar = avatarUrl;
+          }
+
+          if (Object.keys(updateData).length > 0) {
+            await db.collection("users").doc(user._id).update(updateData);
+            console.log("[mp-callback] User profile updated:", updateData);
           }
         } else {
           console.warn("[mp-callback] User not found for openid:", openid);

@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
     }
 
     const user = result.user;
-    const hasProfile = !!(user.name && user.avatar);
+    // 只判断 name 是否存在且不是默认值（avatar 不落库，由小程序端显示）
+    const hasProfile = !!(user.name && user.name !== "微信用户");
     console.log("[wxlogin/check] User exists, has profile:", hasProfile, "name:", user.name);
 
     // 计算过期时间（7天）
