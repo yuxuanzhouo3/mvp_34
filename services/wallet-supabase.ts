@@ -52,13 +52,24 @@ export function getTodayString(): string {
 /** 添加日历月份（支持月末粘性） */
 export function addCalendarMonths(baseDate: Date, months: number, anchorDay?: number): Date {
   const result = new Date(baseDate);
-  const targetMonth = result.getMonth() + months;
-  result.setMonth(targetMonth);
+  const currentYear = result.getFullYear();
+  const currentMonth = result.getMonth();
+  const currentDay = result.getDate();
 
-  if (anchorDay) {
-    const maxDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
-    result.setDate(Math.min(anchorDay, maxDay));
-  }
+  // 计算目标年月
+  const targetMonth = currentMonth + months;
+  const targetYear = currentYear + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+
+  // 确定目标日期
+  const targetDay = anchorDay || currentDay;
+  const maxDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
+  const finalDay = Math.min(targetDay, maxDay);
+
+  // 设置新日期
+  result.setFullYear(targetYear);
+  result.setMonth(normalizedMonth);
+  result.setDate(finalDay);
 
   return result;
 }
@@ -189,7 +200,8 @@ async function applySupabasePendingDowngradeIfNeeded(params: {
 
   // 计算新的到期时间
   const monthsToAdd = firstPending?.period === "annual" ? 12 : 1;
-  const nextExpireIso = firstPending?.expiresAt || addCalendarMonths(effectiveAt, monthsToAdd).toISOString();
+  const anchorDay = wallet.billing_cycle_anchor || effectiveAt.getUTCDate();
+  const nextExpireIso = firstPending?.expiresAt || addCalendarMonths(effectiveAt, monthsToAdd, anchorDay).toISOString();
   const nowIso = now.toISOString();
   const shareDuration = getPlanShareExpireDays(targetPlan);
 

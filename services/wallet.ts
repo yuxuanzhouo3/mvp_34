@@ -177,35 +177,16 @@ export async function seedWalletForPlan(
     updatePayload.wallet = nextWallet;
     needUpdate = true;
   } else {
-    // 同步环境变量配额到数据库
-    if (wallet.daily_builds_limit !== nextWallet.daily_builds_limit) {
-      updatePayload["wallet.daily_builds_limit"] = nextWallet.daily_builds_limit;
-      needUpdate = true;
-    }
-    if (wallet.file_retention_days !== nextWallet.file_retention_days) {
-      updatePayload["wallet.file_retention_days"] = nextWallet.file_retention_days;
-      needUpdate = true;
-    }
-    if (wallet.batch_build_enabled !== nextWallet.batch_build_enabled) {
-      updatePayload["wallet.batch_build_enabled"] = nextWallet.batch_build_enabled;
-      needUpdate = true;
-    }
-    if (wallet.share_enabled !== nextWallet.share_enabled) {
-      updatePayload["wallet.share_enabled"] = nextWallet.share_enabled;
-      needUpdate = true;
-    }
-    if (wallet.share_duration_days !== nextWallet.share_duration_days) {
-      updatePayload["wallet.share_duration_days"] = nextWallet.share_duration_days;
-      needUpdate = true;
-    }
-
-    // 更新必要的状态字段
-    if (needUpdate || isNewDay || options?.forceReset || options?.expired) {
-      updatePayload["wallet.daily_builds_used"] = nextWallet.daily_builds_used;
-      updatePayload["wallet.daily_builds_reset_at"] = nextWallet.daily_builds_reset_at;
-      updatePayload["wallet.billing_cycle_anchor"] = nextWallet.billing_cycle_anchor;
-      needUpdate = true;
-    }
+    // 同步环境变量配额到数据库(始终同步以确保与环境变量一致)
+    updatePayload["wallet.daily_builds_limit"] = nextWallet.daily_builds_limit;
+    updatePayload["wallet.file_retention_days"] = nextWallet.file_retention_days;
+    updatePayload["wallet.batch_build_enabled"] = nextWallet.batch_build_enabled;
+    updatePayload["wallet.share_enabled"] = nextWallet.share_enabled;
+    updatePayload["wallet.share_duration_days"] = nextWallet.share_duration_days;
+    updatePayload["wallet.daily_builds_used"] = nextWallet.daily_builds_used;
+    updatePayload["wallet.daily_builds_reset_at"] = nextWallet.daily_builds_reset_at;
+    updatePayload["wallet.billing_cycle_anchor"] = nextWallet.billing_cycle_anchor;
+    needUpdate = true;
   }
 
   if (needUpdate) {

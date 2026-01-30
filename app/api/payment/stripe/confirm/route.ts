@@ -120,7 +120,8 @@ export async function POST(request: NextRequest) {
       purchaseExpiresAt = new Date(now.getTime() + metaDays * 24 * 60 * 60 * 1000);
     } else {
       const baseDate = isSameActive && currentPlanExp ? currentPlanExp : now;
-      purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd);
+      const anchorDay = walletRow?.billing_cycle_anchor || now.getUTCDate();
+      purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd, anchorDay);
     }
 
     const amount = (session.amount_total || 0) / 100;
@@ -178,7 +179,8 @@ export async function POST(request: NextRequest) {
     // 降级处理：延迟生效
     if (isDowngrade) {
       const scheduledStart = currentPlanExp && currentPlanActive ? currentPlanExp : now;
-      const scheduledExpire = addCalendarMonths(scheduledStart, monthsToAdd);
+      const anchorDay = walletRow?.billing_cycle_anchor || now.getUTCDate();
+      const scheduledExpire = addCalendarMonths(scheduledStart, monthsToAdd, anchorDay);
       const pendingDowngrade = JSON.stringify({
         targetPlan: plan,
         effectiveAt: scheduledStart.toISOString(),

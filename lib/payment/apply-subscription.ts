@@ -23,13 +23,24 @@ export interface ApplySubscriptionParams {
  */
 function addCalendarMonths(baseDate: Date, months: number, anchorDay: number): Date {
   const result = new Date(baseDate);
-  result.setMonth(result.getMonth() + months);
+  const currentYear = result.getFullYear();
+  const currentMonth = result.getMonth();
+  const currentDay = result.getDate();
 
-  // 月末粘性处理
-  const targetMonth = result.getMonth();
-  const daysInMonth = new Date(result.getFullYear(), targetMonth + 1, 0).getDate();
-  const targetDay = Math.min(anchorDay, daysInMonth);
-  result.setDate(targetDay);
+  // 计算目标年月
+  const targetMonth = currentMonth + months;
+  const targetYear = currentYear + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+
+  // 月末粘性处理：确定目标日期
+  const targetDay = anchorDay || currentDay;
+  const daysInMonth = new Date(targetYear, normalizedMonth + 1, 0).getDate();
+  const finalDay = Math.min(targetDay, daysInMonth);
+
+  // 设置新日期
+  result.setFullYear(targetYear);
+  result.setMonth(normalizedMonth);
+  result.setDate(finalDay);
 
   return result;
 }

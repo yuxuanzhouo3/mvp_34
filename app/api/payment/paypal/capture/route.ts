@@ -256,7 +256,8 @@ export async function POST(request: NextRequest) {
       console.log(`[PayPal Capture] upgrade with days: ${parsed.days}, expires: ${purchaseExpiresAt.toISOString()}`);
     } else {
       const baseDate = isSameActive && currentPlanExp ? currentPlanExp : now;
-      purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd);
+      const anchorDay = walletRow?.billing_cycle_anchor || now.getUTCDate();
+      purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd, anchorDay);
     }
 
     // 插入支付记录
@@ -309,7 +310,8 @@ export async function POST(request: NextRequest) {
     // 降级处理：延迟生效
     if (isDowngrade) {
       const scheduledStart = currentPlanExp && currentPlanActive ? currentPlanExp : now;
-      const scheduledExpire = addCalendarMonths(scheduledStart, monthsToAdd);
+      const anchorDay = walletRow?.billing_cycle_anchor || now.getUTCDate();
+      const scheduledExpire = addCalendarMonths(scheduledStart, monthsToAdd, anchorDay);
       const pendingDowngrade = JSON.stringify({
         targetPlan: plan,
         effectiveAt: scheduledStart.toISOString(),
