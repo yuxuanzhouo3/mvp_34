@@ -14,6 +14,13 @@ export function getGuestDailyLimit(): number {
   return Math.min(10, n);
 }
 
+export function getGuestBuildExpireDays(): number {
+  const raw = process.env.NEXT_PUBLIC_GUEST_BUILD_EXPIRE_DAYS || "1";
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.min(7, n);
+}
+
 export function getGuestSupportBatchBuild(): boolean {
   const raw = process.env.NEXT_PUBLIC_GUEST_SUPPORT_BATCH_BUILD || "false";
   return raw.toLowerCase() === "true";
@@ -131,6 +138,8 @@ export function getPlanDailyLimit(plan: string): number {
 export function getPlanBuildExpireDays(plan: string): number {
   const planLower = (plan || "").toLowerCase();
   switch (planLower) {
+    case "guest":
+      return getGuestBuildExpireDays();
     case "pro":
       return getProBuildExpireDays();
     case "team":
@@ -191,7 +200,7 @@ export function getAllPlansConfig() {
   return {
     Guest: {
       dailyLimit: getGuestDailyLimit(),
-      buildExpireDays: 1, // 游客构建立即过期
+      buildExpireDays: getGuestBuildExpireDays(),
       shareExpireDays: 0,
       supportBatchBuild: getGuestSupportBatchBuild(),
     },

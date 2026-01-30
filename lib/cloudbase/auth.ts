@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { CloudBaseConnector } from "./connector";
 import { seedWalletForPlan } from "@/services/wallet";
+import { getPlanBuildExpireDays, getPlanDailyLimit, getPlanSupportBatchBuild } from "@/utils/plan-limits";
 
 export interface CloudBaseUser {
   _id?: string;
@@ -150,13 +151,13 @@ export class CloudBaseAuthService {
 
       // 直接在同一个数据库连接中初始化钱包
       const defaultWallet = {
-        daily_builds_limit: 3, // free plan limit
+        daily_builds_limit: getPlanDailyLimit("Free"),
         daily_builds_used: 0,
         daily_builds_reset_at: now.split("T")[0],
-        file_retention_days: 1,
+        file_retention_days: getPlanBuildExpireDays("Free"),
         share_enabled: false,
         share_duration_days: 0,
-        batch_build_enabled: false,
+        batch_build_enabled: getPlanSupportBatchBuild("Free"),
       };
 
       await this.db.collection("users").doc(result.id).update({
@@ -293,13 +294,13 @@ export class CloudBaseAuthService {
 
         // 直接在同一个数据库连接中初始化钱包
         const defaultWallet = {
-          daily_builds_limit: 3,
+          daily_builds_limit: getPlanDailyLimit("Free"),
           daily_builds_used: 0,
           daily_builds_reset_at: now.split("T")[0],
-          file_retention_days: 1,
+          file_retention_days: getPlanBuildExpireDays("Free"),
           share_enabled: false,
           share_duration_days: 0,
-          batch_build_enabled: false,
+          batch_build_enabled: getPlanSupportBatchBuild("Free"),
         };
 
         await this.db.collection("users").doc(result.id).update({

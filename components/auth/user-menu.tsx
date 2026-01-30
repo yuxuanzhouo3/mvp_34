@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Crown, Zap, Calendar, Hammer } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getAllPlansConfig } from "@/utils/plan-limits";
+import { getAllPlansConfig, getFreeBuildExpireDays, getFreeDailyLimit } from "@/utils/plan-limits";
 import { IS_DOMESTIC_VERSION } from "@/config";
 
 // 套餐样式配置
@@ -73,18 +73,18 @@ export function UserMenu() {
           setWallet({
             plan: data.plan || "Free",
             plan_exp: data.plan_exp || null,
-            daily_builds_limit: data.daily_builds_limit || 3,
+            daily_builds_limit: data.daily_builds_limit || getFreeDailyLimit(),
             daily_builds_used: data.daily_builds_used || 0,
-            file_retention_days: data.file_retention_days || 3,
+            file_retention_days: data.file_retention_days || getFreeBuildExpireDays(),
           });
         } else {
           // API 失败时使用默认值
           setWallet({
             plan: "Free",
             plan_exp: null,
-            daily_builds_limit: 3,
+            daily_builds_limit: getFreeDailyLimit(),
             daily_builds_used: 0,
-            file_retention_days: 3,
+            file_retention_days: getFreeBuildExpireDays(),
           });
         }
       } catch (error) {
@@ -92,9 +92,9 @@ export function UserMenu() {
         setWallet({
           plan: "Free",
           plan_exp: null,
-          daily_builds_limit: 3,
+          daily_builds_limit: getFreeDailyLimit(),
           daily_builds_used: 0,
-          file_retention_days: 3,
+          file_retention_days: getFreeBuildExpireDays(),
         });
       }
       return;
