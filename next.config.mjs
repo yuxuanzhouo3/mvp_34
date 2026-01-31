@@ -9,7 +9,7 @@ const nextConfig = {
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: 10485760, // 10MB (10 * 1024 * 1024 bytes)
+      bodySizeLimit: 52428800, // 50MB (50 * 1024 * 1024 bytes) - 支持多平台图标上传
     },
   },
   // 安全头配置
