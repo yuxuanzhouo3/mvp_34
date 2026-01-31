@@ -74,7 +74,8 @@ export function addCalendarMonths(baseDate: Date, months: number, anchorDay: num
   const maxDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
   const finalDay = Math.min(targetDay, maxDay);
 
-  // 设置新日期
+  // 设置新日期（先重置日期，避免 31 号切月导致溢出）
+  result.setDate(1);
   result.setFullYear(targetYear);
   result.setMonth(normalizedMonth);
   result.setDate(finalDay);

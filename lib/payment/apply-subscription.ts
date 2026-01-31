@@ -37,7 +37,8 @@ function addCalendarMonths(baseDate: Date, months: number, anchorDay: number): D
   const daysInMonth = new Date(targetYear, normalizedMonth + 1, 0).getDate();
   const finalDay = Math.min(targetDay, daysInMonth);
 
-  // 设置新日期
+  // 设置新日期（先重置日期，避免 31 号切月导致溢出到下月）
+  result.setDate(1);
   result.setFullYear(targetYear);
   result.setMonth(normalizedMonth);
   result.setDate(finalDay);
