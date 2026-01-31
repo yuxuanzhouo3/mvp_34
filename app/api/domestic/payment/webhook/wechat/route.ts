@@ -12,6 +12,7 @@ import {
   isPaymentCompleted,
   validatePaymentAmount,
   extractUserId,
+  claimPaymentRecord,
 } from "@/lib/payment/payment-record-helper";
 import { normalizePlanName } from "@/utils/plan-utils";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
@@ -87,6 +88,10 @@ function wechatFail(message: string, status: number = 400) {
 }
 
 export async function POST(request: NextRequest) {
+  let claimed = false;
+  let subscriptionApplied = false;
+  let finalized = false;
+  let providerOrderId = "";
   try {
     // 1. 获取 Webhook 签名信息
     const signature = request.headers.get("Wechatpay-Signature") || "";
@@ -148,6 +153,7 @@ export async function POST(request: NextRequest) {
       out_trade_no: paymentData.out_trade_no,
       trade_state: paymentData.trade_state,
     });
+    providerOrderId = paymentData.out_trade_no || "";
 
     // 8. 检查交易状态
     if (paymentData.trade_state !== "SUCCESS") {
@@ -196,6 +202,24 @@ export async function POST(request: NextRequest) {
       console.log("⏭️ [WeChat Webhook] Payment already completed");
       return wechatSuccess();
     }
+    const paymentStatus = (paymentRecord.status || "").toString().toUpperCase();
+    if (paymentStatus === "PROCESSING") {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      const subRes = await db
+        .collection("subscriptions")
+        .where({ providerOrderId })
+        .limit(1)
+        .get();
+      if ((subRes?.data?.length || 0) > 0) {
+        await updatePaymentRecord("wechat", providerOrderId, {
+          status: "COMPLETED",
+          updatedAt: new Date().toISOString(),
+        });
+        return wechatSuccess();
+      }
+    }
 
     // 交易金额校验
     const expectedAmount = Number(paymentRecord?.amount || 0);
@@ -208,6 +232,17 @@ export async function POST(request: NextRequest) {
       return wechatFail("Amount mismatch");
     }
 
+    const claim = await claimPaymentRecord({
+      provider: "wechat",
+      providerOrderId,
+      record: paymentRecord,
+    });
+    if (!claim.claimed) {
+      console.log("⏭️ [WeChat Webhook] Payment already processing/processed");
+      return wechatSuccess();
+    }
+    claimed = true;
+
     // 12. 处理订阅购买
     const period = (paymentRecord?.period || paymentRecord?.metadata?.billingCycle || "monthly") as "monthly" | "annual";
     const days = Number(paymentRecord?.metadata?.days) || (period === "annual" ? 365 : 30);
@@ -217,12 +252,13 @@ export async function POST(request: NextRequest) {
 
     await applySubscriptionPayment({
       userId: effectiveUserId,
-      providerOrderId: paymentData.out_trade_no,
+      providerOrderId,
       provider: "wechat",
       period,
       days,
       planName,
     });
+    subscriptionApplied = true;
 
     // 创建订单记录（从保存的metadata中读取风控信息）
     const orderResult = await createOrder({
@@ -265,11 +301,12 @@ export async function POST(request: NextRequest) {
     }).catch((err) => console.warn("[WeChat Webhook] trackSubscriptionEvent error:", err));
 
     // 13. 更新支付订单状态
-    await updatePaymentRecord("wechat", paymentData.out_trade_no, {
+    await updatePaymentRecord("wechat", providerOrderId, {
       status: "COMPLETED",
       providerTransactionId: paymentData.transaction_id,
       updatedAt: new Date().toISOString(),
     });
+    finalized = true;
 
     // 14. 标记 Webhook 事件为已处理
     await markWebhookEventProcessed(webhookEventId);
@@ -278,6 +315,13 @@ export async function POST(request: NextRequest) {
 
     return wechatSuccess();
   } catch (error) {
+    if (claimed && providerOrderId && !finalized) {
+      const rollbackStatus = subscriptionApplied ? "COMPLETED" : "PENDING";
+      await updatePaymentRecord("wechat", providerOrderId, {
+        status: rollbackStatus,
+        updatedAt: new Date().toISOString(),
+      });
+    }
     console.error("❌ [WeChat Webhook] Processing error:", error);
     return wechatFail("Internal server error", 500);
   }

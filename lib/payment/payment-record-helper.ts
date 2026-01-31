@@ -19,6 +19,10 @@ export interface PaymentRecord {
   plan?: string;
   period?: string;
   metadata?: Record<string, any>;
+  updatedAt?: string;
+  updated_at?: string;
+  createdAt?: string;
+  created_at?: string;
   [key: string]: any;
 }
 
@@ -129,9 +133,13 @@ export async function insertPaymentRecord(params: {
       plan: params.plan,
       period: params.period,
       source: "global",
+      updated_at: nowIso,
     });
 
     if (error) {
+      if ((error as any)?.code === "23505") {
+        return { success: true };
+      }
       console.error("[payment-record] insert error:", error);
       return { success: false, error: error.message };
     }
@@ -175,6 +183,7 @@ export async function queryPaymentRecord(
     const { data } = await supabaseAdmin
       .from("payments")
       .select("*")
+      .eq("provider", provider)
       .eq("provider_order_id", providerOrderId)
       .maybeSingle();
     return data || null;
@@ -218,7 +227,10 @@ export async function updatePaymentRecord(
   try {
     await supabaseAdmin
       .from("payments")
-      .update(updateData)
+      .update({
+        ...updateData,
+        updated_at: updateData.updated_at || new Date().toISOString(),
+      })
       .eq("provider_order_id", providerOrderId);
     return true;
   } catch (error) {
@@ -233,7 +245,7 @@ export async function updatePaymentRecord(
 export function isPaymentCompleted(paymentRecord: PaymentRecord | null): boolean {
   if (!paymentRecord) return false;
   const status = (paymentRecord.status || "").toString().toUpperCase();
-  return status === "COMPLETED";
+  return status === "COMPLETED" || status === "SUCCESS" || status === "PAID";
 }
 
 /**
@@ -270,4 +282,105 @@ export function validatePaymentAmountCents(
   if (expectedCents === 0) return true;
   const tolerance = expectedCents * (tolerancePercent / 100);
   return Math.abs(actualCents - expectedCents) <= tolerance;
+}
+
+/**
+ * 抢占支付记录处理权（防止重复回调）
+ */
+export async function claimPaymentRecord(params: {
+  provider: string;
+  providerOrderId: string;
+  record?: PaymentRecord | null;
+}): Promise<{ claimed: boolean; record?: PaymentRecord | null; reason?: string }> {
+  const { provider, providerOrderId } = params;
+  const record = params.record ?? await queryPaymentRecord(provider, providerOrderId);
+
+  if (!record) {
+    return { claimed: false, record: null, reason: "not_found" };
+  }
+
+  const status = (record.status || "").toString().toUpperCase();
+  if (status === "COMPLETED" || status === "SUCCESS" || status === "PAID") {
+    return { claimed: false, record, reason: "completed" };
+  }
+  const now = new Date();
+  const lastUpdatedRaw =
+    record.updatedAt ||
+    record.updated_at ||
+    record.createdAt ||
+    record.created_at ||
+    "";
+  const lastUpdated = lastUpdatedRaw ? new Date(lastUpdatedRaw) : null;
+  const isStaleProcessing =
+    status === "PROCESSING" &&
+    lastUpdated instanceof Date &&
+    !Number.isNaN(lastUpdated.getTime()) &&
+    now.getTime() - lastUpdated.getTime() > 15 * 60 * 1000;
+  if (status === "PROCESSING" && !isStaleProcessing) {
+    return { claimed: false, record, reason: "processing" };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  if (IS_DOMESTIC_VERSION) {
+    try {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      const whereCondition: Record<string, any> = {
+        _id: record._id,
+        provider,
+        providerOrderId,
+        status: record.status,
+      };
+      if (record.updatedAt) {
+        whereCondition.updatedAt = record.updatedAt;
+      }
+      const result = await db
+        .collection("payments")
+        .where(whereCondition)
+        .update({
+          status: "PROCESSING",
+          updatedAt: nowIso,
+        });
+
+      const updated =
+        (result?.stats?.updated as number | undefined) ??
+        (result?.updated as number | undefined) ??
+        0;
+      return { claimed: updated > 0, record, reason: updated > 0 ? undefined : "race" };
+    } catch (error) {
+      console.error("[payment-record] CloudBase claim error:", error);
+      return { claimed: false, record, reason: "error" };
+    }
+  }
+
+  if (!supabaseAdmin) {
+    return { claimed: false, record, reason: "supabaseAdmin_not_available" };
+  }
+
+  try {
+    let query = supabaseAdmin
+      .from("payments")
+      .update({ status: "PROCESSING", updated_at: nowIso })
+      .eq("id", record.id)
+      .eq("provider", provider)
+      .eq("provider_order_id", providerOrderId)
+      .eq("status", record.status);
+    if (record.updated_at) {
+      query = query.eq("updated_at", record.updated_at);
+    }
+    const { data, error } = await query.select("id");
+
+    if (error) {
+      console.error("[payment-record] Supabase claim error:", error);
+      return { claimed: false, record, reason: "error" };
+    }
+
+    const updated = data?.length || 0;
+    return { claimed: updated > 0, record, reason: updated > 0 ? undefined : "race" };
+  } catch (err) {
+    console.error("[payment-record] Supabase claim exception:", err);
+    return { claimed: false, record, reason: "error" };
+  }
 }

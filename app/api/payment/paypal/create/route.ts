@@ -9,6 +9,7 @@ import { isAfter } from "date-fns";
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 import { resolvePlan, extractPlanAmount } from "@/lib/payment/plan-resolver";
 import { calculateSupabaseUpgradePrice } from "@/services/wallet-supabase";
+import { insertPaymentRecord } from "@/lib/payment/payment-record-helper";
 
 export async function POST(request: NextRequest) {
   try {
@@ -102,17 +103,18 @@ export async function POST(request: NextRequest) {
           // 计算当前套餐剩余价值
           const remainingValue = remainingDays * currentDailyPrice;
           const targetDays = effectiveBillingPeriod === "annual" ? 365 : 30;
+          const upgradeDays = Math.max(0, Math.floor(remainingValue / targetDailyPrice));
+          const totalDays = targetDays + upgradeDays;
 
           // 升级逻辑
           if (remainingValue >= targetPrice) {
             // 免费升级
             amount = 0.01;
-            days = Math.floor(remainingValue / targetDailyPrice);
           } else {
             // 补差价
             amount = Math.max(0.01, targetPrice - remainingValue);
-            days = targetDays;
           }
+          days = totalDays;
 
           amount = Math.round(amount * 100) / 100;
 
@@ -122,7 +124,9 @@ export async function POST(request: NextRequest) {
             remainingDays,
             remainingValue: Math.round(remainingValue * 100) / 100,
             upgradeAmount: amount,
-            newPlanDays: days,
+            upgradeDays,
+            purchaseDays: targetDays,
+            totalDays: days,
           });
         }
       } catch (error) {
@@ -156,6 +160,20 @@ export async function POST(request: NextRequest) {
         { success: false, error: "No PayPal approval URL returned" },
         { status: 500 }
       );
+    }
+
+    if (supabaseAdmin) {
+      await insertPaymentRecord({
+        userId,
+        provider: "paypal",
+        providerOrderId: order.orderId,
+        amount,
+        currency: "USD",
+        status: "PENDING",
+        type: "SUBSCRIPTION",
+        plan: resolvedPlan.name,
+        period: effectiveBillingPeriod,
+      });
     }
 
     return NextResponse.json({

@@ -27,6 +27,7 @@ export interface SupabaseUserWallet {
   share_enabled: boolean;
   share_duration_days: number;
   pending_downgrade: string | null;
+  billing_cycle_anchor?: number | null;
   updated_at: string;
 }
 
@@ -169,10 +170,14 @@ async function applySupabasePendingDowngradeIfNeeded(params: {
   if (!raw) return null;
 
   let pendingData: any = null;
-  try {
-    pendingData = JSON.parse(raw);
-  } catch {
-    return null;
+  if (typeof raw === "string") {
+    try {
+      pendingData = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  } else {
+    pendingData = raw;
   }
 
   const pendingQueue = Array.isArray(pendingData) ? pendingData : [pendingData];
@@ -226,6 +231,22 @@ async function applySupabasePendingDowngradeIfNeeded(params: {
     console.error("[wallet-supabase] apply pending downgrade error:", walletUpdateError);
   }
 
+  const { error: subUpdateError } = await supabaseAdmin
+    .from("subscriptions")
+    .update({
+      plan: targetPlan,
+      period: firstPending?.period || "monthly",
+      status: "active",
+      started_at: effectiveAt.toISOString(),
+      expires_at: nextExpireIso,
+      updated_at: nowIso,
+    })
+    .eq("user_id", userId);
+
+  if (subUpdateError) {
+    console.error("[wallet-supabase] apply pending downgrade subscription update error:", subUpdateError);
+  }
+
   // 同步 auth.users 元数据
   try {
     await supabaseAdmin.auth.admin.updateUserById(userId, {
@@ -245,6 +266,105 @@ async function applySupabasePendingDowngradeIfNeeded(params: {
   });
 
   return await getSupabaseUserWallet(userId);
+}
+
+/**
+ * 订阅到期处理：到期后自动降级为 Free
+ */
+async function expireSupabaseWalletIfNeeded(params: {
+  userId: string;
+  wallet: SupabaseUserWallet;
+  now: Date;
+}): Promise<SupabaseUserWallet | null> {
+  const { userId, wallet, now } = params;
+  if (!supabaseAdmin) return null;
+
+  const planLower = (wallet.plan || "").toLowerCase();
+  if (planLower === "free") return wallet;
+
+  const planExp = wallet.plan_exp ? new Date(wallet.plan_exp) : null;
+  if (!planExp || Number.isNaN(planExp.getTime()) || planExp > now) {
+    return wallet;
+  }
+
+  const nowIso = now.toISOString();
+  const today = getTodayString();
+  const shareDuration = getPlanShareExpireDays("Free");
+
+  const { data, error } = await supabaseAdmin
+    .from("user_wallets")
+    .update({
+      plan: "Free",
+      plan_exp: null,
+      daily_builds_limit: getPlanDailyLimit("Free"),
+      daily_builds_used: 0,
+      daily_builds_reset_at: today,
+      file_retention_days: getPlanBuildExpireDays("Free"),
+      batch_build_enabled: getPlanSupportBatchBuild("Free"),
+      share_enabled: shareDuration > 0,
+      share_duration_days: shareDuration,
+      pending_downgrade: null,
+      updated_at: nowIso,
+    })
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("[wallet-supabase] expire wallet error:", error);
+    return null;
+  }
+
+  // 标记订阅记录为过期
+  await supabaseAdmin
+    .from("subscriptions")
+    .update({ status: "expired", updated_at: nowIso })
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .lte("expires_at", nowIso);
+
+  // 同步 auth.users 元数据
+  try {
+    await supabaseAdmin.auth.admin.updateUserById(userId, {
+      user_metadata: { plan: "Free", plan_exp: null },
+    });
+  } catch (e) {
+    console.warn("[wallet-supabase] auth metadata sync failed:", e);
+  }
+
+  return data as SupabaseUserWallet;
+}
+
+/**
+ * 获取有效钱包（处理待降级与到期逻辑）
+ */
+export async function getEffectiveSupabaseUserWallet(
+  userId: string
+): Promise<SupabaseUserWallet | null> {
+  if (!supabaseAdmin) return null;
+
+  let wallet = await getSupabaseUserWallet(userId);
+  if (!wallet) {
+    wallet = await ensureSupabaseUserWallet(userId);
+  }
+  if (!wallet) return null;
+
+  const now = new Date();
+
+  // 处理待生效降级
+  if (wallet.pending_downgrade) {
+    const applied = await applySupabasePendingDowngradeIfNeeded({ userId, wallet, now });
+    if (applied) {
+      wallet = applied;
+    }
+  }
+
+  // 处理到期自动降级
+  const expiredWallet = await expireSupabaseWalletIfNeeded({ userId, wallet, now });
+  if (!expiredWallet) return null;
+  wallet = expiredWallet;
+
+  return wallet;
 }
 
 /**
@@ -539,11 +659,10 @@ export async function deductBuildQuota(
   }
 
   try {
-    // 确保用户钱包存在
-    const wallet = await getSupabaseUserWallet(userId);
+    // 获取有效钱包（处理到期/降级）
+    const wallet = await getEffectiveSupabaseUserWallet(userId);
     if (!wallet) {
-      const created = await ensureSupabaseUserWallet(userId);
-      if (!created) return { success: false, error: "Failed to create wallet" };
+      return { success: false, error: "Failed to load wallet" };
     }
 
     const today = getTodayString();
@@ -653,12 +772,8 @@ export async function checkBuildQuota(
   if (!supabaseAdmin) return { allowed: false, remaining: 0, limit: 0 };
 
   const today = getTodayString();
-  let wallet = await getSupabaseUserWallet(userId);
-
-  if (!wallet) {
-    wallet = await ensureSupabaseUserWallet(userId);
-    if (!wallet) return { allowed: false, remaining: 0, limit: 0 };
-  }
+  const wallet = await getEffectiveSupabaseUserWallet(userId);
+  if (!wallet) return { allowed: false, remaining: 0, limit: 0 };
 
   // 始终从环境变量读取配额限制，确保环境变量更新后立即生效
   const limit = getPlanDailyLimit(wallet.plan);

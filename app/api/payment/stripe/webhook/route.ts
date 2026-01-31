@@ -11,8 +11,8 @@ import {
   seedSupabaseWalletForPlan,
 } from "@/services/wallet-supabase";
 import {
-  checkPaymentExists,
-  insertPaymentRecord,
+  queryPaymentRecord,
+  claimPaymentRecord,
   validatePaymentAmountCents,
 } from "@/lib/payment/payment-record-helper";
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
@@ -27,6 +27,9 @@ const stripeKey = process.env.STRIPE_SECRET_KEY || "";
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
 export async function POST(req: Request) {
+  let claimed = false;
+  let subscriptionApplied = false;
+  let finalized = false;
   // 检查配置
   if (!stripeKey || !webhookSecret) {
     console.warn("[stripe webhook] missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET, skipping");
@@ -85,10 +88,28 @@ export async function POST(req: Request) {
     return new Response(null, { status: 200 });
   }
 
-  // 幂等性检查
-  const existingPayment = await checkPaymentExists("stripe", session.id);
-  if (existingPayment) {
+  const paymentRecord = await queryPaymentRecord("stripe", session.id);
+  const providerOrderId = session.id;
+  const paymentStatus = (paymentRecord?.status || "").toString().toUpperCase();
+  if (paymentStatus === "COMPLETED" || paymentStatus === "SUCCESS" || paymentStatus === "PAID") {
     console.log(`[Stripe][SUBSCRIPTION] already processed, skipping: ${session.id}`);
+    return new Response(null, { status: 200 });
+  }
+  if (paymentStatus === "PROCESSING") {
+    const { data: sub } = await supabaseAdmin
+      .from("subscriptions")
+      .select("id, status")
+      .eq("provider_order_id", providerOrderId)
+      .maybeSingle();
+    if (sub) {
+      await supabaseAdmin
+        .from("payments")
+        .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
+        .eq("provider", "stripe")
+        .eq("provider_order_id", providerOrderId);
+      return new Response(null, { status: 200 });
+    }
+    console.log(`[Stripe][SUBSCRIPTION] already processing, skipping: ${session.id}`);
     return new Response(null, { status: 200 });
   }
 
@@ -126,7 +147,8 @@ export async function POST(req: Request) {
 
     // 计算到期日期
     let purchaseExpiresAt: Date;
-    if (isUpgradeOrder && metaDays > 0) {
+    const canApplyUpgradeDays = isUpgradeOrder && isUpgrade && metaDays > 0;
+    if (canApplyUpgradeDays) {
       purchaseExpiresAt = new Date(now.getTime() + metaDays * 24 * 60 * 60 * 1000);
       console.log(`[Stripe][SUBSCRIPTION] upgrade with days: ${metaDays}, expires: ${purchaseExpiresAt.toISOString()}`);
     } else {
@@ -135,24 +157,25 @@ export async function POST(req: Request) {
       purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd, anchorDay);
     }
 
-    // 插入支付记录
-    await insertPaymentRecord({
-      userId,
-      provider: "stripe",
-      providerOrderId: session.id,
-      amount,
-      currency,
-      type: "SUBSCRIPTION",
-      plan,
-      period,
-    });
+    if (paymentRecord) {
+      const claim = await claimPaymentRecord({
+        provider: "stripe",
+        providerOrderId,
+        record: paymentRecord,
+      });
+      if (!claim.claimed) {
+        console.log(`[Stripe][SUBSCRIPTION] already processing/processed, skipping: ${session.id}`);
+        return new Response(null, { status: 200 });
+      }
+      claimed = true;
+    }
 
     // 获取用户邮箱
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || "";
 
     // 确定订单类型
-    const productType = isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
+    const productType = isUpgradeOrder ? "upgrade" : "subscription";
 
     // 创建订单记录（使用统一的订单服务）
     const orderResult = await createOrder({
@@ -268,8 +291,41 @@ export async function POST(req: Request) {
     await seedSupabaseWalletForPlan(userId, plan.toLowerCase(), {
       forceReset: isUpgrade || isNewOrExpired,
     });
+    subscriptionApplied = true;
 
     console.log(`[Stripe][SUBSCRIPTION] processed for user ${userId}, plan: ${plan}, expires: ${purchaseExpiresAt.toISOString()}`);
+
+    const paymentIntentId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : (session.payment_intent?.id || null);
+
+    if (paymentRecord) {
+      await supabaseAdmin
+        .from("payments")
+        .update({
+          status: "COMPLETED",
+          provider_transaction_id: paymentIntentId,
+          updated_at: nowIso,
+        })
+        .eq("provider", "stripe")
+        .eq("provider_order_id", session.id);
+    } else {
+      await supabaseAdmin.from("payments").upsert({
+        user_id: userId,
+        provider: "stripe",
+        provider_order_id: session.id,
+        amount,
+        currency,
+        status: "COMPLETED",
+        type: "SUBSCRIPTION",
+        plan,
+        period,
+        provider_transaction_id: paymentIntentId,
+        source: "global",
+        updated_at: nowIso,
+      }, { onConflict: "provider,provider_order_id" });
+    }
+    finalized = true;
 
     // 支付和订阅埋点
     const subscriptionAction = isUpgrade ? "upgrade" : (isSameActive ? "renew" : "subscribe");
@@ -278,6 +334,14 @@ export async function POST(req: Request) {
       { action: subscriptionAction, fromPlan: currentPlanKey || "Free", toPlan: plan, period }
     );
   } catch (err) {
+    if (claimed && !finalized && supabaseAdmin) {
+      const fallbackStatus = subscriptionApplied ? "COMPLETED" : "PENDING";
+      await supabaseAdmin
+        .from("payments")
+        .update({ status: fallbackStatus, updated_at: new Date().toISOString() })
+        .eq("provider", "stripe")
+        .eq("provider_order_id", providerOrderId);
+    }
     console.error("[Stripe][SUBSCRIPTION] error", err);
     return new Response("DB Error", { status: 500 });
   }

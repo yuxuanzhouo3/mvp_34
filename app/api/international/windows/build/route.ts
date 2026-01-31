@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
-import { deductBuildQuota, checkBuildQuota, getSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
+import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 // 增加函数执行时间限制（Vercel Pro: 最大 300 秒）
@@ -47,6 +47,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 预校验图标（避免先扣额度后失败）
+    if (iconFile && iconFile.size > 0) {
+      if (!isIconUploadEnabled()) {
+        return NextResponse.json(
+          { error: "Icon upload disabled", message: "Icon upload is currently disabled" },
+          { status: 400 }
+        );
+      }
+
+      const sizeValidation = validateImageSize(iconFile.size);
+      if (!sizeValidation.valid) {
+        return NextResponse.json(
+          { error: "Icon too large", message: `Icon size (${sizeValidation.fileSizeMB}MB) exceeds limit (${sizeValidation.maxSizeMB}MB)` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Get service client for database operations
     const serviceClient = createServiceClient();
 
@@ -75,23 +93,6 @@ export async function POST(request: NextRequest) {
     // Upload icon if provided and enabled
     let iconPath: string | null = null;
     if (iconFile && iconFile.size > 0) {
-      // Check if icon upload is enabled
-      if (!isIconUploadEnabled()) {
-        return NextResponse.json(
-          { error: "Icon upload disabled", message: "Icon upload is currently disabled" },
-          { status: 400 }
-        );
-      }
-
-      // Validate icon size
-      const sizeValidation = validateImageSize(iconFile.size);
-      if (!sizeValidation.valid) {
-        return NextResponse.json(
-          { error: "Icon too large", message: `Icon size (${sizeValidation.fileSizeMB}MB) exceeds limit (${sizeValidation.maxSizeMB}MB)` },
-          { status: 400 }
-        );
-      }
-
       const iconBuffer = Buffer.from(await iconFile.arrayBuffer());
 
       // 获取文件扩展名，确保使用安全的文件名（避免中文等特殊字符）
@@ -116,7 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's subscription plan to calculate expires_at
-    const wallet = await getSupabaseUserWallet(user.id);
+    const wallet = await getEffectiveSupabaseUserWallet(user.id);
     const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
     const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
 

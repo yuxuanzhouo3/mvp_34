@@ -22,6 +22,9 @@ export interface UpgradeCalculationResult {
   freeUpgrade?: boolean;
   remainingDays?: number;
   remainingValue?: number;
+  upgradeDays?: number;
+  purchaseDays?: number;
+  totalDays?: number;
 }
 
 /** 升级计算参数 */
@@ -79,10 +82,14 @@ export async function calculateDomesticUpgradePrice(
     });
 
     if (!isUpgrade || !currentPlanKey) {
+      const purchaseDays = billingPeriod === "annual" ? DAYS_PER_YEAR : DAYS_PER_MONTH;
       return {
         amount: baseAmount,
-        days: billingPeriod === "annual" ? DAYS_PER_YEAR : DAYS_PER_MONTH,
+        days: purchaseDays,
         isUpgrade: false,
+        upgradeDays: 0,
+        purchaseDays,
+        totalDays: purchaseDays,
       };
     }
 
@@ -100,28 +107,30 @@ export async function calculateDomesticUpgradePrice(
     const currentDailyPrice = currentPlanMonthlyPrice / DAYS_PER_MONTH;
     const targetDailyPrice = targetPlanMonthlyPrice / DAYS_PER_MONTH;
     const remainingValue = remainingDays * currentDailyPrice;
-    const targetDays = billingPeriod === "annual" ? DAYS_PER_YEAR : DAYS_PER_MONTH;
+    const purchaseDays = billingPeriod === "annual" ? DAYS_PER_YEAR : DAYS_PER_MONTH;
+    const upgradeDays = Math.max(0, Math.floor(remainingValue / targetDailyPrice));
+    const totalDays = purchaseDays + upgradeDays;
 
     // 升级逻辑：剩余价值 >= 目标价格则免费升级，否则补差价
     const freeUpgrade = remainingValue >= targetPrice;
     let amount: number;
-    let days: number;
 
     if (freeUpgrade) {
       amount = MIN_PAYMENT_AMOUNT;
-      days = Math.floor(remainingValue / targetDailyPrice);
     } else {
       amount = Math.max(MIN_PAYMENT_AMOUNT, targetPrice - remainingValue);
-      days = targetDays;
     }
 
     return {
       amount: Math.round(amount * 100) / 100,
-      days,
+      days: totalDays,
       isUpgrade: true,
       freeUpgrade,
       remainingDays,
       remainingValue: Math.round(remainingValue * 100) / 100,
+      upgradeDays,
+      purchaseDays,
+      totalDays,
     };
   } catch (error) {
     console.error("[upgrade-calculator] calculation failed", error);

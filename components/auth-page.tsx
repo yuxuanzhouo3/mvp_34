@@ -19,6 +19,7 @@ import {
   clearWxMpLoginParams,
   exchangeCodeForToken,
 } from "@/lib/wechat-mp";
+import { getLoginErrorMessage } from "@/lib/auth/login-error";
 
 type Mode = "login" | "signup";
 
@@ -238,7 +239,12 @@ export function AuthPage({ mode }: AuthPageProps) {
           });
           const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || (isZhText ? "登录失败" : "Login failed"));
+            const loginMessage = getLoginErrorMessage({
+              isZh: isZhText,
+              status: res.status,
+              message: data.error,
+            });
+            throw new Error(loginMessage || data.error || (isZhText ? "登录失败" : "Login failed"));
           }
           toast.success(isZhText ? "登录成功" : "Login successful");
           window.location.href = next;
@@ -250,7 +256,12 @@ export function AuthPage({ mode }: AuthPageProps) {
           });
 
           if (error) {
-            throw error;
+            const loginMessage = getLoginErrorMessage({
+              isZh: isZhText,
+              message: error.message,
+              status: (error as { status?: number | null })?.status ?? null,
+            });
+            throw new Error(loginMessage || error.message);
           }
 
           // 检查邮箱是否已验证

@@ -11,6 +11,7 @@ import {
   isPaymentCompleted,
   validatePaymentAmount,
   extractUserId,
+  claimPaymentRecord,
 } from "@/lib/payment/payment-record-helper";
 import { verifyAlipaySignature } from "@/lib/payment/providers/alipay-provider";
 import { normalizePlanName } from "@/utils/plan-utils";
@@ -77,6 +78,10 @@ async function markWebhookEventProcessed(eventId: string): Promise<boolean> {
 }
 
 export async function POST(request: NextRequest) {
+  let claimed = false;
+  let subscriptionApplied = false;
+  let finalized = false;
+  let providerOrderId = "";
   try {
     console.log("🔔 [Alipay Webhook] 收到 webhook 请求");
 
@@ -142,6 +147,7 @@ export async function POST(request: NextRequest) {
     });
 
     const outTradeNo = params.out_trade_no || "";
+    providerOrderId = outTradeNo;
     const tradeNo = params.trade_no || "";
     const totalAmount = parseFloat(params.total_amount || "0");
 
@@ -162,6 +168,24 @@ export async function POST(request: NextRequest) {
       console.log("⏭️ [Alipay Webhook] Payment already completed");
       return new NextResponse("success");
     }
+    const paymentStatus = (paymentRecord.status || "").toString().toUpperCase();
+    if (paymentStatus === "PROCESSING") {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      const subRes = await db
+        .collection("subscriptions")
+        .where({ providerOrderId })
+        .limit(1)
+        .get();
+      if ((subRes?.data?.length || 0) > 0) {
+        await updatePaymentRecord("alipay", providerOrderId, {
+          status: "COMPLETED",
+          updatedAt: new Date().toISOString(),
+        });
+        return new NextResponse("success");
+      }
+    }
 
     // 金额校验
     const expectedAmount = Number(paymentRecord.amount || 0);
@@ -181,6 +205,17 @@ export async function POST(request: NextRequest) {
       return new NextResponse("failure");
     }
 
+    const claim = await claimPaymentRecord({
+      provider: "alipay",
+      providerOrderId,
+      record: paymentRecord,
+    });
+    if (!claim.claimed) {
+      console.log("⏭️ [Alipay Webhook] Payment already processing/processed");
+      return new NextResponse("success");
+    }
+    claimed = true;
+
     // 处理订阅购买
     const period = (paymentRecord.period || paymentRecord?.metadata?.billingCycle || "monthly") as "monthly" | "annual";
     const days = Number(paymentRecord?.metadata?.days) || (period === "annual" ? 365 : 30);
@@ -190,12 +225,13 @@ export async function POST(request: NextRequest) {
 
     await applySubscriptionPayment({
       userId,
-      providerOrderId: outTradeNo,
+      providerOrderId,
       provider: "alipay",
       period,
       days,
       planName,
     });
+    subscriptionApplied = true;
 
     // 创建订单记录（从保存的metadata中读取风控信息）
     const orderResult = await createOrder({
@@ -238,11 +274,12 @@ export async function POST(request: NextRequest) {
     }).catch((err) => console.warn("[Alipay Webhook] trackSubscriptionEvent error:", err));
 
     // 更新支付记录状态
-    await updatePaymentRecord("alipay", outTradeNo, {
+    await updatePaymentRecord("alipay", providerOrderId, {
       status: "COMPLETED",
       providerTransactionId: tradeNo || null,
       updatedAt: new Date().toISOString(),
     }, paymentRecord._id);
+    finalized = true;
 
     // 标记事件为已处理
     await markWebhookEventProcessed(webhookEventId);
@@ -252,6 +289,13 @@ export async function POST(request: NextRequest) {
     // 支付宝要求返回 success 字符串
     return new NextResponse("success");
   } catch (error) {
+    if (claimed && providerOrderId && !finalized) {
+      const rollbackStatus = subscriptionApplied ? "COMPLETED" : "PENDING";
+      await updatePaymentRecord("alipay", providerOrderId, {
+        status: rollbackStatus,
+        updatedAt: new Date().toISOString(),
+      });
+    }
     console.error("❌ [Alipay Webhook] 异常错误:", error);
     return new NextResponse("failure");
   }

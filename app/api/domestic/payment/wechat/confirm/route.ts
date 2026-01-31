@@ -11,8 +11,13 @@ import { applySubscriptionPayment } from "@/lib/payment/apply-subscription";
 import { normalizePlanName } from "@/utils/plan-utils";
 import { trackPaymentEvent, trackSubscriptionEvent } from "@/services/analytics";
 import { createOrder, markOrderPaid } from "@/services/orders";
+import { claimPaymentRecord, validatePaymentAmount } from "@/lib/payment/payment-record-helper";
 
 export async function POST(request: NextRequest) {
+  let claimed = false;
+  let subscriptionApplied = false;
+  let finalized = false;
+  let providerOrderId = "";
   try {
     const body = await request.json();
     const { outTradeNo } = body as { outTradeNo?: string };
@@ -25,6 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("📥 [WeChat Confirm] Processing:", outTradeNo);
+    providerOrderId = outTradeNo;
 
     // 1. 查询本地支付记录
     const connector = new CloudBaseConnector();
@@ -49,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     // 2. 检查是否已经处理过
     const currentStatus = (paymentRecord.status || "").toString().toUpperCase();
-    if (currentStatus === "COMPLETED") {
+    if (currentStatus === "COMPLETED" || currentStatus === "SUCCESS" || currentStatus === "PAID") {
       console.log("[WeChat Confirm] Already completed:", outTradeNo);
       return NextResponse.json({
         success: true,
@@ -57,6 +63,28 @@ export async function POST(request: NextRequest) {
         message: "Payment already processed",
         productType: paymentRecord.type,
       });
+    }
+    if (currentStatus === "PROCESSING") {
+      const subRes = await db
+        .collection("subscriptions")
+        .where({ providerOrderId: outTradeNo })
+        .limit(1)
+        .get();
+      if ((subRes?.data?.length || 0) > 0) {
+        await db
+          .collection("payments")
+          .where({ provider: "wechat", providerOrderId: outTradeNo })
+          .update({
+            status: "COMPLETED",
+            updatedAt: new Date().toISOString(),
+          });
+        return NextResponse.json({
+          success: true,
+          status: "COMPLETED",
+          message: "Payment already processed",
+          productType: paymentRecord.type,
+        });
+      }
     }
 
     // 3. 查询微信支付确认支付状态
@@ -93,6 +121,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const expectedAmount = Number(paymentRecord.amount) || 0;
+    const paidAmount = wechatStatus?.amount ? Math.round(wechatStatus.amount) / 100 : 0;
+    if (!validatePaymentAmount(expectedAmount, paidAmount)) {
+      console.error("[WeChat Confirm] amount mismatch", {
+        outTradeNo,
+        expectedAmount,
+        paidAmount,
+      });
+      return NextResponse.json(
+        { success: false, error: "Amount mismatch" },
+        { status: 400 }
+      );
+    }
+
     // 5. 处理业务逻辑
     const userId = (paymentRecord.userId || paymentRecord.user_id || "") as string;
     if (!userId) {
@@ -115,6 +157,22 @@ export async function POST(request: NextRequest) {
       period,
       days,
     });
+
+    const claim = await claimPaymentRecord({
+      provider: "wechat",
+      providerOrderId,
+      record: paymentRecord,
+    });
+    if (!claim.claimed) {
+      console.log("[WeChat Confirm] Payment already processing/processed:", outTradeNo);
+      return NextResponse.json({
+        success: true,
+        status: "COMPLETED",
+        productType: "SUBSCRIPTION",
+        message: "Payment already processed",
+      });
+    }
+    claimed = true;
 
     // 创建订单记录
     const orderResult = await createOrder({
@@ -145,12 +203,13 @@ export async function POST(request: NextRequest) {
 
     await applySubscriptionPayment({
       userId,
-      providerOrderId: outTradeNo,
+      providerOrderId,
       provider: "wechat",
       period,
       days,
       planName,
     });
+    subscriptionApplied = true;
 
     // 埋点：记录支付和订阅事件
     trackPaymentEvent(userId, {
@@ -182,6 +241,7 @@ export async function POST(request: NextRequest) {
         .where({ provider: "wechat", providerOrderId: outTradeNo })
         .update(updatePayload);
     }
+    finalized = true;
 
     console.log("✅ [WeChat Confirm] Payment confirmed and processed:", outTradeNo);
 
@@ -192,6 +252,23 @@ export async function POST(request: NextRequest) {
       message: "Subscription activated successfully",
     });
   } catch (error) {
+    if (claimed && providerOrderId && !finalized) {
+      const rollbackStatus = subscriptionApplied ? "COMPLETED" : "PENDING";
+      try {
+        const connector = new CloudBaseConnector();
+        await connector.initialize();
+        const db = connector.getClient();
+        await db
+          .collection("payments")
+          .where({ provider: "wechat", providerOrderId })
+          .update({
+            status: rollbackStatus,
+            updatedAt: new Date().toISOString(),
+          });
+      } catch (rollbackError) {
+        console.warn("[WeChat Confirm] rollback status failed:", rollbackError);
+      }
+    }
     console.error("❌ [WeChat Confirm] Error:", error);
     return NextResponse.json(
       {

@@ -65,6 +65,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 预校验图标（避免先扣额度后失败）
+    if (icon && icon.size > 0) {
+      if (!isIconUploadEnabled()) {
+        return NextResponse.json(
+          { error: "Icon upload disabled", message: "Icon upload is currently disabled" },
+          { status: 400 }
+        );
+      }
+
+      const sizeValidation = validateImageSize(icon.size);
+      if (!sizeValidation.valid) {
+        return NextResponse.json(
+          { error: "Icon too large", message: `Icon size (${sizeValidation.fileSizeMB}MB) exceeds limit (${sizeValidation.maxSizeMB}MB)` },
+          { status: 400 }
+        );
+      }
+    }
+
     // 检查构建配额
     const quotaCheck = await checkDailyBuildQuota(user.id, 1);
     if (!quotaCheck.allowed) {
@@ -91,25 +109,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 验证图标（稍后上传）
+    // 读取图标数据，稍后上传
     let iconBuffer: Buffer | null = null;
     if (icon && icon.size > 0) {
-      if (!isIconUploadEnabled()) {
-        return NextResponse.json(
-          { error: "Icon upload disabled", message: "Icon upload is currently disabled" },
-          { status: 400 }
-        );
-      }
-
-      const sizeValidation = validateImageSize(icon.size);
-      if (!sizeValidation.valid) {
-        return NextResponse.json(
-          { error: "Icon too large", message: `Icon size (${sizeValidation.fileSizeMB}MB) exceeds limit (${sizeValidation.maxSizeMB}MB)` },
-          { status: 400 }
-        );
-      }
-
-      // 读取图标数据，稍后上传
       iconBuffer = Buffer.from(await icon.arrayBuffer());
     }
 

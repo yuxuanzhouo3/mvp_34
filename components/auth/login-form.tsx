@@ -12,6 +12,7 @@ import { Mail, Lock, Loader2, ArrowRight } from "lucide-react";
 import { trackLoginEventClient } from "@/services/analytics-client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PrivacyPolicy } from "@/components/legal/privacy-policy";
+import { getLoginErrorMessage } from "@/lib/auth/login-error";
 
 export function LoginForm() {
   const { currentLanguage } = useLanguage();
@@ -35,7 +36,11 @@ export function LoginForm() {
     const { error, userId } = await signIn(email, password);
 
     if (error) {
-      setError(error.message);
+      const friendlyMessage = getLoginErrorMessage({
+        isZh: currentLanguage === "zh",
+        message: error.message,
+      });
+      setError(friendlyMessage || error.message);
       setLoading(false);
     } else {
       // 登录成功埋点

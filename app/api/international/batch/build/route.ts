@@ -3,7 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
-import { deductBuildQuota, checkBuildQuota, getSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
+import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 
 // 导入各平台的构建处理器
@@ -88,8 +88,15 @@ export async function POST(request: NextRequest) {
     // 3. 并行执行：额度检查 + 获取用户钱包信息（优化响应速度）
     const [quotaCheck, wallet] = await Promise.all([
       checkBuildQuota(user.id, platformCount),
-      getSupabaseUserWallet(user.id),
+      getEffectiveSupabaseUserWallet(user.id),
     ]);
+
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Failed to load wallet" },
+        { status: 503 }
+      );
+    }
 
     if (!quotaCheck.allowed) {
       return NextResponse.json(

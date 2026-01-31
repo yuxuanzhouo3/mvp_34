@@ -14,8 +14,8 @@ import {
 } from "@/services/wallet-supabase";
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 import {
-  checkPaymentExists,
-  insertPaymentRecord,
+  queryPaymentRecord,
+  claimPaymentRecord,
   validatePaymentAmountCents,
 } from "@/lib/payment/payment-record-helper";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
@@ -79,6 +79,10 @@ function parseCustomId(customId?: string | null, description?: string | null): P
 }
 
 export async function POST(request: NextRequest) {
+  let claimed = false;
+  let subscriptionApplied = false;
+  let finalized = false;
+  let providerOrderId = "";
   try {
     const body = await request.json();
     const { orderId } = body as { orderId?: string };
@@ -89,6 +93,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    providerOrderId = orderId;
 
     // 获取风控信息（从请求头中）
     const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -99,32 +104,53 @@ export async function POST(request: NextRequest) {
       || request.headers.get("cf-ipcountry")
       || "";
 
-    // 幂等性检查：先检查是否已处理过此订单
-    if (supabaseAdmin) {
-      const existingPayment = await checkPaymentExists("paypal", orderId);
-      if (existingPayment) {
-        // 已处理过，返回当前订阅状态
-        const { data: currentWallet } = await supabaseAdmin
-          .from("user_wallets")
-          .select("plan, plan_exp")
-          .eq("provider_order_id", orderId)
-          .maybeSingle();
+    let paymentRecord = supabaseAdmin ? await queryPaymentRecord("paypal", providerOrderId) : null;
+    const paymentStatus = (paymentRecord?.status || "").toString().toUpperCase();
+    if (supabaseAdmin && (paymentStatus === "COMPLETED" || paymentStatus === "SUCCESS" || paymentStatus === "PAID")) {
+      const { data: currentWallet } = await supabaseAdmin
+        .from("user_wallets")
+        .select("plan, plan_exp")
+        .eq("provider_order_id", orderId)
+        .maybeSingle();
 
-        // 如果找不到对应钱包，尝试从 subscriptions 表获取
-        const { data: subscription } = await supabaseAdmin
-          .from("subscriptions")
-          .select("user_id, plan, period, expires_at")
-          .eq("provider_order_id", orderId)
-          .maybeSingle();
+      const { data: subscription } = await supabaseAdmin
+        .from("subscriptions")
+        .select("user_id, plan, period, expires_at")
+        .eq("provider_order_id", orderId)
+        .maybeSingle();
 
+      return NextResponse.json({
+        success: true,
+        status: "already_processed",
+        plan: subscription?.plan || currentWallet?.plan || "Pro",
+        period: subscription?.period || "monthly",
+        expiresAt: subscription?.expires_at || currentWallet?.plan_exp,
+      });
+    }
+    if (supabaseAdmin && paymentStatus === "PROCESSING") {
+      const { data: sub } = await supabaseAdmin
+        .from("subscriptions")
+        .select("id, status")
+        .eq("provider_order_id", orderId)
+        .maybeSingle();
+      if (sub) {
+        await supabaseAdmin
+          .from("payments")
+          .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
+          .eq("provider", "paypal")
+          .eq("provider_order_id", orderId);
         return NextResponse.json({
           success: true,
-          status: "already_processed",
-          plan: subscription?.plan || currentWallet?.plan || "Pro",
-          period: subscription?.period || "monthly",
-          expiresAt: subscription?.expires_at || currentWallet?.plan_exp,
+          status: "COMPLETED",
+          plan: sub?.plan || "Pro",
+          period: sub?.period || "monthly",
+          expiresAt: sub?.expires_at,
         });
       }
+      return NextResponse.json({
+        success: true,
+        status: "processing",
+      });
     }
 
     let result;
@@ -208,24 +234,29 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString();
     const today = getTodayString();
 
-    // 幂等性检查
-    const existingPayment = await checkPaymentExists("paypal", orderId);
-    if (existingPayment) {
-      // 已处理过，返回当前订阅状态
-      const { data: subscription } = await supabaseAdmin
-        .from("subscriptions")
-        .select("user_id, plan, period, expires_at")
-        .eq("provider_order_id", orderId)
-        .maybeSingle();
-
-      console.log(`[PayPal][SUBSCRIPTION] already processed, skipping: ${orderId}`);
-      return NextResponse.json({
-        success: true,
-        status: "already_processed",
-        plan: subscription?.plan || plan,
-        period: subscription?.period || period,
-        expiresAt: subscription?.expires_at,
+    if (paymentRecord) {
+      const claim = await claimPaymentRecord({
+        provider: "paypal",
+        providerOrderId,
+        record: paymentRecord,
       });
+      if (!claim.claimed) {
+        const { data: subscription } = await supabaseAdmin
+          .from("subscriptions")
+          .select("user_id, plan, period, expires_at")
+          .eq("provider_order_id", orderId)
+          .maybeSingle();
+
+        console.log(`[PayPal][SUBSCRIPTION] already processed, skipping: ${providerOrderId}`);
+        return NextResponse.json({
+          success: true,
+          status: "already_processed",
+          plan: subscription?.plan || plan,
+          period: subscription?.period || period,
+          expiresAt: subscription?.expires_at,
+        });
+      }
+      claimed = true;
     }
 
     // 获取用户当前钱包
@@ -251,7 +282,8 @@ export async function POST(request: NextRequest) {
 
     // 计算到期日期
     let purchaseExpiresAt: Date;
-    if (parsed.isUpgradeOrder && parsed.days && parsed.days > 0) {
+    const canApplyUpgradeDays = !!(parsed.isUpgradeOrder && isUpgrade && parsed.days && parsed.days > 0);
+    if (canApplyUpgradeDays) {
       purchaseExpiresAt = new Date(now.getTime() + parsed.days * 24 * 60 * 60 * 1000);
       console.log(`[PayPal Capture] upgrade with days: ${parsed.days}, expires: ${purchaseExpiresAt.toISOString()}`);
     } else {
@@ -260,25 +292,12 @@ export async function POST(request: NextRequest) {
       purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd, anchorDay);
     }
 
-    // 插入支付记录
-    await insertPaymentRecord({
-      userId,
-      provider: "paypal",
-      providerOrderId: orderId,
-      amount: amountValue,
-      currency,
-      status: status || "COMPLETED",
-      type: "SUBSCRIPTION",
-      plan,
-      period,
-    });
-
     // 获取用户邮箱
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || "";
 
     // 确定订单类型
-    const productType = parsed.isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
+    const productType = parsed.isUpgradeOrder ? "upgrade" : "subscription";
 
     // 创建订单记录（使用统一的订单服务）
     const orderResult = await createOrder({
@@ -399,8 +418,37 @@ export async function POST(request: NextRequest) {
     await seedSupabaseWalletForPlan(userId, plan.toLowerCase(), {
       forceReset: isUpgrade || isNewOrExpired,
     });
+    subscriptionApplied = true;
 
     console.log(`[PayPal][SUBSCRIPTION] processed for user ${userId}, plan: ${plan}, expires: ${purchaseExpiresAt.toISOString()}`);
+
+    if (paymentRecord) {
+      await supabaseAdmin
+        .from("payments")
+        .update({
+          status: "COMPLETED",
+          provider_transaction_id: capture?.id || null,
+          updated_at: nowIso,
+        })
+        .eq("provider", "paypal")
+        .eq("provider_order_id", providerOrderId);
+    } else {
+      await supabaseAdmin.from("payments").upsert({
+        user_id: userId,
+        provider: "paypal",
+        provider_order_id: providerOrderId,
+        amount: amountValue,
+        currency,
+        status: "COMPLETED",
+        type: "SUBSCRIPTION",
+        plan,
+        period,
+        provider_transaction_id: capture?.id || null,
+        source: "global",
+        updated_at: nowIso,
+      }, { onConflict: "provider,provider_order_id" });
+    }
+    finalized = true;
 
     // 支付和订阅埋点
     const subscriptionAction = isUpgrade ? "upgrade" : (isSameActive ? "renew" : "subscribe");
@@ -418,6 +466,14 @@ export async function POST(request: NextRequest) {
       raw: result,
     });
   } catch (err) {
+    if (claimed && !finalized && supabaseAdmin) {
+      const fallbackStatus = subscriptionApplied ? "COMPLETED" : "PENDING";
+      await supabaseAdmin
+        .from("payments")
+        .update({ status: fallbackStatus, updated_at: new Date().toISOString() })
+        .eq("provider", "paypal")
+        .eq("provider_order_id", providerOrderId);
+    }
     console.error("PayPal capture error:", err);
     return paypalErrorResponse(err);
   }

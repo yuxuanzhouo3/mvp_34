@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv } from "@/lib/supabase/env";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getEffectiveSupabaseUserWallet } from "@/services/wallet-supabase";
 import { getPlanShareExpireDays } from "@/utils/plan-limits";
 import { nanoid } from "nanoid";
 
@@ -64,13 +65,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取用户套餐信息
-    const { data: wallet } = await supabaseAdmin
-      .from("user_wallets")
-      .select("plan")
-      .eq("user_id", user.id)
-      .single();
-
-    const plan = wallet?.plan || "Free";
+    const wallet = await getEffectiveSupabaseUserWallet(user.id);
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Failed to load wallet" },
+        { status: 503 }
+      );
+    }
+    const plan = wallet.plan || "Free";
     const maxShareDays = getPlanShareExpireDays(plan);
 
     // Free 用户不支持分享

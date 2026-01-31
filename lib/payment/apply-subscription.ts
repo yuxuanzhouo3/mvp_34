@@ -46,6 +46,13 @@ function addCalendarMonths(baseDate: Date, months: number, anchorDay: number): D
 }
 
 /**
+ * 添加天数
+ */
+function addDays(baseDate: Date, days: number): Date {
+  return new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+/**
  * 获取北京时间的年月日
  */
 function getBeijingYMD(date: Date): { year: number; month: number; day: number } {
@@ -106,7 +113,10 @@ export async function applySubscriptionPayment(params: ApplySubscriptionParams):
   const monthsToAdd = period === "annual" ? 12 : 1;
   const anchorDay = isUpgrade || isNewOrExpired ? anchorDayNow : existingAnchorDay;
   const baseDate = isSameActive && currentPlanExp ? currentPlanExp : now;
-  const purchaseExpiresAt = addCalendarMonths(baseDate, monthsToAdd, anchorDay);
+  const upgradeTotalDays = Math.max(0, Math.floor(params.days || 0));
+  const purchaseExpiresAt = isUpgrade && upgradeTotalDays > 0
+    ? addDays(now, upgradeTotalDays)
+    : addCalendarMonths(baseDate, monthsToAdd, anchorDay);
 
   const subsColl = db.collection("subscriptions");
 
@@ -128,7 +138,12 @@ export async function applySubscriptionPayment(params: ApplySubscriptionParams):
     });
 
     // 更新用户的 pendingDowngrade
-    const pendingDowngrade = userDoc.pendingDowngrade || [];
+    const pendingDowngradeRaw = userDoc.pendingDowngrade;
+    const pendingDowngrade = Array.isArray(pendingDowngradeRaw)
+      ? pendingDowngradeRaw
+      : pendingDowngradeRaw
+        ? [pendingDowngradeRaw]
+        : [];
     pendingDowngrade.push({
       targetPlan: plan,
       effectiveAt: tempStart.toISOString(),

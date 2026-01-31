@@ -153,10 +153,14 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
     const byPlan: Record<string, number> = {};
     let subscriptionCount = 0;
 
-    allUsers.forEach((u: { plan?: string; wallet?: { plan?: string } }) => {
+    allUsers.forEach((u: { plan?: string; plan_exp?: string; wallet?: { plan?: string; plan_exp?: string } }) => {
       // 优先使用 u.plan，如果不存在则使用 u.wallet.plan
       const plan = u.plan || u.wallet?.plan;
-      if (plan && plan.toLowerCase() !== "free") {
+      const planExpIso = u.plan_exp || u.wallet?.plan_exp;
+      const planExp = planExpIso ? new Date(planExpIso) : null;
+      const planActive = planExp && !Number.isNaN(planExp.getTime()) && planExp > now;
+
+      if (plan && plan.toLowerCase() !== "free" && planActive) {
         subscriptionCount++;
         byPlan[plan] = (byPlan[plan] || 0) + 1;
       }
@@ -171,16 +175,27 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
       const ordersCollection = db.collection("orders");
 
       // 使用聚合查询获取统计数据
-      const [totalCount, pendingCount, failedCount, paidOrdersResult] = await Promise.all([
+      const [totalCount, pendingCount, failedCount, paidCount, todayCount, paidOrdersResult] = await Promise.all([
         ordersCollection.count(),
         ordersCollection.where({ payment_status: "pending" }).count(),
         ordersCollection.where({ payment_status: _.in(["failed", "cancelled"]) }).count(),
-        ordersCollection.where({ payment_status: "paid" }).field({ amount: true, paid_at: true, created_at: true }).get(),
+        ordersCollection.where({ payment_status: "paid" }).count(),
+        ordersCollection.where(_.or([
+          { created_at: _.gte(new Date(todayStartUtc).toISOString()) },
+          { createdAt: _.gte(new Date(todayStartUtc).toISOString()) },
+        ])).count(),
+        ordersCollection
+          .where({ payment_status: "paid" })
+          .field({ amount: true, paid_at: true, created_at: true })
+          .limit(10000)
+          .get(),
       ]);
 
       totalOrders = totalCount.total || 0;
       pendingOrders = pendingCount.total || 0;
       failedOrders = failedCount.total || 0;
+      paidOrders = paidCount.total || 0;
+      todayOrders = todayCount.total || 0;
 
       // 处理已支付订单的收入统计 - 使用UTC毫秒数进行比较
       const paidOrdersData = paidOrdersResult.data || [];
@@ -194,13 +209,10 @@ async function getCloudBaseStats(): Promise<DashboardStats | null> {
 
         if (paidAtUtc >= todayStartUtc) {
           todayRevenue += amount;
-          todayOrders++;
         }
         if (paidAtUtc >= weekAgoUtc) weekRevenue += amount;
         if (paidAtUtc >= monthAgoUtc) monthRevenue += amount;
       });
-
-      paidOrders = paidOrdersData.length;
     } catch {
       // orders 集合可能不存在，忽略错误
     }
@@ -371,12 +383,15 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
 
     // 使用北京时间计算起始日期
     const now = new Date();
-    const beijingOffset = 8 * 60;
-    const localOffset = now.getTimezoneOffset();
-    const offsetDiff = (beijingOffset + localOffset) * 60 * 1000;
-    const beijingNow = new Date(now.getTime() + offsetDiff);
-
-    const startDate = new Date(beijingNow.getTime() - days * 24 * 60 * 60 * 1000);
+    const beijingOffsetMs = 8 * 60 * 60 * 1000;
+    const beijingNow = new Date(now.getTime() + beijingOffsetMs);
+    const todayStartUtc = Date.UTC(
+      beijingNow.getUTCFullYear(),
+      beijingNow.getUTCMonth(),
+      beijingNow.getUTCDate(),
+      0, 0, 0, 0
+    ) - beijingOffsetMs;
+    const startDateUtc = todayStartUtc - (days - 1) * 24 * 60 * 60 * 1000;
 
     // 按日期聚合
     const dateMap = new Map<string, { amount: number; orderCount: number; payingUsers: Set<string> }>();
@@ -395,12 +410,14 @@ async function getCloudBaseDailyRevenue(days: number): Promise<RevenueStats[]> {
         const dateStr = o.paid_at || o.created_at;
         if (!dateStr) return;
 
-        const orderDate = new Date(dateStr);
-        if (orderDate < startDate) return;
+        const orderTimeUtc = new Date(dateStr).getTime();
+        if (orderTimeUtc < startDateUtc) return;
 
-        // 转换为北京时间
-        const beijingDate = new Date(orderDate.getTime() + offsetDiff);
-        const date = `${beijingDate.getFullYear()}-${String(beijingDate.getMonth() + 1).padStart(2, '0')}-${String(beijingDate.getDate()).padStart(2, '0')}`;
+        // 计算该订单属于哪一天（北京时间）
+        const daysSinceStart = Math.floor((orderTimeUtc - startDateUtc) / (24 * 60 * 60 * 1000));
+        const dayStartUtc = startDateUtc + daysSinceStart * 24 * 60 * 60 * 1000;
+        const beijingDate = new Date(dayStartUtc + beijingOffsetMs);
+        const date = `${beijingDate.getUTCFullYear()}-${String(beijingDate.getUTCMonth() + 1).padStart(2, '0')}-${String(beijingDate.getUTCDate()).padStart(2, '0')}`;
 
         if (!dateMap.has(date)) {
           dateMap.set(date, { amount: 0, orderCount: 0, payingUsers: new Set() });
@@ -448,6 +465,40 @@ async function getSupabaseStats(source: "all" | "global"): Promise<DashboardStat
       return null;
     }
 
+    // 订阅统计（前置过滤过期）
+    let subscriptionTotal = data?.subscriptions?.total || 0;
+    let subscriptionByPlan = data?.subscriptions?.by_plan || {};
+
+    try {
+      const now = new Date();
+      let query = supabaseAdmin
+        .from("user_wallets")
+        .select("plan, plan_exp, source");
+
+      if (source !== "all") {
+        query = query.eq("source", source);
+      }
+
+      const { data: wallets } = await query;
+      if (wallets) {
+        const activeWallets = wallets.filter((w: { plan?: string; plan_exp?: string | null }) => {
+          const planLower = (w.plan || "").toLowerCase();
+          if (planLower === "free") return false;
+          const exp = w.plan_exp ? new Date(w.plan_exp) : null;
+          return exp && !Number.isNaN(exp.getTime()) && exp > now;
+        });
+
+        subscriptionTotal = activeWallets.length;
+        subscriptionByPlan = {};
+        activeWallets.forEach((w: { plan?: string }) => {
+          const plan = w.plan || "Free";
+          subscriptionByPlan[plan] = (subscriptionByPlan[plan] || 0) + 1;
+        });
+      }
+    } catch (e) {
+      console.warn("[getSupabaseStats] subscription filter failed:", e);
+    }
+
     return {
       users: {
         total: data?.users?.total || 0,
@@ -466,8 +517,8 @@ async function getSupabaseStats(source: "all" | "global"): Promise<DashboardStat
       },
       revenueCny: { total: 0, today: 0, thisWeek: 0, thisMonth: 0 },  // Supabase 不使用 CNY
       subscriptions: {
-        total: data?.subscriptions?.total || 0,
-        byPlan: data?.subscriptions?.by_plan || {},
+        total: subscriptionTotal,
+        byPlan: subscriptionByPlan,
       },
       orders: {
         total: data?.orders?.total || 0,

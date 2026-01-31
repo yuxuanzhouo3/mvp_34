@@ -11,7 +11,7 @@ import {
 } from "@/services/wallet-supabase";
 import { PLAN_RANK, normalizePlanName } from "@/utils/plan-utils";
 import { getPlanDailyLimit, getPlanBuildExpireDays, getPlanSupportBatchBuild } from "@/utils/plan-limits";
-import { checkPaymentExists, insertPaymentRecord } from "@/lib/payment/payment-record-helper";
+import { queryPaymentRecord, claimPaymentRecord } from "@/lib/payment/payment-record-helper";
 import { trackPaymentAndSubscription } from "@/lib/payment/analytics-helper";
 import { createOrder, markOrderPaid } from "@/services/orders";
 
@@ -20,6 +20,10 @@ import { createOrder, markOrderPaid } from "@/services/orders";
  * 确认 Stripe 支付状态并更新订阅（用于本地开发环境，Webhook 无法访问 localhost）
  */
 export async function POST(request: NextRequest) {
+  let claimed = false;
+  let subscriptionApplied = false;
+  let finalized = false;
+  let providerOrderId = "";
   try {
     const body = await request.json();
     const { sessionId } = body as { sessionId?: string };
@@ -73,11 +77,10 @@ export async function POST(request: NextRequest) {
     const nowIso = now.toISOString();
     const today = getTodayString();
 
-    // 幂等性检查
-    const existingPayment = await checkPaymentExists("stripe", sessionId);
-
-    if (existingPayment) {
-      // 已处理过，返回当前订阅状态
+    providerOrderId = sessionId;
+    const paymentRecord = await queryPaymentRecord("stripe", providerOrderId);
+    const paymentStatus = (paymentRecord?.status || "").toString().toUpperCase();
+    if (paymentStatus === "COMPLETED" || paymentStatus === "SUCCESS" || paymentStatus === "PAID") {
       const { data: currentWallet } = await supabaseAdmin
         .from("user_wallets")
         .select("plan, plan_exp")
@@ -90,6 +93,32 @@ export async function POST(request: NextRequest) {
         plan: currentWallet?.plan || plan,
         period,
         expiresAt: currentWallet?.plan_exp,
+      });
+    }
+    if (paymentStatus === "PROCESSING") {
+      const { data: sub } = await supabaseAdmin
+        .from("subscriptions")
+        .select("id, status")
+        .eq("provider_order_id", providerOrderId)
+        .maybeSingle();
+      if (sub) {
+        await supabaseAdmin
+          .from("payments")
+          .update({ status: "COMPLETED", updated_at: new Date().toISOString() })
+          .eq("provider", "stripe")
+          .eq("provider_order_id", providerOrderId);
+        return NextResponse.json({
+          success: true,
+          status: "COMPLETED",
+          plan,
+          period,
+        });
+      }
+      return NextResponse.json({
+        success: true,
+        status: "processing",
+        plan,
+        period,
       });
     }
 
@@ -116,7 +145,8 @@ export async function POST(request: NextRequest) {
 
     // 计算到期日期
     let purchaseExpiresAt: Date;
-    if (isUpgradeOrder && metaDays > 0) {
+    const canApplyUpgradeDays = isUpgradeOrder && isUpgrade && metaDays > 0;
+    if (canApplyUpgradeDays) {
       purchaseExpiresAt = new Date(now.getTime() + metaDays * 24 * 60 * 60 * 1000);
     } else {
       const baseDate = isSameActive && currentPlanExp ? currentPlanExp : now;
@@ -127,24 +157,29 @@ export async function POST(request: NextRequest) {
     const amount = (session.amount_total || 0) / 100;
     const currency = session.currency?.toUpperCase() || "USD";
 
-    // 插入支付记录
-    await insertPaymentRecord({
-      userId,
-      provider: "stripe",
-      providerOrderId: sessionId,
-      amount,
-      currency,
-      type: "SUBSCRIPTION",
-      plan,
-      period,
-    });
+    if (paymentRecord) {
+      const claim = await claimPaymentRecord({
+        provider: "stripe",
+        providerOrderId,
+        record: paymentRecord,
+      });
+      if (!claim.claimed) {
+        return NextResponse.json({
+          success: true,
+          status: "already_processed",
+          plan,
+          period,
+        });
+      }
+      claimed = true;
+    }
 
     // 获取用户邮箱
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || "";
 
     // 确定订单类型
-    const productType = isUpgradeOrder ? "upgrade" : (isSameActive ? "renewal" : "subscription");
+    const productType = isUpgradeOrder ? "upgrade" : "subscription";
 
     // 创建订单记录（使用统一的订单服务）
     const orderResult = await createOrder({
@@ -269,8 +304,41 @@ export async function POST(request: NextRequest) {
     await seedSupabaseWalletForPlan(userId, plan.toLowerCase(), {
       forceReset: isUpgrade || isNewOrExpired,
     });
+    subscriptionApplied = true;
 
     console.log(`[Stripe Confirm] Subscription updated for user ${userId}, plan: ${plan}, expires: ${purchaseExpiresAt.toISOString()}`);
+
+    const paymentIntentId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : (session.payment_intent?.id || null);
+
+    if (paymentRecord) {
+      await supabaseAdmin
+        .from("payments")
+        .update({
+          status: "COMPLETED",
+          provider_transaction_id: paymentIntentId,
+          updated_at: nowIso,
+        })
+        .eq("provider", "stripe")
+        .eq("provider_order_id", sessionId);
+    } else {
+      await supabaseAdmin.from("payments").upsert({
+        user_id: userId,
+        provider: "stripe",
+        provider_order_id: sessionId,
+        amount,
+        currency,
+        status: "COMPLETED",
+        type: "SUBSCRIPTION",
+        plan,
+        period,
+        provider_transaction_id: paymentIntentId,
+        source: "global",
+        updated_at: nowIso,
+      }, { onConflict: "provider,provider_order_id" });
+    }
+    finalized = true;
 
     // 支付和订阅埋点
     const subscriptionAction = isUpgrade ? "upgrade" : (isSameActive ? "renew" : "subscribe");
@@ -289,6 +357,14 @@ export async function POST(request: NextRequest) {
       currency,
     });
   } catch (err) {
+    if (claimed && !finalized && supabaseAdmin) {
+      const fallbackStatus = subscriptionApplied ? "COMPLETED" : "PENDING";
+      await supabaseAdmin
+        .from("payments")
+        .update({ status: fallbackStatus, updated_at: new Date().toISOString() })
+        .eq("provider", "stripe")
+        .eq("provider_order_id", providerOrderId);
+    }
     console.error("Stripe confirm error:", err);
     return stripeErrorResponse(err);
   }

@@ -217,6 +217,34 @@ export class CloudBaseAuthService {
 
       const userId = user._id;
       user = await this.applyPendingDowngradeIfNeeded(userId, user);
+
+      // 订阅到期处理：到期后自动降级为 Free
+      const planExpIso = user.plan_exp || user.planExp;
+      if (planExpIso) {
+        const planExp = new Date(planExpIso);
+        const now = new Date();
+        const currentPlanLower = (user.plan || user.subscriptionTier || "").toLowerCase();
+
+        if (!Number.isNaN(planExp.getTime()) && planExp <= now && currentPlanLower !== "free") {
+          const nowIso = now.toISOString();
+          const updatePayload: Record<string, any> = {
+            plan: "free",
+            subscriptionTier: "free",
+            pro: false,
+            plan_exp: null,
+            pendingDowngrade: null,
+            updatedAt: nowIso,
+          };
+
+          await this.db.collection("users").doc(userId).update(updatePayload);
+          await seedWalletForPlan(userId, "free", { forceReset: true, expired: true });
+
+          const refreshed = await this.db.collection("users").doc(userId).get();
+          const refreshedDoc = refreshed?.data?.[0] as CloudBaseUser | undefined;
+          user = refreshedDoc || ({ ...user, ...updatePayload } as CloudBaseUser);
+        }
+      }
+
       return this.mapUser(userId, user);
     } catch (error) {
       console.error("[cloudbase] validate token error", error);
@@ -415,7 +443,10 @@ export class CloudBaseAuthService {
         plan: firstPending.targetPlan,
         subscriptionTier: firstPending.targetPlan,
         plan_exp: nextExpire ? nextExpire.toISOString() : null,
-        pro: (firstPending.targetPlan || "").toLowerCase() !== "basic",
+        pro: (() => {
+          const planLower = (firstPending.targetPlan || "").toLowerCase();
+          return planLower !== "free" && planLower !== "basic";
+        })(),
         pendingDowngrade: remainingQueue.length > 0 ? remainingQueue : null,
         updatedAt: now.toISOString(),
       };

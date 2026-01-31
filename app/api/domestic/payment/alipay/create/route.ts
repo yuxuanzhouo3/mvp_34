@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       baseAmount,
     });
     amount = upgradeResult.amount;
-    days = upgradeResult.days;
+    days = upgradeResult.totalDays || upgradeResult.days;
 
     if (upgradeResult.isUpgrade) {
       console.log("📝 [Alipay Create] Upgrade calculation:", {
@@ -106,7 +106,9 @@ export async function POST(request: NextRequest) {
         remainingDays: upgradeResult.remainingDays,
         remainingValue: upgradeResult.remainingValue,
         upgradeAmount: amount,
-        newPlanDays: days,
+        upgradeDays: upgradeResult.upgradeDays,
+        purchaseDays: upgradeResult.purchaseDays,
+        totalDays: days,
       });
     }
 
