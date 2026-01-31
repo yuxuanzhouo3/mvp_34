@@ -38,7 +38,8 @@ interface PlatformConfig {
   version?: string;
   bundleName?: string;
   description?: string;
-  iconBase64?: string;
+  iconUrl?: string; // 图标 URL（优先使用，避免 Vercel 4.5MB 限制）
+  iconBase64?: string; // 图标 base64（向后兼容）
   iconType?: string;
 }
 
@@ -226,61 +227,111 @@ async function processBuildsAsync(
   await connector.initialize();
   const db = connector.getClient();
 
-  for (let i = 0; i < buildIds.length; i++) {
-    const buildId = buildIds[i];
-    const config = platforms[i];
-    let iconPath: string | null = null;
+  // 并行处理所有构建任务（大幅提升速度）
+  // 使用 Promise.allSettled 确保单个构建失败不影响其他构建
+  await Promise.allSettled(
+    buildIds.map(async (buildId, i) => {
+      const config = platforms[i];
+      let iconPath: string | null = null;
 
-    try {
-      // 更新状态为处理中
-      await db.collection("builds").doc(buildId).update({
-        status: "processing",
-        updated_at: new Date().toISOString(),
-      });
+      try {
+        // 更新状态为处理中
+        await db.collection("builds").doc(buildId).update({
+          status: "processing",
+          updated_at: new Date().toISOString(),
+        });
 
-      // 上传图标（如果有）
-      if (config.iconBase64 && isIconUploadEnabled()) {
-        try {
-          const iconBuffer = Buffer.from(config.iconBase64, "base64");
-          const sizeValidation = validateImageSize(iconBuffer.length);
+        // 上传图标（支持 URL 或 base64）
+        if (isIconUploadEnabled()) {
+          let iconBuffer: Buffer | null = null;
 
-          if (sizeValidation.valid) {
-            const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
-            const storage = getCloudBaseStorage();
-            iconPath = `user-builds/builds/${buildId}/icon.png`;
-            console.log(`[Domestic Batch Build] Uploading icon for build ${buildId} to ${iconPath}`);
+          // 优先使用 iconUrl（避免 Vercel 4.5MB 限制）
+          if (config.iconUrl) {
+            // 重试机制：最多尝试3次，超时时间递增
+            const maxRetries = 3;
+            const timeouts = [30000, 45000, 60000]; // 30s, 45s, 60s
 
-            await storage.uploadFile(iconPath, iconBuffer);
-            console.log(`[Domestic Batch Build] Icon uploaded successfully for build ${buildId}`);
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+              try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeouts[attempt]);
 
-            // 更新构建记录的 icon_path
-            await db.collection("builds").doc(buildId).update({
-              icon_path: iconPath,
-              updated_at: new Date().toISOString(),
-            });
-            console.log(`[Domestic Batch Build] Build record updated with icon_path for build ${buildId}`);
-          } else {
-            console.log(`[Domestic Batch Build] Icon size validation failed for build ${buildId}: ${sizeValidation.fileSizeMB}MB exceeds ${sizeValidation.maxSizeMB}MB`);
+                try {
+                  console.log(`[Domestic Batch] Fetching icon (attempt ${attempt + 1}/${maxRetries}, timeout: ${timeouts[attempt]}ms): ${config.iconUrl}`);
+                  const iconResponse = await fetch(config.iconUrl, {
+                    signal: controller.signal,
+                  });
+
+                  if (iconResponse.ok) {
+                    const arrayBuffer = await iconResponse.arrayBuffer();
+                    iconBuffer = Buffer.from(arrayBuffer);
+                    console.log(`[Domestic Batch] Icon fetched successfully (${iconBuffer.length} bytes)`);
+                    break; // 成功，退出重试循环
+                  }
+                } finally {
+                  clearTimeout(timeoutId);
+                }
+              } catch (err) {
+                const isLastAttempt = attempt === maxRetries - 1;
+                if (isLastAttempt) {
+                  console.error(`[Domestic Batch] Failed to fetch icon after ${maxRetries} attempts: ${config.iconUrl}`, err);
+                } else {
+                  console.warn(`[Domestic Batch] Icon fetch attempt ${attempt + 1} failed, retrying...`, err);
+                  // 等待1秒后重试
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
+            }
           }
-        } catch (error) {
-          console.error(`[Domestic Batch Build] Icon upload error for build ${buildId}:`, error);
-          // 图标上传失败不影响构建继续
-        }
-      }
+          // 向后兼容：支持 base64
+          else if (config.iconBase64) {
+            iconBuffer = Buffer.from(config.iconBase64, "base64");
+          }
 
-      // 启动对应平台的构建
-      await startPlatformBuild(buildId, config.platform, url, config, iconPath);
-    } catch (error) {
-      console.error(`[Domestic Batch] Build error for ${buildId}:`, error);
-      // 构建失败时退还该平台的额度
-      await refundDailyBuildQuota(userId, 1);
-      await db.collection("builds").doc(buildId).update({
-        status: "failed",
-        error_message: error instanceof Error ? error.message : "Build failed",
-        updated_at: new Date().toISOString(),
-      });
-    }
-  }
+          // 上传图标到 CloudBase Storage
+          if (iconBuffer) {
+            try {
+              const sizeValidation = validateImageSize(iconBuffer.length);
+
+              if (sizeValidation.valid) {
+                const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
+                const storage = getCloudBaseStorage();
+                iconPath = `user-builds/builds/${buildId}/icon.png`;
+                console.log(`[Domestic Batch Build] Uploading icon for build ${buildId} to ${iconPath}`);
+
+                await storage.uploadFile(iconPath, iconBuffer);
+                console.log(`[Domestic Batch Build] Icon uploaded successfully for build ${buildId}`);
+
+                // 更新构建记录的 icon_path
+                await db.collection("builds").doc(buildId).update({
+                  icon_path: iconPath,
+                  updated_at: new Date().toISOString(),
+                });
+                console.log(`[Domestic Batch Build] Build record updated with icon_path for build ${buildId}`);
+              } else {
+                console.log(`[Domestic Batch Build] Icon size validation failed for build ${buildId}: ${sizeValidation.fileSizeMB}MB exceeds ${sizeValidation.maxSizeMB}MB`);
+              }
+            } catch (error) {
+              console.error(`[Domestic Batch Build] Icon upload error for build ${buildId}:`, error);
+              // 图标上传失败不影响构建继续
+            }
+          }
+        }
+
+        // 启动对应平台的构建（并行执行）
+        await startPlatformBuild(buildId, config.platform, url, config, iconPath);
+      } catch (error) {
+        console.error(`[Domestic Batch] Build error for ${buildId}:`, error);
+        // 构建失败时退还该平台的额度
+        await refundDailyBuildQuota(userId, 1);
+        await db.collection("builds").doc(buildId).update({
+          status: "failed",
+          error_message: error instanceof Error ? error.message : "Build failed",
+          updated_at: new Date().toISOString(),
+        });
+      }
+    })
+  );
 }
 
 async function startPlatformBuild(

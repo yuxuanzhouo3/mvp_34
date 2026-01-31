@@ -55,12 +55,13 @@ function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop
   return "desktop"; // windows, macos, linux, etc.
 }
 
-// Build icon component - simple platform icon display
-function BuildIcon({ build, getPlatformIcon }: {
+// Build icon component - optimized with caching and lazy loading
+function BuildIcon({ build, getPlatformIcon, priority = false }: {
   build: { platform: string; app_name: string; icon_url: string | null };
   getPlatformIcon: (platform: string) => React.ReactNode;
+  priority?: boolean;
 }) {
-  // If has uploaded icon, use it
+  // If has uploaded icon, use it with optimization
   if (build.icon_url) {
     return (
       <Image
@@ -68,7 +69,8 @@ function BuildIcon({ build, getPlatformIcon }: {
         alt={build.app_name}
         fill
         className="object-cover"
-        unoptimized
+        loading={priority ? "eager" : "lazy"}
+        sizes="48px"
       />
     );
   }
@@ -789,7 +791,11 @@ export default function BuildsClient() {
                     />
                     {/* App Icon or Platform Icon */}
                     <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl overflow-hidden shrink-0 relative">
-                      <BuildIcon build={build} getPlatformIcon={getPlatformIcon} />
+                      <BuildIcon
+                        build={build}
+                        getPlatformIcon={getPlatformIcon}
+                        priority={currentPage === 1 && paginatedBuilds.indexOf(build) < 3}
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       {/* Title Row */}

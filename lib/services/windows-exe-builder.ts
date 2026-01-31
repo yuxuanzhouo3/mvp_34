@@ -62,37 +62,26 @@ export async function processWindowsExeBuild(
 
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("configuring"));
 
-    // Step 4: Modify EXE resources (icon and metadata)
+    // Step 4: Modify EXE resources (icon, metadata, and config)
     console.log("[Windows Build] Modifying resources...");
     await modifyExeResources(supabase, exePath, config);
 
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
 
-    // Step 5: Write app-config.json
-    console.log("[Windows Build] Writing config...");
-    const configPath = path.join(tempDir, "app-config.json");
-    const appConfig = { url: config.url, title: config.appName };
-    fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
-
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("packaging"));
 
-    // Step 6: Package as ZIP (EXE + config)
-    console.log("[Windows Build] Creating ZIP archive...");
-    const AdmZip = (await import("adm-zip")).default;
-    const zip = new AdmZip();
-    zip.addLocalFile(exePath);
-    zip.addLocalFile(configPath);
-    const outputBuffer = zip.toBuffer();
+    // Step 5: Read modified EXE
+    const outputBuffer = fs.readFileSync(exePath);
 
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
-    // Step 7: Upload result
+    // Step 6: Upload result (single EXE file)
     console.log("[Windows Build] Uploading result...");
-    const outputPath = `builds/${buildId}/${safeAppName}.zip`;
+    const outputPath = `builds/${buildId}/${safeAppName}.exe`;
     const { error: uploadError } = await supabase.storage
       .from("user-builds")
       .upload(outputPath, outputBuffer, {
-        contentType: "application/zip",
+        contentType: "application/x-msdownload",
         upsert: true,
       });
 
@@ -181,53 +170,70 @@ async function modifyExeResources(
   exePath: string,
   config: WindowsBuildConfig
 ): Promise<void> {
-  try {
-    const ResEdit = await import("resedit");
-    const exeData = fs.readFileSync(exePath);
-    const exe = ResEdit.NtExecutable.from(exeData);
-    const res = ResEdit.NtExecutableResource.from(exe);
+  const ResEdit = await import("resedit");
+  const exeData = fs.readFileSync(exePath);
+  const exe = ResEdit.NtExecutable.from(exeData);
+  const res = ResEdit.NtExecutableResource.from(exe);
 
-    const viList = ResEdit.Resource.VersionInfo.fromEntries(res.entries);
-    if (viList.length > 0) {
-      const vi = viList[0];
-      vi.setStringValues(
-        { lang: 0x0409, codepage: 1200 },
-        {
-          ProductName: config.appName,
-          FileDescription: config.appName,
-          CompanyName: "",
-          LegalCopyright: "",
-          InternalName: config.appName,
-          OriginalFilename: `${config.appName}.exe`,
-        }
-      );
-      vi.outputToResourceEntries(res.entries);
-    }
-
-    if (config.iconPath) {
-      try {
-        const { data: iconData } = await supabase.storage
-          .from("user-builds")
-          .download(config.iconPath);
-
-        if (iconData) {
-          const iconBuffer = Buffer.from(await iconData.arrayBuffer());
-          const icoBuffer = await generateIco(iconBuffer);
-          const iconFile = ResEdit.Data.IconFile.from(icoBuffer);
-          ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
-            res.entries, 1, 0x0409, iconFile.icons.map((icon) => icon.data)
-          );
-        }
-      } catch (iconError) {
-        console.warn("[Windows Build] Icon replacement failed:", iconError);
+  // Modify version info
+  const viList = ResEdit.Resource.VersionInfo.fromEntries(res.entries);
+  if (viList.length > 0) {
+    const vi = viList[0];
+    vi.setStringValues(
+      { lang: 0x0409, codepage: 1200 },
+      {
+        ProductName: config.appName,
+        FileDescription: config.appName,
+        CompanyName: "",
+        LegalCopyright: "",
+        InternalName: config.appName,
+        OriginalFilename: `${config.appName}.exe`,
       }
-    }
-
-    res.outputResource(exe);
-    fs.writeFileSync(exePath, Buffer.from(exe.generate()));
-  } catch (error) {
-    console.warn("[Windows Build] Resource modification failed:", error);
+    );
+    vi.outputToResourceEntries(res.entries);
   }
+
+  // Replace icon if provided
+  if (config.iconPath) {
+    try {
+      const { data: iconData } = await supabase.storage
+        .from("user-builds")
+        .download(config.iconPath);
+
+      if (iconData) {
+        const iconBuffer = Buffer.from(await iconData.arrayBuffer());
+        const icoBuffer = await generateIco(iconBuffer);
+        const iconFile = ResEdit.Data.IconFile.from(icoBuffer);
+        ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
+          res.entries, 1, 0x0409, iconFile.icons.map((icon) => icon.data)
+        );
+        console.log("[Windows Build] Icon replaced successfully");
+      }
+    } catch (iconError) {
+      console.warn("[Windows Build] Icon replacement failed:", iconError);
+      // Icon failure is not critical, continue without icon
+    }
+  }
+
+  // Embed app config into APPCONFIG resource
+  const appConfig = { url: config.url, title: config.appName };
+  const configJson = JSON.stringify(appConfig);
+  const configBuffer = Buffer.from(configJson, "utf-8");
+
+  // Create APPCONFIG resource (Type: "APPCONFIG", ID: 1, Lang: 0x0409)
+  // Must use string type "APPCONFIG" to match Tauri's FindResourceW call
+  res.entries.push({
+    type: "APPCONFIG",
+    id: 1,
+    lang: 0x0409,
+    bin: configBuffer,
+  });
+  console.log("[Windows Build] Embedded config into APPCONFIG resource");
+
+  res.outputResource(exe);
+  const generatedBuffer = Buffer.from(exe.generate());
+  fs.writeFileSync(exePath, generatedBuffer);
+  console.log("[Windows Build] EXE resources modified successfully");
 }
 
 async function generateIco(pngBuffer: Buffer): Promise<Buffer> {

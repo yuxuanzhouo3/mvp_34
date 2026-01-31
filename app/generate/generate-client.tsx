@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Rocket, Sparkles, ArrowRight, Loader2, UserX, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { IS_DOMESTIC_VERSION } from "@/config";
+import { uploadIconsBatch } from "@/lib/upload/icon-upload";
 
 function GenerateContent() {
   const { t, currentLanguage } = useLanguage();
@@ -471,58 +472,68 @@ function GenerateContent() {
         version?: string;
         bundleName?: string;
         description?: string;
-        iconBase64?: string;
+        iconUrl?: string; // 图标 URL（替代 base64）
+        iconBase64?: string; // 保留向后兼容
         iconType?: string;
       };
       const platforms: PlatformConfig[] = [];
 
-      // 辅助函数：将 File 转换为 base64
-      const fileToBase64 = async (file: File | null): Promise<{ base64: string; type: string } | null> => {
-        if (!file) return null;
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            const base64 = result.split(",")[1];
-            resolve({ base64, type: file.type });
-          };
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(file);
-        });
-      };
+      // 收集需要上传的图标
+      const iconsToUpload: Array<{ file: File; platform: string }> = [];
+      if (hasAndroid && appIcon) iconsToUpload.push({ file: appIcon, platform: "android" });
+      if (hasIOS && iosIcon) iconsToUpload.push({ file: iosIcon, platform: "ios" });
+      if (hasHarmonyOS && harmonyIcon) iconsToUpload.push({ file: harmonyIcon, platform: "harmonyos" });
+      if (hasChrome && chromeExtensionIcon) iconsToUpload.push({ file: chromeExtensionIcon, platform: "chrome" });
+      if (hasWindows && windowsIcon) iconsToUpload.push({ file: windowsIcon, platform: "windows" });
+      if (hasMacos && macosIcon) iconsToUpload.push({ file: macosIcon, platform: "macos" });
+      if (hasLinux && linuxIcon) iconsToUpload.push({ file: linuxIcon, platform: "linux" });
 
-      // 并行转换所有图标（优化响应速度）
-      const [
-        androidIconData,
-        iosIconData,
-        harmonyIconData,
-        chromeIconData,
-        windowsIconData,
-        macosIconData,
-        linuxIconData,
-      ] = await Promise.all([
-        hasAndroid ? fileToBase64(appIcon) : null,
-        hasIOS ? fileToBase64(iosIcon) : null,
-        hasHarmonyOS ? fileToBase64(harmonyIcon) : null,
-        hasChrome ? fileToBase64(chromeExtensionIcon) : null,
-        hasWindows ? fileToBase64(windowsIcon) : null,
-        hasMacos ? fileToBase64(macosIcon) : null,
-        hasLinux ? fileToBase64(linuxIcon) : null,
-      ]);
+      // 批量上传图标到 Supabase Storage（避免 Vercel 4.5MB 请求体限制）
+      let iconUrls: Record<string, string> = {};
+      if (iconsToUpload.length > 0 && user?.id) {
+        try {
+          const uploadResults = await uploadIconsBatch(iconsToUpload, user.id);
+
+          // 检查上传失败（仅警告，不中断构建流程）
+          const failedUploads = uploadResults.filter(r => !r.success);
+          if (failedUploads.length > 0) {
+            console.warn("部分图标上传失败:", failedUploads);
+            toast.warning(
+              currentLanguage === "zh"
+                ? `部分图标上传失败: ${failedUploads.map(f => f.platform).join(", ")}，将继续构建`
+                : `Some icons failed to upload: ${failedUploads.map(f => f.platform).join(", ")}, continuing build`
+            );
+          }
+
+          // 构建 URL 映射（仅包含成功上传的图标）
+          uploadResults.forEach(r => {
+            if (r.success && r.url) {
+              iconUrls[r.platform] = r.url;
+            }
+          });
+        } catch (uploadError) {
+          console.error("图标上传异常:", uploadError);
+          toast.warning(
+            currentLanguage === "zh"
+              ? "图标上传服务异常，将继续构建（不使用图标）"
+              : "Icon upload service error, continuing build without icons"
+          );
+        }
+      }
 
       // 构建各平台配置
       if (hasAndroid) {
         platforms.push({
           platform: "android", appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
-          ...(androidIconData && { iconBase64: androidIconData.base64, iconType: androidIconData.type }),
+          ...(iconUrls.android && { iconUrl: iconUrls.android }),
         });
       }
       if (hasIOS) {
         platforms.push({
           platform: "ios", appName, bundleId,
           versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
-          ...(iosIconData && { iconBase64: iosIconData.base64, iconType: iosIconData.type }),
+          ...(iconUrls.ios && { iconUrl: iconUrls.ios }),
         });
       }
       if (hasWechat) {
@@ -532,32 +543,32 @@ function GenerateContent() {
         platforms.push({
           platform: "harmonyos", appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
-          ...(harmonyIconData && { iconBase64: harmonyIconData.base64, iconType: harmonyIconData.type }),
+          ...(iconUrls.harmonyos && { iconUrl: iconUrls.harmonyos }),
         });
       }
       if (hasChrome) {
         platforms.push({
           platform: "chrome", appName: chromeExtensionName,
           versionName: chromeExtensionVersion, description: chromeExtensionDescription,
-          ...(chromeIconData && { iconBase64: chromeIconData.base64, iconType: chromeIconData.type }),
+          ...(iconUrls.chrome && { iconUrl: iconUrls.chrome }),
         });
       }
       if (hasWindows) {
         platforms.push({
           platform: "windows", appName: windowsAppName,
-          ...(windowsIconData && { iconBase64: windowsIconData.base64, iconType: windowsIconData.type }),
+          ...(iconUrls.windows && { iconUrl: iconUrls.windows }),
         });
       }
       if (hasMacos) {
         platforms.push({
           platform: "macos", appName: macosAppName,
-          ...(macosIconData && { iconBase64: macosIconData.base64, iconType: macosIconData.type }),
+          ...(iconUrls.macos && { iconUrl: iconUrls.macos }),
         });
       }
       if (hasLinux) {
         platforms.push({
           platform: "linux", appName: linuxAppName,
-          ...(linuxIconData && { iconBase64: linuxIconData.base64, iconType: linuxIconData.type }),
+          ...(iconUrls.linux && { iconUrl: iconUrls.linux }),
         });
       }
 

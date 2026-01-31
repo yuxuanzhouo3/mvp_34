@@ -38,8 +38,9 @@ interface PlatformConfig {
   bundleName?: string;
   // Chrome
   description?: string;
-  // 图标（base64 或路径）
-  iconBase64?: string;
+  // 图标（支持 URL 或 base64）
+  iconUrl?: string; // 图标 URL（优先使用，避免 Vercel 4.5MB 限制）
+  iconBase64?: string; // 图标 base64（向后兼容）
   iconType?: string;
 }
 
@@ -202,7 +203,7 @@ function getPackageName(config: PlatformConfig): string {
   }
 }
 
-// 后台异步处理构建任务
+// 后台异步处理构建任务（并行优化）
 async function processBuildsInBackground(
   serviceClient: ReturnType<typeof createServiceClient>,
   userId: string,
@@ -210,59 +211,111 @@ async function processBuildsInBackground(
   platforms: PlatformConfig[],
   builds: Array<{ id: string; platform: string }>
 ) {
-  // 按顺序处理构建任务
-  for (let i = 0; i < builds.length; i++) {
-    const build = builds[i];
-    const config = platforms[i];
-    let iconPath: string | null = null;
+  // 并行处理所有构建任务（大幅提升速度）
+  // 使用 Promise.allSettled 确保单个构建失败不影响其他构建
+  await Promise.allSettled(
+    builds.map(async (build, i) => {
+      const config = platforms[i];
+      let iconPath: string | null = null;
 
-    try {
-      // 更新状态为处理中
-      await serviceClient
-        .from("builds")
-        .update({ status: "processing", updated_at: new Date().toISOString() })
-        .eq("id", build.id);
+      try {
+        // 更新状态为处理中
+        await serviceClient
+          .from("builds")
+          .update({ status: "processing", updated_at: new Date().toISOString() })
+          .eq("id", build.id);
 
-      // 上传图标（如果有）
-      if (config.iconBase64 && isIconUploadEnabled()) {
-        const iconBuffer = Buffer.from(config.iconBase64, "base64");
-        const sizeValidation = validateImageSize(iconBuffer.length);
+        // 上传图标（支持 URL 或 base64）
+        if (isIconUploadEnabled()) {
+          let iconBuffer: Buffer | null = null;
+          let contentType = "image/png";
 
-        if (sizeValidation.valid) {
-          const fileExt = config.iconType?.split("/")[1] || "png";
-          const safeFileName = `icon_${Date.now()}_${i}.${fileExt}`;
-          const iconFileName = `icons/${userId}/${safeFileName}`;
+          // 优先使用 iconUrl（避免 Vercel 4.5MB 限制）
+          if (config.iconUrl) {
+            // 重试机制：最多尝试3次，超时时间递增
+            const maxRetries = 3;
+            const timeouts = [30000, 45000, 60000]; // 30s, 45s, 60s
 
-          const { error: uploadError } = await serviceClient.storage
-            .from("user-builds")
-            .upload(iconFileName, iconBuffer, {
-              contentType: config.iconType || "image/png",
-              upsert: true,
-            });
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+              try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeouts[attempt]);
 
-          if (!uploadError) {
-            iconPath = iconFileName;
-            await serviceClient
-              .from("builds")
-              .update({ icon_path: iconPath })
-              .eq("id", build.id);
+                try {
+                  console.log(`[Batch] Fetching icon (attempt ${attempt + 1}/${maxRetries}, timeout: ${timeouts[attempt]}ms): ${config.iconUrl}`);
+                  const iconResponse = await fetch(config.iconUrl, {
+                    signal: controller.signal,
+                  });
+
+                  if (iconResponse.ok) {
+                    const arrayBuffer = await iconResponse.arrayBuffer();
+                    iconBuffer = Buffer.from(arrayBuffer);
+                    contentType = iconResponse.headers.get("content-type") || "image/png";
+                    console.log(`[Batch] Icon fetched successfully (${iconBuffer.length} bytes)`);
+                    break; // 成功，退出重试循环
+                  }
+                } finally {
+                  clearTimeout(timeoutId);
+                }
+              } catch (err) {
+                const isLastAttempt = attempt === maxRetries - 1;
+                if (isLastAttempt) {
+                  console.error(`[Batch] Failed to fetch icon after ${maxRetries} attempts: ${config.iconUrl}`, err);
+                } else {
+                  console.warn(`[Batch] Icon fetch attempt ${attempt + 1} failed, retrying...`, err);
+                  // 等待1秒后重试
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
+            }
+          }
+          // 向后兼容：支持 base64
+          else if (config.iconBase64) {
+            iconBuffer = Buffer.from(config.iconBase64, "base64");
+            contentType = config.iconType || "image/png";
+          }
+
+          // 上传图标到 Storage
+          if (iconBuffer) {
+            const sizeValidation = validateImageSize(iconBuffer.length);
+
+            if (sizeValidation.valid) {
+              const fileExt = contentType.split("/")[1] || "png";
+              const safeFileName = `icon_${Date.now()}_${i}.${fileExt}`;
+              const iconFileName = `icons/${userId}/${safeFileName}`;
+
+              const { error: uploadError } = await serviceClient.storage
+                .from("user-builds")
+                .upload(iconFileName, iconBuffer, {
+                  contentType,
+                  upsert: true,
+                });
+
+              if (!uploadError) {
+                iconPath = iconFileName;
+                await serviceClient
+                  .from("builds")
+                  .update({ icon_path: iconPath })
+                  .eq("id", build.id);
+              }
+            }
           }
         }
-      }
 
-      // 启动对应平台的构建
-      await startPlatformBuild(build.id, build.platform, url, config, iconPath);
-    } catch (err) {
-      console.error(`[Batch] Build process error for ${build.id}:`, err);
-      // 构建失败时回滚该平台的额度
-      await refundBuildQuota(userId, 1);
-      // 更新构建状态为失败
-      await serviceClient
-        .from("builds")
-        .update({ status: "failed", error_message: err instanceof Error ? err.message : "Build failed" })
-        .eq("id", build.id);
-    }
-  }
+        // 启动对应平台的构建（并行执行）
+        await startPlatformBuild(build.id, build.platform, url, config, iconPath);
+      } catch (err) {
+        console.error(`[Batch] Build process error for ${build.id}:`, err);
+        // 构建失败时回滚该平台的额度
+        await refundBuildQuota(userId, 1);
+        // 更新构建状态为失败
+        await serviceClient
+          .from("builds")
+          .update({ status: "failed", error_message: err instanceof Error ? err.message : "Build failed" })
+          .eq("id", build.id);
+      }
+    })
+  );
 }
 
 // 启动对应平台的构建
