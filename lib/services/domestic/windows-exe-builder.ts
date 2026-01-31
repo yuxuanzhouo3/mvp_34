@@ -169,6 +169,10 @@ async function modifyExeResources(
         const iconBuffer = await storage.downloadFile(config.iconPath);
         const icoBuffer = await generateIco(iconBuffer);
         const iconFile = ResEdit.Data.IconFile.from(icoBuffer);
+
+        // Remove existing icon resources (14 = RT_GROUP_ICON, 3 = RT_ICON)
+        res.entries = res.entries.filter(e => e.type !== 14 && e.type !== 3);
+
         ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
           res.entries, 1, 0x0409, iconFile.icons.map((icon) => icon.data)
         );
