@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     if (supabaseAdmin && paymentStatus === "PROCESSING") {
       const { data: sub } = await supabaseAdmin
         .from("subscriptions")
-        .select("id, status")
+        .select("id, status, plan, period, expires_at")
         .eq("provider_order_id", orderId)
         .maybeSingle();
       if (sub) {
