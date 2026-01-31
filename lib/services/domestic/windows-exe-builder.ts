@@ -7,7 +7,6 @@ import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { BuildProgressHelper } from "@/lib/build-progress";
 import { trackBuildCompleteEvent } from "@/services/analytics";
-import AdmZip from "adm-zip";
 import sharp from "sharp";
 import * as fs from "fs";
 import * as path from "path";
@@ -63,26 +62,16 @@ export async function processWindowsExeBuildDomestic(
 
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
 
-    // Step 5: Write app-config.json
-    console.log(`[Domestic Windows Build ${buildId}] Writing config...`);
-    const configPath = path.join(tempDir, "app-config.json");
-    const appConfig = { url: config.url, title: config.appName };
-    fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
-
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("packaging"));
 
-    // Step 6: Package as ZIP (EXE + config)
-    console.log(`[Domestic Windows Build ${buildId}] Creating ZIP archive...`);
-    const zip = new AdmZip();
-    zip.addLocalFile(exePath);
-    zip.addLocalFile(configPath);
-    const outputBuffer = zip.toBuffer();
+    // Step 5: Read modified EXE
+    const outputBuffer = fs.readFileSync(exePath);
 
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
-    // Step 7: Upload result
+    // Step 6: Upload result (single EXE file)
     console.log(`[Domestic Windows Build ${buildId}] Uploading result...`);
-    const outputPath = `user-builds/builds/${buildId}/${safeAppName}.zip`;
+    const outputPath = `user-builds/builds/${buildId}/${safeAppName}.exe`;
     await storage.uploadFile(outputPath, outputBuffer);
 
     const downloadUrl = await storage.getTempDownloadUrl(outputPath);
@@ -183,51 +172,102 @@ async function modifyExeResources(
         ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
           res.entries, 1, 0x0409, iconFile.icons.map((icon) => icon.data)
         );
+        console.log("[Domestic Windows Build] Icon replaced successfully");
       } catch (iconError) {
         console.warn("[Domestic Windows Build] Icon replacement failed:", iconError);
       }
     }
 
+    // Embed app config into APPCONFIG resource
+    const appConfig = { url: config.url, title: config.appName };
+    const configJson = JSON.stringify(appConfig);
+    const configBuffer = Buffer.from(configJson, "utf-8");
+
+    res.entries.push({
+      type: "APPCONFIG",
+      id: 1,
+      lang: 0x0409,
+      codepage: 1200,
+      bin: configBuffer.buffer.slice(configBuffer.byteOffset, configBuffer.byteOffset + configBuffer.byteLength),
+    });
+    console.log("[Domestic Windows Build] Embedded config into APPCONFIG resource");
+
     res.outputResource(exe);
     fs.writeFileSync(exePath, Buffer.from(exe.generate()));
+    console.log("[Domestic Windows Build] EXE resources modified successfully");
   } catch (error) {
     console.warn("[Domestic Windows Build] Resource modification failed:", error);
   }
 }
 
 async function generateIco(pngBuffer: Buffer): Promise<Buffer> {
-  const sizes = [16, 32, 48, 256];
+  // Generate multiple sizes for better Windows compatibility
+  const sizes = [16, 32, 48, 64, 128, 256];
   const images: Buffer[] = [];
 
   for (const size of sizes) {
-    const resized = await sharp(pngBuffer)
-      .resize(size, size, { fit: "cover" })
-      .png()
-      .toBuffer();
-    images.push(resized);
+    // Convert to BMP format (required for ICO)
+    const bmpData = await sharp(pngBuffer)
+      .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // Create BMP header for ICO
+    const { data, info } = bmpData;
+    const width = info.width;
+    const height = info.height;
+    const bpp = 32; // 32-bit RGBA
+
+    // BMP Info Header (40 bytes)
+    const infoHeader = Buffer.alloc(40);
+    infoHeader.writeUInt32LE(40, 0); // Header size
+    infoHeader.writeInt32LE(width, 4); // Width
+    infoHeader.writeInt32LE(height * 2, 8); // Height * 2 (ICO format)
+    infoHeader.writeUInt16LE(1, 12); // Planes
+    infoHeader.writeUInt16LE(bpp, 14); // Bits per pixel
+    infoHeader.writeUInt32LE(0, 16); // Compression (none)
+    infoHeader.writeUInt32LE(data.length, 20); // Image size
+
+    // Convert RGBA to BGRA and flip vertically (BMP format)
+    const bgraData = Buffer.alloc(data.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const srcIdx = ((height - 1 - y) * width + x) * 4;
+        const dstIdx = (y * width + x) * 4;
+        bgraData[dstIdx] = data[srcIdx + 2]; // B
+        bgraData[dstIdx + 1] = data[srcIdx + 1]; // G
+        bgraData[dstIdx + 2] = data[srcIdx]; // R
+        bgraData[dstIdx + 3] = data[srcIdx + 3]; // A
+      }
+    }
+
+    images.push(Buffer.concat([infoHeader, bgraData]));
   }
 
+  // ICO header
   const headerSize = 6;
   const dirEntrySize = 16;
   let dataOffset = headerSize + dirEntrySize * images.length;
 
   const header = Buffer.alloc(headerSize);
-  header.writeUInt16LE(0, 0);
-  header.writeUInt16LE(1, 2);
-  header.writeUInt16LE(images.length, 4);
+  header.writeUInt16LE(0, 0); // Reserved
+  header.writeUInt16LE(1, 2); // Type (1 = ICO)
+  header.writeUInt16LE(images.length, 4); // Number of images
 
+  // Directory entries
   const dirEntries: Buffer[] = [];
   for (let i = 0; i < images.length; i++) {
     const entry = Buffer.alloc(dirEntrySize);
-    const size = sizes[i] === 256 ? 0 : sizes[i];
-    entry.writeUInt8(size, 0);
-    entry.writeUInt8(size, 1);
-    entry.writeUInt8(0, 2);
-    entry.writeUInt8(0, 3);
-    entry.writeUInt16LE(1, 4);
-    entry.writeUInt16LE(32, 6);
-    entry.writeUInt32LE(images[i].length, 8);
-    entry.writeUInt32LE(dataOffset, 12);
+    const size = sizes[i];
+    entry.writeUInt8(size === 256 ? 0 : size, 0); // Width (0 = 256)
+    entry.writeUInt8(size === 256 ? 0 : size, 1); // Height (0 = 256)
+    entry.writeUInt8(0, 2); // Color palette
+    entry.writeUInt8(0, 3); // Reserved
+    entry.writeUInt16LE(1, 4); // Color planes
+    entry.writeUInt16LE(32, 6); // Bits per pixel
+    entry.writeUInt32LE(images[i].length, 8); // Image size
+    entry.writeUInt32LE(dataOffset, 12); // Image offset
     dataOffset += images[i].length;
     dirEntries.push(entry);
   }

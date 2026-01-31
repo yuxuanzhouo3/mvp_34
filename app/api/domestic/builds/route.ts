@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
             const iconUrl = await storage.getTempDownloadUrl(build.icon_path);
             return { ...mapped, icon_url: iconUrl };
           } catch (error) {
+            console.error(`[Domestic Builds] Failed to get icon URL for build ${build._id}, icon_path: ${build.icon_path}`, error);
             return { ...mapped, icon_url: null };
           }
         }
