@@ -282,10 +282,11 @@ export async function POST(request: NextRequest) {
 
     // 计算到期日期
     let purchaseExpiresAt: Date;
-    const canApplyUpgradeDays = !!(parsed.isUpgradeOrder && isUpgrade && parsed.days && parsed.days > 0);
+    const upgradeDays = parsed.days ?? 0;
+    const canApplyUpgradeDays = !!(parsed.isUpgradeOrder && isUpgrade && upgradeDays > 0);
     if (canApplyUpgradeDays) {
-      purchaseExpiresAt = new Date(now.getTime() + parsed.days * 24 * 60 * 60 * 1000);
-      console.log(`[PayPal Capture] upgrade with days: ${parsed.days}, expires: ${purchaseExpiresAt.toISOString()}`);
+      purchaseExpiresAt = new Date(now.getTime() + upgradeDays * 24 * 60 * 60 * 1000);
+      console.log(`[PayPal Capture] upgrade with days: ${upgradeDays}, expires: ${purchaseExpiresAt.toISOString()}`);
     } else {
       const baseDate = isSameActive && currentPlanExp ? currentPlanExp : now;
       const anchorDay = walletRow?.billing_cycle_anchor || now.getUTCDate();
