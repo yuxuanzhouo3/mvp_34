@@ -172,3 +172,8 @@ export async function updateBuildStatus(
     return false;
   }
 }
+
+/**
+ * 退还构建配额（导出 wallet 服务的函数）
+ */
+export { refundDailyBuildQuota } from "@/services/wallet";
