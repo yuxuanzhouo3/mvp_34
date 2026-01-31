@@ -46,16 +46,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 国内版：从 API 获取用户信息
   const fetchDomesticUser = useCallback(async () => {
     try {
+      // 添加超时控制，防止请求挂起导致页面一直加载
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+
       const res = await fetch("/api/domestic/auth/me", {
         credentials: "include",
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         const data = await res.json();
         return data.user as DomesticUser;
       }
       return null;
     } catch (error) {
-      console.error("[AuthContext] Failed to fetch domestic user:", error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error("[AuthContext] Fetch domestic user timeout");
+      } else {
+        console.error("[AuthContext] Failed to fetch domestic user:", error);
+      }
       return null;
     }
   }, []);
