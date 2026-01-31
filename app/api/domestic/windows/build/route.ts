@@ -3,7 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
+import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus, refundDailyBuildQuota } from "@/lib/domestic/build-helpers";
 import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
 
     if (!url || !appName) {
       return NextResponse.json({ error: "Missing required fields", message: "url and appName are required" }, { status: 400 });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch {
+      return NextResponse.json({ error: "Invalid URL", message: "Please provide a valid URL" }, { status: 400 });
     }
 
     // 预校验图标（避免先扣额度后失败）
@@ -68,10 +75,13 @@ export async function POST(request: NextRequest) {
     const buildResult = await createBuildRecord({ userId: user.id, platform: "windows", appName, url, iconPath });
 
     if (!buildResult.success || !buildResult.buildId) {
+      await refundDailyBuildQuota(user.id, 1);
       return NextResponse.json({ error: "Failed to create build", message: buildResult.error }, { status: 500 });
     }
 
-    processWindowsBuildAsync(buildResult.buildId, { url, appName, iconPath }).catch(console.error);
+    processWindowsBuildAsync(buildResult.buildId, { url, appName, iconPath }).catch((err) => {
+      console.error(`[Domestic Windows Build] Build process error for ${buildResult.buildId}:`, err);
+    });
 
     return NextResponse.json({ success: true, buildId: buildResult.buildId, message: "Build started successfully", status: "pending" });
   } catch (error) {

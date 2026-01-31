@@ -226,7 +226,7 @@ async function modifyExeResources(
     type: "APPCONFIG",
     id: 1,
     lang: 0x0409,
-    bin: configBuffer,
+    bin: configBuffer.buffer.slice(configBuffer.byteOffset, configBuffer.byteOffset + configBuffer.byteLength),
   });
   console.log("[Windows Build] Embedded config into APPCONFIG resource");
 
