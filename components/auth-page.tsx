@@ -20,6 +20,7 @@ import {
   exchangeCodeForToken,
 } from "@/lib/wechat-mp";
 import { getLoginErrorMessage } from "@/lib/auth/login-error";
+import { saveAuthState, type AuthUser } from "@/lib/auth-state-manager";
 
 type Mode = "login" | "signup";
 
@@ -361,6 +362,24 @@ export function AuthPage({ mode }: AuthPageProps) {
             if (!res.ok || !data.ok) {
               throw new Error(data.error || (isZhText ? "登录失败" : "Login failed"));
             }
+
+            // 保存认证状态到localStorage
+            const user: AuthUser = {
+              id: data.userInfo.openid,
+              email: `${data.userInfo.openid}@wechat.user`,
+              name: data.userInfo.nickname,
+              avatar: data.userInfo.avatar,
+            };
+
+            saveAuthState(
+              data.token,
+              data.token, // 使用同一个token作为refreshToken
+              user,
+              {
+                accessTokenExpiresIn: data.expiresIn || 3600,
+                refreshTokenExpiresIn: data.expiresIn || 3600,
+              }
+            );
 
             toast.success(isZhText ? "登录成功" : "Login successful");
             window.location.href = next;
