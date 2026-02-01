@@ -68,10 +68,12 @@ export async function POST(req: Request) {
 
     const res = NextResponse.json({
       success: true,
+      token, // 返回 token 给 APK
       openid,
+      expiresIn: maxAge,
     });
 
-    // 设置认证 cookie
+    // 设置认证 cookie（用于 Web 端）
     res.cookies.set("auth-token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
