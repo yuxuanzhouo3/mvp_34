@@ -302,8 +302,9 @@ export function AuthPage({ mode }: AuthPageProps) {
     setIsLoading(true);
 
     try {
-      // 检测是否在小程序环境中
       const ua = navigator.userAgent.toLowerCase();
+
+      // 检测是否在小程序环境中
       const inMiniProgram = ua.includes("miniprogram") ||
         (window as any).__wxjs_environment === "miniprogram";
 
@@ -319,6 +320,19 @@ export function AuthPage({ mode }: AuthPageProps) {
           mp.navigateTo({ url: loginUrl });
           return;
         }
+      }
+
+      // 检测是否在Android原生应用中
+      const isAndroidApp = ua.includes("mornclient") ||
+        (window as any).gonative !== undefined ||
+        (window as any).median !== undefined;
+
+      if (isAndroidApp) {
+        // Android原生应用：触发原生微信登录
+        console.log("[AuthPage] In Android app, triggering native WeChat login");
+        const returnUrl = window.location.href;
+        window.location.href = `wechat-login://start?callback=${encodeURIComponent(returnUrl)}`;
+        return;
       }
 
       // PC/手机浏览器环境：使用扫码登录
