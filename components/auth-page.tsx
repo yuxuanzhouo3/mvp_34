@@ -328,10 +328,58 @@ export function AuthPage({ mode }: AuthPageProps) {
         (window as any).median !== undefined;
 
       if (isAndroidApp) {
-        // Android原生应用：触发原生微信登录
-        console.log("[AuthPage] In Android app, triggering native WeChat login");
-        const returnUrl = window.location.href;
-        window.location.href = `wechat-login://start?callback=${encodeURIComponent(returnUrl)}`;
+        // Android原生应用：设置JavaScript回调函数接收code
+        console.log("[AuthPage] In Android app, setting up native WeChat login callback");
+
+        const callbackName = "__wechatNativeAuthCallback";
+
+        (window as any)[callbackName] = async (payload: any) => {
+          console.log("[AuthPage] Received native WeChat login callback:", payload);
+
+          if (!payload || typeof payload !== "object") {
+            toast.error(isZhText ? "微信登录失败：无效回调" : "WeChat login failed: invalid callback");
+            setIsLoading(false);
+            return;
+          }
+
+          if (payload.errCode !== 0 || !payload.code) {
+            toast.error(payload.errStr || (isZhText ? "微信登录已取消或失败" : "WeChat login cancelled or failed"));
+            setIsLoading(false);
+            return;
+          }
+
+          // 使用code调用后端API
+          try {
+            const res = await fetch("/api/wxlogin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code: payload.code }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok || !data.ok) {
+              throw new Error(data.error || (isZhText ? "登录失败" : "Login failed"));
+            }
+
+            toast.success(isZhText ? "登录成功" : "Login successful");
+            window.location.href = next;
+          } catch (error) {
+            console.error("[AuthPage] WeChat login API error:", error);
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : isZhText
+                  ? "微信登录失败，请重试"
+                  : "WeChat login failed. Please try again."
+            );
+            setIsLoading(false);
+          }
+        };
+
+        const scheme = `wechat-login://start?callback=${encodeURIComponent(callbackName)}`;
+        console.log("[AuthPage] Triggering native WeChat login, scheme:", scheme);
+        window.location.href = scheme;
         return;
       }
 
