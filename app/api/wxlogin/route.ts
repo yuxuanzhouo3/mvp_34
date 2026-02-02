@@ -14,13 +14,24 @@ export async function POST(request: NextRequest) {
 
     if (data.success && data.data) {
       // 转换为Android APK期望的响应格式
-      return NextResponse.json({
+      const res = NextResponse.json({
         ok: true,
         token: data.data.token,
         openid: data.data.userInfo?.openid,
         expiresIn: data.tokenMeta?.accessTokenExpiresIn || 3600,
         userInfo: data.data.userInfo
       });
+
+      // 在服务端设置 cookie，确保 AuthContext 能够检测到登录状态
+      res.cookies.set("auth-token", data.data.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: data.tokenMeta?.accessTokenExpiresIn || 3600,
+        path: "/",
+      });
+
+      return res;
     }
 
     return NextResponse.json({
