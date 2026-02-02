@@ -395,10 +395,7 @@ export function AuthPage({ mode }: AuthPageProps) {
               }
             );
 
-            // 同时设置 cookie，确保 AuthContext 能够检测到登录状态
-            document.cookie = `auth-token=${data.token}; path=/; max-age=${data.expiresIn || 3600}; SameSite=Lax`;
-
-            console.log("[AuthPage] Auth state saved (localStorage + cookie), redirecting to:", next);
+            console.log("[AuthPage] Auth state saved to localStorage, cookie set by server, redirecting to:", next);
             toast.success(isZhText ? "登录成功" : "Login successful");
 
             // 延迟跳转，确保存储操作完成

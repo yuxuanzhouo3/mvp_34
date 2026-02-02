@@ -46,12 +46,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 国内版：从 API 获取用户信息
   const fetchDomesticUser = useCallback(async () => {
     try {
+      // 从 localStorage 读取 token（用于 WebView 环境）
+      let token: string | null = null;
+      try {
+        const authState = localStorage.getItem("app-auth-state");
+        if (authState) {
+          const parsed = JSON.parse(authState);
+          token = parsed.accessToken || null;
+        }
+      } catch (e) {
+        // localStorage 读取失败，继续使用 cookie
+      }
+
       // 添加超时控制，防止请求挂起导致页面一直加载
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+
+      // 如果有 token，通过 header 发送（WebView 环境中 cookie 可能不可靠）
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch("/api/domestic/auth/me", {
         credentials: "include",
+        headers,
         signal: controller.signal,
       });
 
