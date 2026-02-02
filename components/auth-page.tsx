@@ -351,6 +351,7 @@ export function AuthPage({ mode }: AuthPageProps) {
 
           // 使用code调用后端API
           try {
+            console.log("[AuthPage] Calling /api/wxlogin with code");
             const res = await fetch("/api/wxlogin", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -358,6 +359,13 @@ export function AuthPage({ mode }: AuthPageProps) {
             });
 
             const data = await res.json();
+            console.log("[AuthPage] /api/wxlogin response:", {
+              ok: res.ok,
+              dataOk: data.ok,
+              hasToken: !!data.token,
+              hasUserInfo: !!data.userInfo,
+              userInfo: data.userInfo
+            });
 
             if (!res.ok || !data.ok) {
               throw new Error(data.error || (isZhText ? "登录失败" : "Login failed"));
@@ -365,12 +373,18 @@ export function AuthPage({ mode }: AuthPageProps) {
 
             // 保存认证状态到localStorage
             const user: AuthUser = {
-              id: data.userInfo.openid,
-              email: `${data.userInfo.openid}@wechat.user`,
-              name: data.userInfo.nickname,
-              avatar: data.userInfo.avatar,
+              id: data.userInfo?.openid || data.openid,
+              email: `${data.userInfo?.openid || data.openid}@wechat.user`,
+              name: data.userInfo?.nickname || data.userInfo?.name || "微信用户",
+              avatar: data.userInfo?.avatar || data.userInfo?.avatarUrl || "",
             };
 
+            console.log("[AuthPage] Saving auth state:", {
+              token: data.token?.substring(0, 20) + "...",
+              user
+            });
+
+            // 保存到 localStorage
             saveAuthState(
               data.token,
               data.token, // 使用同一个token作为refreshToken
@@ -381,8 +395,16 @@ export function AuthPage({ mode }: AuthPageProps) {
               }
             );
 
+            // 同时设置 cookie，确保 AuthContext 能够检测到登录状态
+            document.cookie = `auth-token=${data.token}; path=/; max-age=${data.expiresIn || 3600}; SameSite=Lax`;
+
+            console.log("[AuthPage] Auth state saved (localStorage + cookie), redirecting to:", next);
             toast.success(isZhText ? "登录成功" : "Login successful");
-            window.location.href = next;
+
+            // 延迟跳转，确保存储操作完成
+            setTimeout(() => {
+              window.location.href = next;
+            }, 100);
           } catch (error) {
             console.error("[AuthPage] WeChat login API error:", error);
             toast.error(
