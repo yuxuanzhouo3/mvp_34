@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { POST as miniprogramLogin } from "./miniprogram/login/route";
+import { POST as miniprogramLogin } from "../wechat/miniprogram/login/route";
 
 /**
  * Android微信登录接口（转发到三级回退机制）
