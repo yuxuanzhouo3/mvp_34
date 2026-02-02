@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { IS_DOMESTIC_VERSION } from "@/config";
-import { getCloudBaseApp } from "@/lib/cloudbase/init";
+import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getWechatUserByCode } from "@/lib/wechat/token-exchange";
 import * as jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -144,8 +144,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 查询/创建用户
-    const app = getCloudBaseApp();
-    const db = app.database();
+    const connector = new CloudBaseConnector({});
+    await connector.initialize();
+    const db = connector.getClient();
     const usersCollection = db.collection("users");
 
     let userId: string | null = null;
