@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
+import jwt from "jsonwebtoken";
+import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 
 export const runtime = "nodejs";
 
@@ -29,7 +31,44 @@ export async function GET(req: Request) {
     }
 
     const service = new CloudBaseAuthService();
-    const user = await service.validateToken(token);
+    let user = await service.validateToken(token);
+
+    // 如果CloudBase session验证失败，尝试JWT验证
+    if (!user) {
+      try {
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || "fallback-secret-key-for-development-only"
+        ) as { userId: string; email: string; region: string };
+
+        // 从数据库获取用户信息
+        const connector = new CloudBaseConnector({});
+        await connector.initialize();
+        const db = connector.getClient();
+        const users = await db.collection("users").doc(decoded.userId).get();
+        const userDoc = users?.data?.[0];
+
+        if (userDoc) {
+          user = {
+            id: decoded.userId,
+            email: userDoc.email,
+            name: userDoc.name,
+            avatar: userDoc.avatar,
+            createdAt: new Date(userDoc.createdAt),
+            metadata: {
+              pro: userDoc.pro || false,
+              region: "CN",
+              plan: userDoc.plan || "free",
+              plan_exp: userDoc.plan_exp || null,
+              hide_ads: userDoc.hide_ads || false,
+            },
+          };
+        }
+      } catch (jwtError) {
+        console.error("[domestic/auth/me] JWT verification failed:", jwtError);
+      }
+    }
+
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
