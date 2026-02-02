@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
+import * as jwt from "jsonwebtoken";
 
 /**
  * 微信小程序登录接口
@@ -85,13 +86,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 计算过期时间（7天）
-    const expiresIn = 7 * 24 * 60 * 60;
+    // 生成 JWT token
+    const accessPayload = {
+      userId: result.user.id,
+      email: result.user.email,
+      region: "CN",
+    };
+
+    const accessToken = jwt.sign(
+      accessPayload,
+      process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
+      { expiresIn: "1h" }
+    );
+
+    // 计算过期时间（1小时）
+    const expiresIn = 3600;
 
     // 构建响应
     const res = NextResponse.json({
       success: true,
-      token: result.session.access_token,
+      token: accessToken,
       openid,
       expiresIn,
       user: {
@@ -106,7 +120,7 @@ export async function POST(request: NextRequest) {
     });
 
     // 设置 cookie
-    res.cookies.set("auth-token", result.session.access_token, {
+    res.cookies.set("auth-token", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

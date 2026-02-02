@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import { trackWechatLoginEvent } from "@/services/analytics";
+import * as jwt from "jsonwebtoken";
 
 /**
  * POST /api/domestic/auth/wechat
@@ -109,13 +110,30 @@ export async function POST(request: NextRequest) {
       isNewUser,
     }).catch((err) => console.warn("[auth/wechat] trackWechatLoginEvent error:", err));
 
+    // 生成 JWT token
+    const accessPayload = {
+      userId: result.user.id,
+      email: result.user.email,
+      region: "CN",
+    };
+
+    const accessToken = jwt.sign(
+      accessPayload,
+      process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
+      { expiresIn: "1h" }
+    );
+
     const res = NextResponse.json({
       success: true,
       user: result.user,
-      token: result.session.access_token,
+      token: accessToken,
+      accessToken: accessToken,
+      tokenMeta: {
+        accessTokenExpiresIn: 3600, // 1 hour
+      },
     });
 
-    res.cookies.set("auth-token", result.session.access_token, {
+    res.cookies.set("auth-token", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
