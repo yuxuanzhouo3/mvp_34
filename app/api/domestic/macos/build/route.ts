@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processMacOSAppBuild } from "@/lib/services/domestic/macos-app-builder";
+import { processMacOSAppBuildDomestic } from "@/lib/services/domestic/macos-app-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 async function processMacosBuildAsync(buildId: string, params: { url: string; appName: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processMacOSAppBuild(buildId, { url: params.url, appName: params.appName, iconPath: params.iconPath });
+    await processMacOSAppBuildDomestic(buildId, { url: params.url, appName: params.appName, iconPath: params.iconPath });
   } catch (error) {
     await updateBuildStatus(buildId, "failed", { error_message: error instanceof Error ? error.message : "Unknown error" });
   }

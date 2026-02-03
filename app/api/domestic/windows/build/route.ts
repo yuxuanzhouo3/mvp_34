@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus, refundDailyBuildQuota } from "@/lib/domestic/build-helpers";
-import { processWindowsExeBuild } from "@/lib/services/domestic/windows-exe-builder";
+import { processWindowsExeBuildDomestic } from "@/lib/services/domestic/windows-exe-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
 async function processWindowsBuildAsync(buildId: string, params: { url: string; appName: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processWindowsExeBuild(buildId, { url: params.url, appName: params.appName, iconPath: params.iconPath });
+    await processWindowsExeBuildDomestic(buildId, { url: params.url, appName: params.appName, iconPath: params.iconPath });
   } catch (error) {
     await updateBuildStatus(buildId, "failed", { error_message: error instanceof Error ? error.message : "Unknown error" });
   }

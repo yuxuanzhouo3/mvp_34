@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processChromeExtensionBuild } from "@/lib/services/domestic/chrome-extension-builder";
+import { processChromeExtensionBuildDomestic } from "@/lib/services/domestic/chrome-extension-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 async function processChromeBuildAsync(buildId: string, params: { url: string; appName: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processChromeExtensionBuild(buildId, {
+    await processChromeExtensionBuildDomestic(buildId, {
       url: params.url,
       appName: params.appName,
       versionName: "1.0.0",

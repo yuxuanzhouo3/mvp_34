@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processWechatBuild } from "@/lib/services/domestic/wechat-builder";
+import { processWechatBuildDomestic } from "@/lib/services/domestic/wechat-builder";
 
 export const maxDuration = 120;
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create build", message: buildResult.error }, { status: 500 });
     }
 
-    processWechatBuildAsync(buildResult.buildId, { url, appName, appId }).catch(console.error);
+    processWechatBuildDomesticAsync(buildResult.buildId, { url, appName, appId }).catch(console.error);
 
     return NextResponse.json({ success: true, buildId: buildResult.buildId, message: "Build started successfully", status: "pending" });
   } catch (error) {
@@ -51,10 +51,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processWechatBuildAsync(buildId: string, params: { url: string; appName: string; appId?: string }) {
+async function processWechatBuildDomesticAsync(buildId: string, params: { url: string; appName: string; appId?: string }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processWechatBuild(buildId, {
+    await processWechatBuildDomestic(buildId, {
       url: params.url,
       appName: params.appName,
       appId: params.appId || "",

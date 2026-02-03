@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processHarmonyOSBuild } from "@/lib/services/domestic/harmonyos-builder";
+import { processHarmonyOSBuildDomestic } from "@/lib/services/domestic/harmonyos-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 async function processHarmonyosBuildAsync(buildId: string, params: { url: string; appName: string; bundleName?: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processHarmonyOSBuild(buildId, {
+    await processHarmonyOSBuildDomestic(buildId, {
       url: params.url,
       appName: params.appName,
       bundleName: params.bundleName || "com.example.app",

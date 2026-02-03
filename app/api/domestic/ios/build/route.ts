@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processiOSBuild } from "@/lib/services/domestic/ios-builder";
+import { processiOSBuildDomestic } from "@/lib/services/domestic/ios-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 async function processIosBuildAsync(buildId: string, params: { url: string; appName: string; bundleId: string; versionName: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processiOSBuild(buildId, {
+    await processiOSBuildDomestic(buildId, {
       url: params.url,
       appName: params.appName,
       bundleId: params.bundleId,
