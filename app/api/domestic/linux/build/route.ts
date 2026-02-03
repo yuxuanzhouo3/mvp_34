@@ -4,7 +4,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processLinuxAppBuild } from "@/lib/services/linux-app-builder";
+import { processLinuxAppBuild } from "@/lib/services/domestic/linux-app-builder";
+import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
+import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
 export const maxDuration = 120;
 
@@ -19,9 +21,20 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const url = formData.get("url") as string;
     const appName = formData.get("appName") as string;
+    const icon = formData.get("icon") as File | null;
 
     if (!url || !appName) {
       return NextResponse.json({ error: "Missing required fields", message: "url and appName are required" }, { status: 400 });
+    }
+
+    if (icon && icon.size > 0) {
+      if (!isIconUploadEnabled()) {
+        return NextResponse.json({ error: "Icon upload disabled" }, { status: 400 });
+      }
+      const sizeValidation = validateImageSize(icon.size);
+      if (!sizeValidation.valid) {
+        return NextResponse.json({ error: "Icon too large" }, { status: 400 });
+      }
     }
 
     const quotaResult = await checkAndDeductQuota(user.id, 1);
@@ -35,7 +48,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create build", message: buildResult.error }, { status: 500 });
     }
 
-    processLinuxBuildAsync(buildResult.buildId, { url, appName }).catch(console.error);
+    const buildId = buildResult.buildId;
+    let iconPath: string | null = null;
+    if (icon && icon.size > 0) {
+      try {
+        const storage = getCloudBaseStorage();
+        const iconBuffer = Buffer.from(await icon.arrayBuffer());
+        iconPath = `user-builds/builds/${buildId}/icon.png`;
+        await storage.uploadFile(iconPath, iconBuffer);
+        await updateBuildStatus(buildId, "pending", { icon_path: iconPath });
+      } catch (error) {
+        console.error("[Domestic Linux Build] Icon upload error:", error);
+      }
+    }
+
+    processLinuxBuildAsync(buildId, { url, appName, iconPath }).catch(console.error);
 
     return NextResponse.json({ success: true, buildId: buildResult.buildId, message: "Build started successfully", status: "pending" });
   } catch (error) {
@@ -44,10 +71,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processLinuxBuildAsync(buildId: string, params: { url: string; appName: string }) {
+async function processLinuxBuildAsync(buildId: string, params: { url: string; appName: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
-    await processLinuxAppBuild(buildId, { url: params.url, appName: params.appName, iconPath: null });
+    await processLinuxAppBuild(buildId, { url: params.url, appName: params.appName, iconPath: params.iconPath });
   } catch (error) {
     await updateBuildStatus(buildId, "failed", { error_message: error instanceof Error ? error.message : "Unknown error" });
   }

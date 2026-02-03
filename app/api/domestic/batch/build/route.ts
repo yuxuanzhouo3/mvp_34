@@ -38,7 +38,8 @@ interface PlatformConfig {
   version?: string;
   bundleName?: string;
   description?: string;
-  iconUrl?: string; // 图标 URL（优先使用，避免 Vercel 4.5MB 限制）
+  iconUrl?: string; // 图标 URL（国际版使用）
+  iconPath?: string; // 图标路径（国内版使用，临时上传的图标路径）
   iconBase64?: string; // 图标 base64（向后兼容）
   iconType?: string;
 }
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
         platform: config.platform,
         status: "pending",
         progress: 0,
-        icon_path: null,
+        icon_path: config.iconPath || null,
         output_file_path: null,
         download_url: null,
         error_message: null,

@@ -61,6 +61,14 @@ function BuildIcon({ build, getPlatformIcon, priority = false }: {
   getPlatformIcon: (platform: string) => React.ReactNode;
   priority?: boolean;
 }) {
+  // Debug logging
+  console.log(`[BuildIcon] Rendering icon for build:`, {
+    app_name: build.app_name,
+    platform: build.platform,
+    has_icon_url: !!build.icon_url,
+    icon_url: build.icon_url
+  });
+
   // If has uploaded icon, use it with optimization
   if (build.icon_url) {
     return (

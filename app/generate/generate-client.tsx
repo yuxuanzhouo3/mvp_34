@@ -88,7 +88,103 @@ function GenerateContent() {
   const [linuxAppName, setLinuxAppName] = useState("");
   const [linuxIcon, setLinuxIcon] = useState<File | null>(null);
 
+  // 国内版：存储已上传图标的路径
+  const [uploadedIconPaths, setUploadedIconPaths] = useState<Record<string, string>>({});
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 国内版：即时上传图标到 CloudBase
+  const uploadIconImmediately = async (file: File, platform: string): Promise<string | null> => {
+    if (!IS_DOMESTIC_VERSION) return null;
+
+    try {
+      const formData = new FormData();
+      formData.append("icon", file);
+      formData.append("platform", platform);
+
+      const response = await fetch("/api/domestic/upload-icon", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Icon upload failed");
+      }
+
+      const result = await response.json();
+      return result.iconPath;
+    } catch (error) {
+      console.error(`[Upload Icon] Failed to upload ${platform} icon:`, error);
+      toast.error(
+        currentLanguage === "zh"
+          ? `图标上传失败: ${error instanceof Error ? error.message : "未知错误"}`
+          : `Icon upload failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+      return null;
+    }
+  };
+
+  // 国内版：删除已上传的图标
+  const deleteUploadedIcon = async (iconPath: string) => {
+    if (!IS_DOMESTIC_VERSION) return;
+
+    try {
+      const response = await fetch("/api/domestic/delete-icon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ iconPath }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Icon delete failed");
+      }
+    } catch (error) {
+      console.error(`[Delete Icon] Failed to delete icon:`, error);
+      // 删除失败不影响用户操作，仅记录日志
+    }
+  };
+
+  // 包装图标设置函数，在国内版自动上传
+  const handleIconChange = async (
+    file: File | null,
+    platform: string,
+    setter: (file: File | null) => void
+  ) => {
+    console.log(`[handleIconChange] Called for platform: ${platform}, file:`, file ? `${file.name} (${file.size} bytes)` : 'null');
+
+    // 如果删除图标，清理已上传的路径
+    if (!file) {
+      const oldPath = uploadedIconPaths[platform];
+      if (oldPath) {
+        console.log(`[handleIconChange] Deleting old icon path: ${oldPath}`);
+        await deleteUploadedIcon(oldPath);
+        setUploadedIconPaths(prev => {
+          const next = { ...prev };
+          delete next[platform];
+          return next;
+        });
+      }
+      setter(null);
+      return;
+    }
+
+    // 设置文件
+    setter(file);
+
+    // 国内版：立即上传
+    if (IS_DOMESTIC_VERSION) {
+      console.log(`[handleIconChange] Uploading icon for ${platform}...`);
+      const iconPath = await uploadIconImmediately(file, platform);
+      if (iconPath) {
+        console.log(`[handleIconChange] Icon uploaded successfully, path: ${iconPath}`);
+        setUploadedIconPaths(prev => ({ ...prev, [platform]: iconPath }));
+      } else {
+        console.error(`[handleIconChange] Icon upload failed for ${platform}`);
+      }
+    }
+  };
 
   // 快捷填写：当应用名称变化时，同步到其他平台
   const handleAppNameChange = (name: string) => {
@@ -489,35 +585,44 @@ function GenerateContent() {
       if (hasLinux && linuxIcon) iconsToUpload.push({ file: linuxIcon, platform: "linux" });
 
       // 批量上传图标到 Supabase Storage（避免 Vercel 4.5MB 请求体限制）
+      // 国内版：使用已上传的 iconPath（用户在选择图标��已立即上传）
       let iconUrls: Record<string, string> = {};
-      if (iconsToUpload.length > 0 && user?.id) {
-        try {
-          const uploadResults = await uploadIconsBatch(iconsToUpload, user.id);
 
-          // 检查上传失败（仅警告，不中断构建流程）
-          const failedUploads = uploadResults.filter(r => !r.success);
-          if (failedUploads.length > 0) {
-            console.warn("部分图标上传失败:", failedUploads);
+      if (iconsToUpload.length > 0 && user?.id) {
+        // 国内版：使用已上传的 iconPath
+        if (IS_DOMESTIC_VERSION) {
+          console.log("[Domestic] Using pre-uploaded icon paths for batch build");
+          // iconPath 将在构建平台配置时从 uploadedIconPaths 中获取
+        } else {
+          // 国际版：上传到 Supabase Storage
+          try {
+            const uploadResults = await uploadIconsBatch(iconsToUpload, user.id);
+
+            // 检查上传失败（仅警告，不中断构建流程）
+            const failedUploads = uploadResults.filter(r => !r.success);
+            if (failedUploads.length > 0) {
+              console.warn("部分图标上传失败:", failedUploads);
+              toast.warning(
+                currentLanguage === "zh"
+                  ? `部分图标上传失败: ${failedUploads.map(f => f.platform).join(", ")}，将继续构建`
+                  : `Some icons failed to upload: ${failedUploads.map(f => f.platform).join(", ")}, continuing build`
+              );
+            }
+
+            // 构建 URL 映射（国际版）
+            uploadResults.forEach(r => {
+              if (r.success && r.url) {
+                iconUrls[r.platform] = r.url;
+              }
+            });
+          } catch (uploadError) {
+            console.error("图标上传异常:", uploadError);
             toast.warning(
               currentLanguage === "zh"
-                ? `部分图标上传失败: ${failedUploads.map(f => f.platform).join(", ")}，将继续构建`
-                : `Some icons failed to upload: ${failedUploads.map(f => f.platform).join(", ")}, continuing build`
+                ? "图标上传服务异常，将继续构建（不使用图标）"
+                : "Icon upload service error, continuing build without icons"
             );
           }
-
-          // 构建 URL 映射（仅包含成功上传的图标）
-          uploadResults.forEach(r => {
-            if (r.success && r.url) {
-              iconUrls[r.platform] = r.url;
-            }
-          });
-        } catch (uploadError) {
-          console.error("图标上传异常:", uploadError);
-          toast.warning(
-            currentLanguage === "zh"
-              ? "图标上传服务异常，将继续构建（不使用图标）"
-              : "Icon upload service error, continuing build without icons"
-          );
         }
       }
 
@@ -526,14 +631,14 @@ function GenerateContent() {
         platforms.push({
           platform: "android", appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
-          ...(iconUrls.android && { iconUrl: iconUrls.android }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.android ? { iconPath: uploadedIconPaths.android } : iconUrls.android && { iconUrl: iconUrls.android }),
         });
       }
       if (hasIOS) {
         platforms.push({
           platform: "ios", appName, bundleId,
           versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
-          ...(iconUrls.ios && { iconUrl: iconUrls.ios }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.ios ? { iconPath: uploadedIconPaths.ios } : iconUrls.ios && { iconUrl: iconUrls.ios }),
         });
       }
       if (hasWechat) {
@@ -543,32 +648,32 @@ function GenerateContent() {
         platforms.push({
           platform: "harmonyos", appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
-          ...(iconUrls.harmonyos && { iconUrl: iconUrls.harmonyos }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.harmonyos ? { iconPath: uploadedIconPaths.harmonyos } : iconUrls.harmonyos && { iconUrl: iconUrls.harmonyos }),
         });
       }
       if (hasChrome) {
         platforms.push({
           platform: "chrome", appName: chromeExtensionName,
           versionName: chromeExtensionVersion, description: chromeExtensionDescription,
-          ...(iconUrls.chrome && { iconUrl: iconUrls.chrome }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.chrome ? { iconPath: uploadedIconPaths.chrome } : iconUrls.chrome && { iconUrl: iconUrls.chrome }),
         });
       }
       if (hasWindows) {
         platforms.push({
           platform: "windows", appName: windowsAppName,
-          ...(iconUrls.windows && { iconUrl: iconUrls.windows }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.windows ? { iconPath: uploadedIconPaths.windows } : iconUrls.windows && { iconUrl: iconUrls.windows }),
         });
       }
       if (hasMacos) {
         platforms.push({
           platform: "macos", appName: macosAppName,
-          ...(iconUrls.macos && { iconUrl: iconUrls.macos }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.macos ? { iconPath: uploadedIconPaths.macos } : iconUrls.macos && { iconUrl: iconUrls.macos }),
         });
       }
       if (hasLinux) {
         platforms.push({
           platform: "linux", appName: linuxAppName,
-          ...(iconUrls.linux && { iconUrl: iconUrls.linux }),
+          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.linux ? { iconPath: uploadedIconPaths.linux } : iconUrls.linux && { iconUrl: iconUrls.linux }),
         });
       }
 
@@ -747,7 +852,7 @@ function GenerateContent() {
                   onVersionNameChange={setAndroidVersionName}
                   onVersionCodeChange={setAndroidVersionCode}
                   onPrivacyPolicyChange={setPrivacyPolicy}
-                  onIconChange={setAppIcon}
+                  onIconChange={(file) => handleIconChange(file, "android", setAppIcon)}
                 />
               )}
 
@@ -765,7 +870,7 @@ function GenerateContent() {
                     onVersionStringChange={setIosVersionString}
                     onBuildNumberChange={setIosBuildNumber}
                     onPrivacyPolicyChange={setIosPrivacyPolicy}
-                    onIconChange={setIosIcon}
+                    onIconChange={(file) => handleIconChange(file, "ios", setIosIcon)}
                   />
                 </div>
               )}
@@ -798,7 +903,7 @@ function GenerateContent() {
                     onVersionNameChange={setHarmonyVersionName}
                     onVersionCodeChange={setHarmonyVersionCode}
                     onPrivacyPolicyChange={setHarmonyPrivacyPolicy}
-                    onIconChange={setHarmonyIcon}
+                    onIconChange={(file) => handleIconChange(file, "harmonyos", setHarmonyIcon)}
                   />
                 </div>
               )}
@@ -813,7 +918,7 @@ function GenerateContent() {
                     onNameChange={setChromeExtensionName}
                     onVersionNameChange={setChromeExtensionVersion}
                     onDescriptionChange={setChromeExtensionDescription}
-                    onIconChange={setChromeExtensionIcon}
+                    onIconChange={(file) => handleIconChange(file, "chrome", setChromeExtensionIcon)}
                   />
                 </div>
               )}
@@ -824,7 +929,7 @@ function GenerateContent() {
                   <WindowsConfig
                     name={windowsAppName}
                     onNameChange={setWindowsAppName}
-                    onIconChange={setWindowsIcon}
+                    onIconChange={(file) => handleIconChange(file, "windows", setWindowsIcon)}
                   />
                 </div>
               )}
@@ -835,7 +940,7 @@ function GenerateContent() {
                   <MacOSConfig
                     name={macosAppName}
                     onNameChange={setMacosAppName}
-                    onIconChange={setMacosIcon}
+                    onIconChange={(file) => handleIconChange(file, "macos", setMacosIcon)}
                   />
                 </div>
               )}
@@ -846,7 +951,7 @@ function GenerateContent() {
                   <LinuxConfig
                     name={linuxAppName}
                     onNameChange={setLinuxAppName}
-                    onIconChange={setLinuxIcon}
+                    onIconChange={(file) => handleIconChange(file, "linux", setLinuxIcon)}
                   />
                 </div>
               )}

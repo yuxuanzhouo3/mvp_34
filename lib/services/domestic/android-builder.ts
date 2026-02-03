@@ -168,14 +168,18 @@ export async function processAndroidBuildDomestic(
 
     // Step 5: Process icons if provided
     if (config.iconPath) {
-      console.log(`[Domestic Build ${buildId}] Processing icons...`);
+      console.log(`[Domestic Build ${buildId}] Processing icons, iconPath: ${config.iconPath}`);
       try {
         const iconBuffer = await storage.downloadFile(config.iconPath);
+        console.log(`[Domestic Build ${buildId}] Icon downloaded successfully, size: ${iconBuffer.length} bytes`);
         await processIcons(projectRoot, iconBuffer, buildId);
         console.log(`[Domestic Build ${buildId}] Icon processing completed`);
       } catch (iconError) {
         console.error(`[Domestic Build ${buildId}] Icon processing failed:`, iconError);
+        console.log(`[Domestic Build ${buildId}] Continuing build without custom icons...`);
       }
+    } else {
+      console.log(`[Domestic Build ${buildId}] No icon provided, skipping icon processing`);
     }
 
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
@@ -317,11 +321,15 @@ async function updateAndroidManifest(manifestPath: string, config: BuildConfig):
 async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: string): Promise<void> {
   const resDir = path.join(projectRoot, "app", "src", "main", "res");
 
+  console.log(`[Domestic Build ${buildId}] Processing icons, res directory: ${resDir}`);
+
   if (!fs.existsSync(resDir)) {
+    console.error(`[Domestic Build ${buildId}] Res directory not found: ${resDir}`);
     throw new Error(`Res directory not found: ${resDir}`);
   }
 
   // Normalize icon to 1024x1024
+  console.log(`[Domestic Build ${buildId}] Normalizing icon to 1024x1024...`);
   const normalizedBuffer = await sharp(iconBuffer)
     .resize(1024, 1024, {
       fit: "contain",
@@ -330,69 +338,100 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     .png()
     .toBuffer();
 
+  console.log(`[Domestic Build ${buildId}] Icon normalized successfully`);
+
   const processIcon = async (folder: string, size: number, fileName: string) => {
     const iconDir = path.join(resDir, folder);
     const outputPath = path.join(iconDir, fileName);
 
-    if (!fs.existsSync(iconDir)) return;
+    if (!fs.existsSync(iconDir)) {
+      console.log(`[Domestic Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
+      return;
+    }
 
-    await sharp(normalizedBuffer).resize(size, size).png().toFile(outputPath);
+    try {
+      await sharp(normalizedBuffer).resize(size, size).png().toFile(outputPath);
+      console.log(`[Domestic Build ${buildId}] Created: ${folder}/${fileName} (${size}x${size})`);
+    } catch (err) {
+      console.error(`[Domestic Build ${buildId}] Failed to create ${outputPath}:`, err);
+      throw err;
+    }
   };
 
   const processForegroundIcon = async (folder: string, size: number, fileName: string) => {
     const iconDir = path.join(resDir, folder);
     const outputPath = path.join(iconDir, fileName);
 
-    if (!fs.existsSync(iconDir)) return;
+    if (!fs.existsSync(iconDir)) {
+      console.log(`[Domestic Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
+      return;
+    }
 
-    const safeSize = Math.round(size * 0.61);
-    const padding = Math.round((size - safeSize) / 2);
+    try {
+      const safeSize = Math.round(size * 0.61);
+      const padding = Math.round((size - safeSize) / 2);
 
-    await sharp(normalizedBuffer)
-      .resize(safeSize, safeSize)
-      .extend({
-        top: padding,
-        bottom: padding,
-        left: padding,
-        right: padding,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      })
-      .png()
-      .toFile(outputPath);
+      await sharp(normalizedBuffer)
+        .resize(safeSize, safeSize)
+        .extend({
+          top: padding,
+          bottom: padding,
+          left: padding,
+          right: padding,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .png()
+        .toFile(outputPath);
+
+      console.log(`[Domestic Build ${buildId}] Created foreground: ${folder}/${fileName} (${size}x${size}, icon ${safeSize}x${safeSize})`);
+    } catch (err) {
+      console.error(`[Domestic Build ${buildId}] Failed to create ${outputPath}:`, err);
+      throw err;
+    }
   };
 
   // Process all icon types
+  console.log(`[Domestic Build ${buildId}] Processing app icons (ic_launcher.png)...`);
   for (const { folder, size } of APP_ICON_SIZES) {
     await processIcon(folder, size, "ic_launcher.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing app icon foreground (ic_launcher_foreground.png)...`);
   for (const { folder, size } of APP_ICON_FOREGROUND_SIZES) {
     await processForegroundIcon(folder, size, "ic_launcher_foreground.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing splash icons (splash.png)...`);
   for (const { folder, size } of SPLASH_ICON_SIZES) {
     await processForegroundIcon(folder, size, "splash.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing night mode splash icons...`);
   for (const { folder, size } of SPLASH_NIGHT_ICON_SIZES) {
     await processForegroundIcon(folder, size, "splash.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing sidebar logo (ic_sidebar_logo.png)...`);
   for (const { folder, size } of SIDEBAR_LOGO_SIZES) {
     await processIcon(folder, size, "ic_sidebar_logo.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing night mode sidebar logo...`);
   for (const { folder, size } of SIDEBAR_LOGO_NIGHT_SIZES) {
     await processIcon(folder, size, "ic_sidebar_logo.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing actionbar icons (ic_actionbar.png)...`);
   for (const { folder, size } of ACTIONBAR_ICON_SIZES) {
     await processIcon(folder, size, "ic_actionbar.png");
   }
 
+  console.log(`[Domestic Build ${buildId}] Processing night mode actionbar icons...`);
   for (const { folder, size } of ACTIONBAR_NIGHT_ICON_SIZES) {
     await processIcon(folder, size, "ic_actionbar.png");
   }
+
+  console.log(`[Domestic Build ${buildId}] All icons processed successfully`);
 }
 
 function addFolderToZip(zip: AdmZip, folderPath: string, zipPath: string): void {

@@ -1,6 +1,7 @@
 /**
  * 客户端图标上传工具
- * 直接上传到 Supabase Storage，避免在 API 请求体中传输大量 base64 数据
+ * 国际版：直接上传到 Supabase Storage，避免在 API 请求体中传输大量 base64 数据
+ * 国内版：返回文件对象，由后端API处理上传到CloudBase
  * 解决 Vercel 4.5MB 请求体限制问题
  */
 
@@ -10,14 +11,24 @@ export interface IconUploadResult {
   success: boolean;
   url?: string;
   error?: string;
+  file?: File; // 国内版返回文件对象
 }
 
 /**
- * 上传图标到 Supabase Storage
+ * 检查是否为国内版
+ */
+function isDomesticVersion(): boolean {
+  return process.env.NEXT_PUBLIC_DEFAULT_LANGUAGE === "zh";
+}
+
+/**
+ * 上传图标到存储
+ * 国际版：上传到 Supabase Storage
+ * 国内版：返回文件对象，由后端API处理
  * @param file 图标文件
  * @param userId 用户 ID
  * @param platform 平台名称（用于生成唯一文件名）
- * @returns 上传结果，包含公开访问 URL
+ * @returns 上传结果，包含公开访问 URL 或文件对象
  */
 export async function uploadIconToStorage(
   file: File,
@@ -25,6 +36,15 @@ export async function uploadIconToStorage(
   platform: string
 ): Promise<IconUploadResult> {
   try {
+    // 国内版：直接返回文件对象，由后端API处理上传
+    if (isDomesticVersion()) {
+      return {
+        success: true,
+        file: file,
+      };
+    }
+
+    // 国际版：上传到 Supabase Storage
     const supabase = createClient();
     if (!supabase) {
       return { success: false, error: "Supabase client not initialized" };

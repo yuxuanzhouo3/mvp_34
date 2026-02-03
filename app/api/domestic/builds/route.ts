@@ -91,21 +91,40 @@ export async function GET(request: NextRequest) {
         const { _id, ...rest } = build;
         const mapped = { id: _id, ...rest };
 
-        // Check if build is expired
-        if (build.expires_at && isExpired(build.expires_at)) {
-          return { ...mapped, icon_url: null };
+        // Check if build is expired and has files to clean
+        if (build.expires_at && isExpired(build.expires_at) && (build.output_file_path || build.icon_path)) {
+          // Clean up expired build files in background
+          const filesToDelete: string[] = [];
+          if (build.output_file_path) filesToDelete.push(build.output_file_path);
+          if (build.icon_path) filesToDelete.push(build.icon_path);
+
+          if (filesToDelete.length > 0) {
+            // Delete files from CloudBase storage
+            Promise.all(filesToDelete.map(path => storage.deleteFile(path).catch(console.error))).catch(console.error);
+          }
+
+          // Update build record to mark files as cleaned
+          db.collection("builds")
+            .doc(_id)
+            .update({ output_file_path: null, icon_path: null })
+            .catch(console.error);
+
+          return { ...mapped, output_file_path: null, icon_path: null, icon_url: null };
         }
 
         // Generate icon URL if icon_path exists
         if (build.icon_path) {
           try {
+            console.log(`[Domestic Builds] Generating icon URL for build ${build._id}, icon_path: ${build.icon_path}`);
             const iconUrl = await storage.getTempDownloadUrl(build.icon_path);
+            console.log(`[Domestic Builds] Icon URL generated successfully for build ${build._id}: ${iconUrl}`);
             return { ...mapped, icon_url: iconUrl };
           } catch (error) {
             console.error(`[Domestic Builds] Failed to get icon URL for build ${build._id}, icon_path: ${build.icon_path}`, error);
             return { ...mapped, icon_url: null };
           }
         }
+        console.log(`[Domestic Builds] No icon_path for build ${build._id}`);
         return { ...mapped, icon_url: null };
       })
     );

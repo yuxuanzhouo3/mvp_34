@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processWechatBuild } from "@/lib/services/wechat-builder";
+import { processWechatBuild } from "@/lib/services/domestic/wechat-builder";
 
 export const maxDuration = 120;
 

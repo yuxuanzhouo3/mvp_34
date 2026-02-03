@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
-import { processAndroidBuild } from "@/lib/services/android-builder";
+import { processAndroidBuildDomestic } from "@/lib/services/domestic/android-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { checkDailyBuildQuota, consumeDailyBuildQuota, getUserWallet, refundDailyBuildQuota } from "@/services/wallet";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
@@ -243,8 +243,8 @@ async function processAndroidBuildAsync(
       updated_at: new Date().toISOString(),
     });
 
-    // 调用构建服务（传入 buildId 和 config）
-    await processAndroidBuild(buildId, {
+    // 调用国内版构建服务（传入 buildId 和 config）
+    await processAndroidBuildDomestic(buildId, {
       url: params.url,
       appName: params.appName,
       packageName: params.packageName,

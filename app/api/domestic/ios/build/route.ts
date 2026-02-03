@@ -4,7 +4,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus } from "@/lib/domestic/build-helpers";
-import { processiOSBuild } from "@/lib/services/ios-builder";
+import { processiOSBuild } from "@/lib/services/domestic/ios-builder";
+import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
+import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
 export const maxDuration = 120;
 
@@ -26,12 +28,31 @@ export async function POST(request: NextRequest) {
     const appName = formData.get("appName") as string;
     const bundleId = formData.get("bundleId") as string;
     const versionName = formData.get("versionName") as string || "1.0.0";
+    const icon = formData.get("icon") as File | null;
 
     if (!url || !appName || !bundleId) {
       return NextResponse.json(
         { error: "Missing required fields", message: "url, appName, and bundleId are required" },
         { status: 400 }
       );
+    }
+
+    // 预校验图标
+    if (icon && icon.size > 0) {
+      if (!isIconUploadEnabled()) {
+        return NextResponse.json(
+          { error: "Icon upload disabled", message: "Icon upload is currently disabled" },
+          { status: 400 }
+        );
+      }
+
+      const sizeValidation = validateImageSize(icon.size);
+      if (!sizeValidation.valid) {
+        return NextResponse.json(
+          { error: "Icon too large", message: `Icon size (${sizeValidation.fileSizeMB}MB) exceeds limit (${sizeValidation.maxSizeMB}MB)` },
+          { status: 400 }
+        );
+      }
     }
 
     // 检查并扣除配额
@@ -60,8 +81,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const buildId = buildResult.buildId;
+
+    // 上传图标到CloudBase存储
+    let iconPath: string | null = null;
+    if (icon && icon.size > 0) {
+      try {
+        const storage = getCloudBaseStorage();
+        const iconBuffer = Buffer.from(await icon.arrayBuffer());
+        iconPath = `user-builds/builds/${buildId}/icon.png`;
+        await storage.uploadFile(iconPath, iconBuffer);
+        await updateBuildStatus(buildId, "pending", { icon_path: iconPath });
+      } catch (error) {
+        console.error("[Domestic iOS Build] Icon upload error:", error);
+      }
+    }
+
     // 异步处理构建
-    processIosBuildAsync(buildResult.buildId, { url, appName, bundleId, versionName }).catch(console.error);
+    processIosBuildAsync(buildId, { url, appName, bundleId, versionName, iconPath }).catch(console.error);
 
     return NextResponse.json({
       success: true,
@@ -78,7 +115,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processIosBuildAsync(buildId: string, params: { url: string; appName: string; bundleId: string; versionName: string }) {
+async function processIosBuildAsync(buildId: string, params: { url: string; appName: string; bundleId: string; versionName: string; iconPath: string | null }) {
   try {
     await updateBuildStatus(buildId, "processing");
     await processiOSBuild(buildId, {
@@ -88,7 +125,7 @@ async function processIosBuildAsync(buildId: string, params: { url: string; appN
       versionString: params.versionName,
       buildNumber: "1",
       privacyPolicy: "",
-      iconPath: null,
+      iconPath: params.iconPath,
     });
   } catch (error) {
     await updateBuildStatus(buildId, "failed", { error_message: error instanceof Error ? error.message : "Unknown error" });

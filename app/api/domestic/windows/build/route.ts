@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, checkAndDeductQuota, createBuildRecord, updateBuildStatus, refundDailyBuildQuota } from "@/lib/domestic/build-helpers";
-import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
+import { processWindowsExeBuild } from "@/lib/services/domestic/windows-exe-builder";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 
