@@ -168,18 +168,39 @@ export async function processAndroidBuildDomestic(
 
     // Step 5: Process icons if provided
     if (config.iconPath) {
-      console.log(`[Domestic Build ${buildId}] Processing icons, iconPath: ${config.iconPath}`);
+      console.log(`[Domestic Build ${buildId}] ========== ICON PROCESSING START ==========`);
+      console.log(`[Domestic Build ${buildId}] Icon path: ${config.iconPath}`);
+      console.log(`[Domestic Build ${buildId}] Project root: ${projectRoot}`);
+
       try {
+        // 尝试下载图标
+        console.log(`[Domestic Build ${buildId}] Attempting to download icon from CloudBase Storage...`);
         const iconBuffer = await storage.downloadFile(config.iconPath);
-        console.log(`[Domestic Build ${buildId}] Icon downloaded successfully, size: ${iconBuffer.length} bytes`);
+        console.log(`[Domestic Build ${buildId}] ✓ Icon downloaded successfully`);
+        console.log(`[Domestic Build ${buildId}] Icon buffer size: ${iconBuffer.length} bytes`);
+
+        // 验证图标数据
+        if (!iconBuffer || iconBuffer.length === 0) {
+          throw new Error("Downloaded icon buffer is empty");
+        }
+
+        // 处理图标
+        console.log(`[Domestic Build ${buildId}] Starting icon processing...`);
         await processIcons(projectRoot, iconBuffer, buildId);
-        console.log(`[Domestic Build ${buildId}] Icon processing completed`);
+        console.log(`[Domestic Build ${buildId}] ✓ Icon processing completed successfully`);
+        console.log(`[Domestic Build ${buildId}] ========== ICON PROCESSING END ==========`);
       } catch (iconError) {
-        console.error(`[Domestic Build ${buildId}] Icon processing failed:`, iconError);
-        console.log(`[Domestic Build ${buildId}] Continuing build without custom icons...`);
+        console.error(`[Domestic Build ${buildId}] ========== ICON PROCESSING FAILED ==========`);
+        console.error(`[Domestic Build ${buildId}] Error type: ${iconError instanceof Error ? iconError.constructor.name : typeof iconError}`);
+        console.error(`[Domestic Build ${buildId}] Error message: ${iconError instanceof Error ? iconError.message : String(iconError)}`);
+        console.error(`[Domestic Build ${buildId}] Error stack:`, iconError instanceof Error ? iconError.stack : "No stack trace");
+        console.error(`[Domestic Build ${buildId}] Icon path attempted: ${config.iconPath}`);
+        console.log(`[Domestic Build ${buildId}] ⚠️ Continuing build without custom icons...`);
+        console.error(`[Domestic Build ${buildId}] ========================================`);
       }
     } else {
-      console.log(`[Domestic Build ${buildId}] No icon provided, skipping icon processing`);
+      console.log(`[Domestic Build ${buildId}] No icon path provided (config.iconPath is null/undefined)`);
+      console.log(`[Domestic Build ${buildId}] Skipping icon processing`);
     }
 
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));

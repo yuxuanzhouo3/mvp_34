@@ -33,6 +33,9 @@ export class CloudBaseStorage {
     await this.initialize();
     this.ensureReady();
 
+    console.log(`[CloudBase Storage] ========== DOWNLOAD START ==========`);
+    console.log(`[CloudBase Storage] Requested path: ${cloudPath}`);
+
     try {
       // 构建完整的 fileID
       // 格式: cloud://envId.bucketId/path
@@ -40,27 +43,56 @@ export class CloudBaseStorage {
       const bucketId = process.env.CLOUDBASE_BUCKET_ID || `6d6f-${envId}-1389815466`;
       const fileID = `cloud://${envId}.${bucketId}/${cloudPath}`;
 
+      console.log(`[CloudBase Storage] Environment ID: ${envId}`);
+      console.log(`[CloudBase Storage] Bucket ID: ${bucketId}`);
+      console.log(`[CloudBase Storage] Constructed fileID: ${fileID}`);
+
       // 获取临时下载链接
+      console.log(`[CloudBase Storage] Requesting temp download URL...`);
       const { fileList } = await this.app.getTempFileURL({
         fileList: [fileID],
       });
 
-      if (!fileList || fileList.length === 0 || !fileList[0].tempFileURL) {
-        throw new Error(`File not found: ${cloudPath}`);
+      console.log(`[CloudBase Storage] getTempFileURL response:`, JSON.stringify(fileList, null, 2));
+
+      if (!fileList || fileList.length === 0) {
+        throw new Error(`File not found: ${cloudPath} (fileID: ${fileID}) - fileList is empty`);
+      }
+
+      if (!fileList[0].tempFileURL) {
+        const errorMsg = fileList[0].errMsg || fileList[0].status || "Unknown error";
+        throw new Error(`File not found: ${cloudPath} (fileID: ${fileID}) - Error: ${errorMsg}`);
       }
 
       const tempUrl = fileList[0].tempFileURL;
+      console.log(`[CloudBase Storage] ✓ Temp URL obtained: ${tempUrl.substring(0, 100)}...`);
 
       // 下载文件
+      console.log(`[CloudBase Storage] Downloading file from temp URL...`);
       const response = await fetch(tempUrl);
+
+      console.log(`[CloudBase Storage] Fetch response status: ${response.status} ${response.statusText}`);
+      console.log(`[CloudBase Storage] Response headers:`, Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.statusText}`);
+        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      const buffer = Buffer.from(arrayBuffer);
+
+      console.log(`[CloudBase Storage] ✓ File downloaded successfully`);
+      console.log(`[CloudBase Storage] Buffer size: ${buffer.length} bytes`);
+      console.log(`[CloudBase Storage] ========== DOWNLOAD END ==========`);
+
+      return buffer;
     } catch (error) {
-      console.error(`[CloudBase Storage] Download error for ${cloudPath}:`, error);
+      console.error(`[CloudBase Storage] ========== DOWNLOAD FAILED ==========`);
+      console.error(`[CloudBase Storage] Path: ${cloudPath}`);
+      console.error(`[CloudBase Storage] Error type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+      console.error(`[CloudBase Storage] Error message: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[CloudBase Storage] Error stack:`, error instanceof Error ? error.stack : "No stack trace");
+      console.error(`[CloudBase Storage] ==========================================`);
       throw error;
     }
   }

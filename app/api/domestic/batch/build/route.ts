@@ -242,8 +242,13 @@ async function processBuildsAsync(
           updated_at: new Date().toISOString(),
         });
 
-        // 上传图标（支持 URL 或 base64）
-        if (isIconUploadEnabled()) {
+        // 优先使用前端预上传的图标路径（国内版）
+        if (config.iconPath) {
+          iconPath = config.iconPath;
+          console.log(`[Domestic Batch Build] Using pre-uploaded icon path for build ${buildId}: ${iconPath}`);
+        }
+        // 如果没有预上传路径，则上传图标（支持 URL 或 base64）
+        else if (isIconUploadEnabled()) {
           let iconBuffer: Buffer | null = null;
 
           // 优先使用 iconUrl（避免 Vercel 4.5MB 限制）

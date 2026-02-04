@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     const versionCode = formData.get("versionCode") as string || "1";
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const icon = formData.get("icon") as File | null;
+    const preUploadedIconPath = formData.get("iconPath") as string | null; // 前端预上传的图标路径
 
     // Validate required fields
     if (!url || !appName || !packageName) {
@@ -109,12 +110,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 读取图标数据，稍后上传
-    let iconBuffer: Buffer | null = null;
-    if (icon && icon.size > 0) {
-      iconBuffer = Buffer.from(await icon.arrayBuffer());
-    }
-
     // 连接 CloudBase 数据库
     const connector = new CloudBaseConnector();
     await connector.initialize();
@@ -125,6 +120,10 @@ export async function POST(request: NextRequest) {
     const plan = user.metadata?.plan || "free";
     const expireDays = wallet?.file_retention_days || getPlanBuildExpireDays(plan);
     const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
+
+    // 使用前端预上传的图标路径（如果有）
+    const iconPath = preUploadedIconPath || null;
+    console.log(`[Domestic Android Build] Icon path from frontend: ${iconPath || "none"}`);
 
     // 创建构建记录
     const buildData = {
@@ -137,7 +136,7 @@ export async function POST(request: NextRequest) {
       version_code: parseInt(versionCode),
       url,
       privacy_policy: privacyPolicy,
-      icon_path: null,
+      icon_path: iconPath,
       output_file_path: null,
       download_url: null,
       error_message: null,
@@ -159,34 +158,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const buildId = result.id;
-
-    // 上传图标到 CloudBase 存储（使用正确的路径格式）
-    let iconPath: string | null = null;
-    if (iconBuffer) {
-      console.log(`[Domestic Android Build] Starting icon upload for build ${buildId}, icon size: ${iconBuffer.length} bytes`);
-      try {
-        const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
-        const storage = getCloudBaseStorage();
-        iconPath = `user-builds/builds/${buildId}/icon.png`;
-        console.log(`[Domestic Android Build] Uploading icon to path: ${iconPath}`);
-
-        await storage.uploadFile(iconPath, iconBuffer);
-        console.log(`[Domestic Android Build] Icon uploaded successfully to ${iconPath}`);
-
-        // 更新构建记录的 icon_path
-        console.log(`[Domestic Android Build] Updating build record with icon_path: ${iconPath}`);
-        await db.collection("builds").doc(buildId).update({
-          icon_path: iconPath,
-          updated_at: new Date().toISOString(),
-        });
-        console.log(`[Domestic Android Build] Build record updated successfully with icon_path`);
-      } catch (error) {
-        console.error("[Domestic Android Build] Icon upload error:", error);
-        // 图标上传失败不影响构建继续
-      }
-    } else {
-      console.log(`[Domestic Android Build] No icon provided for build ${buildId}`);
-    }
+    console.log(`[Domestic Android Build] Build record created with ID: ${buildId}, icon_path: ${iconPath || "none"}`);
 
     // 异步处理构建（不阻塞响应）
     // 注意：实际生产环境应使用消息队列或云函数
