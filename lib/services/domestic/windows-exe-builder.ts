@@ -165,8 +165,20 @@ async function modifyExeResources(
     }
 
     if (config.iconPath) {
+      console.log(`[Domestic Windows Build ${buildId}] ========== ICON PROCESSING START ==========`);
+      console.log(`[Domestic Windows Build ${buildId}] Icon path: ${config.iconPath}`);
+
       try {
+        console.log(`[Domestic Windows Build ${buildId}] Attempting to download icon from CloudBase Storage...`);
         const iconBuffer = await storage.downloadFile(config.iconPath);
+        console.log(`[Domestic Windows Build ${buildId}] ✓ Icon downloaded successfully`);
+        console.log(`[Domestic Windows Build ${buildId}] Icon buffer size: ${iconBuffer.length} bytes`);
+
+        if (!iconBuffer || iconBuffer.length === 0) {
+          throw new Error("Downloaded icon buffer is empty");
+        }
+
+        console.log(`[Domestic Windows Build ${buildId}] Generating ICO format...`);
         const icoBuffer = await generateIco(iconBuffer);
         const iconFile = ResEdit.Data.IconFile.from(icoBuffer);
 
@@ -176,10 +188,19 @@ async function modifyExeResources(
         ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
           res.entries, 1, 0x0409, iconFile.icons.map((icon) => icon.data)
         );
-        console.log("[Domestic Windows Build] Icon replaced successfully");
+        console.log(`[Domestic Windows Build ${buildId}] ✓ Icon replaced successfully`);
+        console.log(`[Domestic Windows Build ${buildId}] ========== ICON PROCESSING END ==========`);
       } catch (iconError) {
-        console.warn("[Domestic Windows Build] Icon replacement failed:", iconError);
+        console.error(`[Domestic Windows Build ${buildId}] ========== ICON PROCESSING FAILED ==========`);
+        console.error(`[Domestic Windows Build ${buildId}] Error type: ${iconError instanceof Error ? iconError.constructor.name : typeof iconError}`);
+        console.error(`[Domestic Windows Build ${buildId}] Error message: ${iconError instanceof Error ? iconError.message : String(iconError)}`);
+        console.error(`[Domestic Windows Build ${buildId}] Error stack:`, iconError instanceof Error ? iconError.stack : "No stack trace");
+        console.error(`[Domestic Windows Build ${buildId}] Icon path attempted: ${config.iconPath}`);
+        console.warn(`[Domestic Windows Build ${buildId}] ⚠️ Continuing build without custom icon...`);
+        console.error(`[Domestic Windows Build ${buildId}] ========================================`);
       }
+    } else {
+      console.log(`[Domestic Windows Build ${buildId}] No icon path provided, using default icon`);
     }
 
     // Embed app config into APPCONFIG resource

@@ -96,12 +96,35 @@ export async function processHarmonyOSBuildDomestic(
     await updateBuildStatus(db, buildId, "processing", 60);
 
     if (config.iconPath) {
+      console.log(`[Domestic HarmonyOS Build ${buildId}] ========== ICON PROCESSING START ==========`);
+      console.log(`[Domestic HarmonyOS Build ${buildId}] Icon path: ${config.iconPath}`);
+      console.log(`[Domestic HarmonyOS Build ${buildId}] Project root: ${projectRoot}`);
+
       try {
+        console.log(`[Domestic HarmonyOS Build ${buildId}] Attempting to download icon from CloudBase Storage...`);
         const iconBuffer = await storage.downloadFile(config.iconPath);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ✓ Icon downloaded successfully`);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] Icon buffer size: ${iconBuffer.length} bytes`);
+
+        if (!iconBuffer || iconBuffer.length === 0) {
+          throw new Error("Downloaded icon buffer is empty");
+        }
+
+        console.log(`[Domestic HarmonyOS Build ${buildId}] Starting icon processing...`);
         await processIcons(projectRoot, iconBuffer);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ✓ Icon processing completed successfully`);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ========== ICON PROCESSING END ==========`);
       } catch (iconError) {
-        console.error(`[Domestic HarmonyOS Build ${buildId}] Icon processing failed:`, iconError);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] ========== ICON PROCESSING FAILED ==========`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Error type: ${iconError instanceof Error ? iconError.constructor.name : typeof iconError}`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Error message: ${iconError instanceof Error ? iconError.message : String(iconError)}`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Error stack:`, iconError instanceof Error ? iconError.stack : "No stack trace");
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Icon path attempted: ${config.iconPath}`);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ⚠️ Continuing build without custom icons...`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] ========================================`);
       }
+    } else {
+      console.log(`[Domestic HarmonyOS Build ${buildId}] No icon path provided, skipping icon processing`);
     }
 
     await updateBuildStatus(db, buildId, "processing", 75);
