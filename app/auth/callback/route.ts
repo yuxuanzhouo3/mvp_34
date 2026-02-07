@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseUrlFromEnv, getSupabaseAnonKeyFromEnv } from "@/lib/supabase/env";
 import { trackLoginEvent, trackRegisterEvent } from "@/services/analytics";
+import { IS_DOMESTIC_VERSION } from "@/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,12 +30,37 @@ function sanitizeNextPath(next: string | null): string {
 }
 
 /**
+ * 尝试解析微信OAuth的state参数
+ * 微信OAuth的state是base64url编码的JSON，格式: {"next": "/path"}
+ */
+function tryParseWechatState(state: string | null): { isWechat: boolean; next: string } {
+  if (!state) return { isWechat: false, next: "/" };
+
+  try {
+    const decoded = Buffer.from(state, "base64url").toString("utf-8");
+    const parsed = JSON.parse(decoded);
+    // 微信state包含next字段
+    if (typeof parsed === "object" && parsed !== null && "next" in parsed) {
+      return { isWechat: true, next: sanitizeNextPath(parsed.next) };
+    }
+  } catch {
+    // 解析失败，不是微信OAuth
+  }
+
+  return { isWechat: false, next: "/" };
+}
+
+/**
  * 服务端 OAuth 回调处理路由
- * 使用 PKCE code exchange 处理 Google OAuth
+ *
+ * 支持两种OAuth回调：
+ * 1. 微信OAuth (国内版) - 通过state参数识别，调用/api/domestic/auth/wechat处理
+ * 2. Supabase OAuth (Google等) - 使用PKCE code exchange
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const state = searchParams.get("state");
   const next = sanitizeNextPath(searchParams.get("next"));
   const errorParam = searchParams.get("error");
   const errorDescription = searchParams.get("error_description");
@@ -42,8 +68,9 @@ export async function GET(request: NextRequest) {
 
   console.info("[auth/callback] Received callback", {
     hasCode: !!code,
+    hasState: !!state,
     hasError: !!errorParam,
-    next,
+    isDomestic: IS_DOMESTIC_VERSION,
   });
 
   // 处理 OAuth 错误
@@ -55,6 +82,60 @@ export async function GET(request: NextRequest) {
       errUrl.searchParams.set("error_description", errorDescription);
     }
     return NextResponse.redirect(errUrl);
+  }
+
+  // 检查是否是微信OAuth回调
+  const wechatState = tryParseWechatState(state);
+
+  if (wechatState.isWechat && code && IS_DOMESTIC_VERSION) {
+    console.info("[auth/callback] Detected WeChat OAuth callback, processing...");
+
+    try {
+      // 调用微信登录API处理code
+      const wechatApiUrl = new URL("/api/domestic/auth/wechat", origin);
+      const wechatResponse = await fetch(wechatApiUrl.toString(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code, state }),
+      });
+
+      const wechatResult = await wechatResponse.json();
+
+      if (!wechatResponse.ok || !wechatResult.success) {
+        console.error("[auth/callback] WeChat login failed:", wechatResult.error);
+        const errUrl = new URL("/auth/login", origin);
+        errUrl.searchParams.set("error", "wechat_login_failed");
+        errUrl.searchParams.set("error_description", wechatResult.error || "微信登录失败");
+        return NextResponse.redirect(errUrl);
+      }
+
+      console.info("[auth/callback] WeChat login successful, redirecting to:", wechatState.next);
+
+      // 创建响应并设置cookie
+      const successUrl = new URL(wechatState.next, origin);
+      const response = NextResponse.redirect(successUrl);
+
+      // 从API返回的token设置cookie
+      if (wechatResult.token) {
+        response.cookies.set("auth-token", wechatResult.token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 60 * 60 * 24 * 7,
+          path: "/",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      console.error("[auth/callback] WeChat processing error:", error);
+      const errUrl = new URL("/auth/login", origin);
+      errUrl.searchParams.set("error", "wechat_processing_error");
+      errUrl.searchParams.set("error_description", "微信登录处理失败");
+      return NextResponse.redirect(errUrl);
+    }
   }
 
   // 如果没有 code，重定向到客户端页面处理其他情况（如 hash 中的 tokens）
@@ -71,7 +152,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(clientUrl);
   }
 
-  // Supabase OAuth 处理
+  // Supabase OAuth 处理 (Google等)
   const supabaseUrl = getSupabaseUrlFromEnv();
   const supabaseAnonKey = getSupabaseAnonKeyFromEnv();
 
