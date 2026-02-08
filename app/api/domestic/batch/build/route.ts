@@ -233,6 +233,7 @@ async function processBuildsAsync(
   await Promise.allSettled(
     buildIds.map(async (buildId, i) => {
       const config = platforms[i];
+      console.log(`[Domestic Batch Build] Processing build ${buildId}, platform: ${config.platform}, config.iconPath: ${config.iconPath}`);
       let iconPath: string | null = null;
 
       try {
@@ -249,6 +250,8 @@ async function processBuildsAsync(
         }
         // 如果没有预上传路径，则上传图标（支持 URL 或 base64）
         else if (isIconUploadEnabled()) {
+          console.log(`[Domestic Batch Build] No pre-uploaded icon path for build ${buildId}, trying iconUrl or iconBase64`);
+
           let iconBuffer: Buffer | null = null;
 
           // 优先使用 iconUrl（避免 Vercel 4.5MB 限制）

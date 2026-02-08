@@ -165,21 +165,42 @@ async function modifyExeResources(
     }
 
     if (config.iconPath) {
+      console.log(`[Domestic Windows Build] Starting icon replacement, iconPath: ${config.iconPath}`);
       try {
+        console.log(`[Domestic Windows Build] Downloading icon from CloudBase...`);
         const iconBuffer = await storage.downloadFile(config.iconPath);
+        console.log(`[Domestic Windows Build] Icon downloaded successfully, size: ${iconBuffer.length} bytes`);
+
+        console.log(`[Domestic Windows Build] Converting to ICO format...`);
         const icoBuffer = await generateIco(iconBuffer);
+        console.log(`[Domestic Windows Build] ICO generated successfully, size: ${icoBuffer.length} bytes`);
+
+        console.log(`[Domestic Windows Build] Parsing ICO file...`);
         const iconFile = ResEdit.Data.IconFile.from(icoBuffer);
+        console.log(`[Domestic Windows Build] ICO parsed successfully, icons count: ${iconFile.icons.length}`);
 
         // Remove existing icon resources (14 = RT_GROUP_ICON, 3 = RT_ICON)
+        console.log(`[Domestic Windows Build] Removing existing icon resources...`);
+        const beforeCount = res.entries.length;
         res.entries = res.entries.filter(e => e.type !== 14 && e.type !== 3);
+        const afterCount = res.entries.length;
+        console.log(`[Domestic Windows Build] Removed ${beforeCount - afterCount} icon resource entries`);
 
+        console.log(`[Domestic Windows Build] Replacing icon resources...`);
         ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
           res.entries, 1, 0x0409, iconFile.icons.map((icon) => icon.data)
         );
         console.log("[Domestic Windows Build] Icon replaced successfully");
       } catch (iconError) {
-        console.warn("[Domestic Windows Build] Icon replacement failed:", iconError);
+        console.error("[Domestic Windows Build] Icon replacement failed:", iconError);
+        console.error("[Domestic Windows Build] Error details:", {
+          message: iconError instanceof Error ? iconError.message : String(iconError),
+          stack: iconError instanceof Error ? iconError.stack : undefined,
+          iconPath: config.iconPath
+        });
       }
+    } else {
+      console.log("[Domestic Windows Build] No icon path provided, skipping icon replacement");
     }
 
     // Embed app config into APPCONFIG resource

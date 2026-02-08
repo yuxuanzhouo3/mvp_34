@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
@@ -91,6 +91,12 @@ function GenerateContent() {
   // 国内版：存储已上传图标的路径
   const [uploadedIconPaths, setUploadedIconPaths] = useState<Record<string, string>>({});
 
+  // 使用 ref 存储最新的 iconPath，避免 state 更新延迟
+  const uploadedIconPathsRef = useRef<Record<string, string>>({});
+
+  // 跟踪正在进行的图标上传 Promise
+  const uploadingPromisesRef = useRef<Record<string, Promise<string | null>>>({});
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 国内版：即时上传图标到 CloudBase
@@ -165,6 +171,7 @@ function GenerateContent() {
           delete next[platform];
           return next;
         });
+        delete uploadedIconPathsRef.current[platform];
       }
       setter(null);
       return;
@@ -176,13 +183,21 @@ function GenerateContent() {
     // 国内版：立即上传
     if (IS_DOMESTIC_VERSION) {
       console.log(`[handleIconChange] Uploading icon for ${platform}...`);
-      const iconPath = await uploadIconImmediately(file, platform);
+      const uploadPromise = uploadIconImmediately(file, platform);
+      uploadingPromisesRef.current[platform] = uploadPromise;
+
+      const iconPath = await uploadPromise;
       if (iconPath) {
         console.log(`[handleIconChange] Icon uploaded successfully, path: ${iconPath}`);
+        // 同时更新 state 和 ref
         setUploadedIconPaths(prev => ({ ...prev, [platform]: iconPath }));
+        uploadedIconPathsRef.current[platform] = iconPath;
       } else {
         console.error(`[handleIconChange] Icon upload failed for ${platform}`);
       }
+
+      // 清理已完成的 Promise
+      delete uploadingPromisesRef.current[platform];
     }
   };
 
@@ -589,10 +604,17 @@ function GenerateContent() {
       let iconUrls: Record<string, string> = {};
 
       if (iconsToUpload.length > 0 && user?.id) {
-        // 国内版：使用已上传的 iconPath
+        // 国内版：等待所有正在进行的图标上传完成，然后使用已上传的 iconPath
         if (IS_DOMESTIC_VERSION) {
+          console.log("[Domestic] Waiting for any pending icon uploads to complete...");
+          const pendingUploads = Object.entries(uploadingPromisesRef.current);
+          if (pendingUploads.length > 0) {
+            console.log(`[Domestic] Found ${pendingUploads.length} pending uploads, waiting...`);
+            await Promise.all(pendingUploads.map(([_, promise]) => promise));
+            console.log("[Domestic] All pending uploads completed");
+          }
           console.log("[Domestic] Using pre-uploaded icon paths for batch build");
-          // iconPath 将在构建平台配置时从 uploadedIconPaths 中获取
+          // iconPath 将在构建平台配置时从 uploadedIconPathsRef 中获取
         } else {
           // 国际版：上传到 Supabase Storage
           try {
@@ -628,52 +650,61 @@ function GenerateContent() {
 
       // 构建各平台配置
       if (hasAndroid) {
+        const latestIconPath = uploadedIconPathsRef.current.android || uploadedIconPaths.android;
         platforms.push({
           platform: "android", appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.android ? { iconPath: uploadedIconPaths.android } : iconUrls.android && { iconUrl: iconUrls.android }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.android && { iconUrl: iconUrls.android }),
         });
       }
       if (hasIOS) {
+        const latestIconPath = uploadedIconPathsRef.current.ios || uploadedIconPaths.ios;
         platforms.push({
           platform: "ios", appName, bundleId,
           versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.ios ? { iconPath: uploadedIconPaths.ios } : iconUrls.ios && { iconUrl: iconUrls.ios }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.ios && { iconUrl: iconUrls.ios }),
         });
       }
       if (hasWechat) {
         platforms.push({ platform: "wechat", appName, appId: wechatAppId, version: wechatVersion });
       }
       if (hasHarmonyOS) {
+        const latestIconPath = uploadedIconPathsRef.current.harmonyos || uploadedIconPaths.harmonyos;
         platforms.push({
           platform: "harmonyos", appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.harmonyos ? { iconPath: uploadedIconPaths.harmonyos } : iconUrls.harmonyos && { iconUrl: iconUrls.harmonyos }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.harmonyos && { iconUrl: iconUrls.harmonyos }),
         });
       }
       if (hasChrome) {
+        const latestIconPath = uploadedIconPathsRef.current.chrome || uploadedIconPaths.chrome;
         platforms.push({
           platform: "chrome", appName: chromeExtensionName,
           versionName: chromeExtensionVersion, description: chromeExtensionDescription,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.chrome ? { iconPath: uploadedIconPaths.chrome } : iconUrls.chrome && { iconUrl: iconUrls.chrome }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.chrome && { iconUrl: iconUrls.chrome }),
         });
       }
       if (hasWindows) {
+        // 使用 ref 获取最新的 iconPath，避免 state 更新延迟
+        const latestIconPath = uploadedIconPathsRef.current.windows || uploadedIconPaths.windows;
+        console.log(`[Build Config] Windows platform - IS_DOMESTIC_VERSION: ${IS_DOMESTIC_VERSION}, uploadedIconPaths.windows: ${uploadedIconPaths.windows}, latestIconPath from ref: ${latestIconPath}, iconUrls.windows: ${iconUrls.windows}`);
         platforms.push({
           platform: "windows", appName: windowsAppName,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.windows ? { iconPath: uploadedIconPaths.windows } : iconUrls.windows && { iconUrl: iconUrls.windows }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.windows && { iconUrl: iconUrls.windows }),
         });
       }
       if (hasMacos) {
+        const latestIconPath = uploadedIconPathsRef.current.macos || uploadedIconPaths.macos;
         platforms.push({
           platform: "macos", appName: macosAppName,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.macos ? { iconPath: uploadedIconPaths.macos } : iconUrls.macos && { iconUrl: iconUrls.macos }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.macos && { iconUrl: iconUrls.macos }),
         });
       }
       if (hasLinux) {
+        const latestIconPath = uploadedIconPathsRef.current.linux || uploadedIconPaths.linux;
         platforms.push({
           platform: "linux", appName: linuxAppName,
-          ...(IS_DOMESTIC_VERSION && uploadedIconPaths.linux ? { iconPath: uploadedIconPaths.linux } : iconUrls.linux && { iconUrl: iconUrls.linux }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.linux && { iconUrl: iconUrls.linux }),
         });
       }
 
