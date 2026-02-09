@@ -49,7 +49,7 @@ function isExpired(expiresAt: string): boolean {
 
 // Category classification helper
 function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" | "browser" {
-  if (platform === "android" || platform === "ios" || platform === "harmonyos") return "mobile";
+  if (platform === "android-source" || platform === "android-apk" || platform === "ios" || platform === "harmonyos") return "mobile";
   if (platform === "wechat") return "miniprogram";
   if (platform === "chrome") return "browser";
   return "desktop"; // windows, macos, linux, etc.
@@ -252,15 +252,51 @@ export default function BuildsClient() {
     }
   }, [authLoading, user, fetchBuilds]);
 
-  // Polling for processing builds（优化轮询策略）
+  // Polling for processing builds（优化轮询策略 - 只轮询构建中的记录）
   useEffect(() => {
     const hasProcessingBuilds = builds.some(
       (b) => b.status === "pending" || b.status === "processing"
     );
 
     if (hasProcessingBuilds) {
-      // 有正在处理的构建时，使用更快的轮询间隔
-      const interval = setInterval(fetchBuilds, 800);
+      const pollProcessingBuilds = async () => {
+        try {
+          const response = await fetch("/api/domestic/builds/polling");
+          if (response.ok) {
+            const { builds: processingBuilds } = await response.json();
+
+            // 检查是否有构建从 processing 列表中消失（说明已完成）
+            const prevProcessingIds = builds
+              .filter((b) => b.status === "pending" || b.status === "processing")
+              .map((b) => b.id);
+            const currentProcessingIds = processingBuilds.map((pb: any) => pb.id);
+            const hasDisappeared = prevProcessingIds.some(
+              (id) => !currentProcessingIds.includes(id)
+            );
+
+            // 如果有构建消失或完成，立即刷新完整列表
+            if (hasDisappeared || processingBuilds.some((pb: any) => pb.status === "completed" || pb.status === "failed")) {
+              // 立即刷新,不等待
+              fetchBuilds();
+              // 1秒后再次刷新,确保获取到最新状态
+              setTimeout(() => fetchBuilds(), 1000);
+            } else {
+              // 否则只更新状态
+              setBuilds((prevBuilds) =>
+                prevBuilds.map((build) => {
+                  const updated = processingBuilds.find((pb: any) => pb.id === build.id);
+                  return updated ? { ...build, ...updated } : build;
+                })
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Polling error:", error);
+        }
+      };
+
+      // 使用更快的轮询间隔（3秒）
+      const interval = setInterval(pollProcessingBuilds, 3000);
       return () => clearInterval(interval);
     }
   }, [builds, fetchBuilds]);
@@ -315,6 +351,38 @@ export default function BuildsClient() {
       console.error("Download error:", error);
       toast.error(
         currentLanguage === "zh" ? "下载失败" : "Download failed"
+      );
+    }
+  };
+
+  const handleSyncGitHub = async (buildId: string) => {
+    try {
+      toast.loading(
+        currentLanguage === "zh" ? "正在同步GitHub构建状态..." : "Syncing GitHub build status..."
+      );
+
+      const response = await fetch(`/api/domestic/builds/${buildId}/sync-github-status`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to sync GitHub status");
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(
+          currentLanguage === "zh" ? "同步成功！" : "Sync successful!"
+        );
+        fetchBuilds();
+      } else {
+        throw new Error(data.error || "Sync failed");
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+      toast.error(
+        currentLanguage === "zh" ? "同步失败" : "Sync failed"
       );
     }
   };
@@ -907,6 +975,17 @@ export default function BuildsClient() {
                             <span>{currentLanguage === "zh" ? "分享" : "Share"}</span>
                           </Button>
                         </>
+                      )}
+                      {build.status === "processing" && build.platform === "android-apk" && build.progress === 50 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl gap-1.5 sm:gap-2 border-blue-500/30 text-blue-600 hover:bg-blue-500/10"
+                          onClick={() => handleSyncGitHub(build.id)}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          <span>{currentLanguage === "zh" ? "同步状态" : "Sync Status"}</span>
+                        </Button>
                       )}
                       {build.expires_at && isExpired(build.expires_at) && (
                         <Badge variant="outline" className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600">

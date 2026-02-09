@@ -67,16 +67,48 @@ export class CloudBaseStorage {
       const tempUrl = fileList[0].tempFileURL;
       console.log(`[CloudBase Storage] ✓ Temp URL obtained: ${tempUrl.substring(0, 100)}...`);
 
-      // 下载文件
+      // 下载文件（带超时和重试）
       console.log(`[CloudBase Storage] Downloading file from temp URL...`);
-      const response = await fetch(tempUrl);
+
+      const downloadWithRetry = async (url: string, maxRetries = 3): Promise<Response> => {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[CloudBase Storage] Download attempt ${attempt}/${maxRetries}...`);
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+
+            const response = await fetch(url, {
+              signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            return response;
+          } catch (error) {
+            console.error(`[CloudBase Storage] Attempt ${attempt} failed:`, error instanceof Error ? error.message : String(error));
+
+            if (attempt === maxRetries) {
+              throw error;
+            }
+
+            // 等待后重试（指数退避）
+            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+            console.log(`[CloudBase Storage] Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+        throw new Error("Download failed after all retries");
+      };
+
+      const response = await downloadWithRetry(tempUrl);
 
       console.log(`[CloudBase Storage] Fetch response status: ${response.status} ${response.statusText}`);
       console.log(`[CloudBase Storage] Response headers:`, Object.fromEntries(response.headers.entries()));
-
-      if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
-      }
 
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
@@ -152,7 +184,8 @@ export class CloudBaseStorage {
 
       return fileList[0].tempFileURL;
     } catch (error) {
-      console.error(`[CloudBase Storage] Get temp URL error for ${cloudPath}:`, error);
+      // 只记录错误类型，不打印完整错误信息（减少日志噪音）
+      console.error(`[CloudBase Storage] Get temp URL error for ${cloudPath}:`, error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }

@@ -32,12 +32,21 @@ export interface Platform {
 export const PLATFORMS: Platform[] = [
   // 移动端
   {
-    id: "android",
-    name: { zh: "Android", en: "Android" },
-    description: { zh: "Android Source", en: "Android Source" },
+    id: "android-source",
+    name: { zh: "Android Source", en: "Android Source" },
+    description: { zh: "Android 源码项目", en: "Android Source Project" },
     category: "mobile",
     icon: Smartphone,
     color: "from-green-500 to-green-600",
+    available: true,
+  },
+  {
+    id: "android-apk",
+    name: { zh: "Android APK", en: "Android APK" },
+    description: { zh: "Android 安装包", en: "Android Package" },
+    category: "mobile",
+    icon: Smartphone,
+    color: "from-green-600 to-green-700",
     available: true,
   },
   {

@@ -43,6 +43,17 @@ export const BUILD_STAGES: Record<string, StageInfo[]> = {
     { stage: "completed", progress: 100, label: { zh: "构建完成", en: "Build completed" } },
   ],
 
+  // Android APK 构建阶段（使用 GitHub Actions 编译）
+  "android-apk": [
+    { stage: "initializing", progress: 0, label: { zh: "初始化构建环境", en: "Initializing build environment" } },
+    { stage: "downloading", progress: 10, label: { zh: "生成Android源码", en: "Generating Android source" } },
+    { stage: "extracting", progress: 30, label: { zh: "上传源码到云端", en: "Uploading source to cloud" } },
+    { stage: "configuring", progress: 50, label: { zh: "编译APK中", en: "Compiling APK" } },
+    { stage: "packaging", progress: 80, label: { zh: "下载构建产物", en: "Downloading build artifact" } },
+    { stage: "uploading", progress: 90, label: { zh: "上传APK到云端", en: "Uploading APK to cloud" } },
+    { stage: "completed", progress: 100, label: { zh: "构建完成", en: "Build completed" } },
+  ],
+
   // Chrome 扩展构建阶段
   chrome: [
     { stage: "initializing", progress: 0, label: { zh: "初始化构建环境", en: "Initializing build environment" } },

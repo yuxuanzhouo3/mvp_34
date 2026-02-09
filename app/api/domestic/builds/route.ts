@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { withCache } from "@/lib/cloudbase/cache";
+import { withDbRetry } from "@/lib/cloudbase/retry-wrapper";
 
 // Check if a build is expired
 function isExpired(expiresAt: string): boolean {
@@ -73,21 +75,29 @@ export async function GET(request: NextRequest) {
       whereConditions.platform = platform;
     }
 
-    // 重新构建查询
-    const { data: builds } = await db
-      .collection("builds")
-      .where(whereConditions)
-      .orderBy("created_at", "desc")
-      .skip(safeOffset)
-      .limit(safeLimit)
-      .get();
+    // 重新构建查询（使用重试机制）
+    const { data: builds } = await withDbRetry(
+      () => db
+        .collection("builds")
+        .where(whereConditions)
+        .orderBy("created_at", "desc")
+        .skip(safeOffset)
+        .limit(safeLimit)
+        .get(),
+      'Get builds list'
+    );
+
+    // 过滤掉中间产物（Android Source 临时构建记录）
+    const filteredBuilds = (builds || []).filter((build: any) => {
+      return !build._id.endsWith("-source");
+    });
 
     // Process builds: mark expired ones, map _id to id, and generate icon URLs
     const { getCloudBaseStorage } = await import("@/lib/cloudbase/storage");
     const storage = getCloudBaseStorage();
 
     const buildsWithStatus = await Promise.all(
-      (builds || []).map(async (build: any) => {
+      filteredBuilds.map(async (build: any) => {
         const { _id, ...rest } = build;
         const mapped = { id: _id, ...rest };
 
@@ -112,19 +122,20 @@ export async function GET(request: NextRequest) {
           return { ...mapped, output_file_path: null, icon_path: null, icon_url: null };
         }
 
-        // Generate icon URL if icon_path exists
+        // Generate icon URL if icon_path exists（使用缓存）
         if (build.icon_path) {
           try {
-            console.log(`[Domestic Builds] Generating icon URL for build ${build._id}, icon_path: ${build.icon_path}`);
-            const iconUrl = await storage.getTempDownloadUrl(build.icon_path);
-            console.log(`[Domestic Builds] Icon URL generated successfully for build ${build._id}: ${iconUrl}`);
+            const iconUrl = await withCache(
+              `icon:${build.icon_path}`,
+              600, // 10分钟缓存
+              () => storage.getTempDownloadUrl(build.icon_path)
+            );
             return { ...mapped, icon_url: iconUrl };
           } catch (error) {
-            console.error(`[Domestic Builds] Failed to get icon URL for build ${build._id}, icon_path: ${build.icon_path}`, error);
+            console.error(`[Domestic Builds] Failed to get icon URL for build ${build._id}:`, error);
             return { ...mapped, icon_url: null };
           }
         }
-        console.log(`[Domestic Builds] No icon_path for build ${build._id}`);
         return { ...mapped, icon_url: null };
       })
     );

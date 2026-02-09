@@ -16,10 +16,10 @@ function isExpired(expiresAt: string): boolean {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ buildId: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { buildId } = await params;
 
     // 验证用户身份
     const cookieStore = await cookies();
@@ -50,7 +50,7 @@ export async function GET(
     // 获取构建记录
     const { data: builds } = await db
       .collection("builds")
-      .where({ _id: id, user_id: user.id })
+      .where({ _id: buildId, user_id: user.id })
       .limit(1)
       .get();
 
@@ -105,10 +105,10 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ buildId: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { buildId } = await params;
 
     // 验证用户身份
     const cookieStore = await cookies();
@@ -139,7 +139,7 @@ export async function DELETE(
     // 先获取构建记录，确认属于当前用户
     const { data: builds } = await db
       .collection("builds")
-      .where({ _id: id, user_id: user.id })
+      .where({ _id: buildId, user_id: user.id })
       .limit(1)
       .get();
 
@@ -172,7 +172,7 @@ export async function DELETE(
     }
 
     // 删除构建记录
-    await db.collection("builds").doc(id).remove();
+    await db.collection("builds").doc(buildId).remove();
 
     return NextResponse.json({
       success: true,

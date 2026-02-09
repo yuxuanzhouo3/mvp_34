@@ -352,6 +352,7 @@ async function startPlatformBuild(
 ) {
   switch (platform) {
     case "android":
+    case "android-source":
       await processAndroidBuildDomestic(buildId, {
         url,
         appName: config.appName,
@@ -361,6 +362,13 @@ async function startPlatformBuild(
         privacyPolicy: config.privacyPolicy || "",
         iconPath,
       });
+      break;
+
+    case "android-apk":
+      // Android APK 构建暂不支持批量构建
+      // 用户需要单独选择 Android APK 平台进行构建
+      console.warn(`[Domestic Batch] Android APK build is not supported in batch mode for build ${buildId}`);
+      throw new Error("Android APK build is not supported in batch mode. Please build Android APK separately.");
       break;
 
     case "ios":

@@ -12,6 +12,8 @@ export interface CloudBaseConnectorConfig {
 let cachedClient: any = null;
 let cachedDb: any = null;
 let initPromise: Promise<void> | null = null;
+let lastInitTime: number = 0;
+const REINIT_INTERVAL = 5 * 60 * 1000; // 5 分钟重新初始化一次
 
 export class CloudBaseConnector {
   private client: any = null;
@@ -20,11 +22,22 @@ export class CloudBaseConnector {
   constructor(private config: CloudBaseConnectorConfig = {}) {}
 
   async initialize(): Promise<void> {
-    if (cachedClient && cachedDb) {
+    // 检查是否需要重新初始化（超过 5 分钟）
+    const now = Date.now();
+    if (cachedClient && cachedDb && (now - lastInitTime < REINIT_INTERVAL)) {
       this.client = cachedClient;
       this.initialized = true;
       return;
     }
+
+    // 如果超过 5 分钟，清除缓存并重新初始化
+    if (now - lastInitTime >= REINIT_INTERVAL) {
+      console.log('[CloudBase] Reinitializing due to timeout interval');
+      cachedClient = null;
+      cachedDb = null;
+      initPromise = null;
+    }
+
     if (initPromise) {
       await initPromise;
       this.client = cachedClient;
@@ -51,6 +64,7 @@ export class CloudBaseConnector {
         env,
         secretId,
         secretKey,
+        timeout: 120000, // 增加超时时间到 120 秒（2分钟）
       });
       cachedClient = client;
       cachedDb = client.database();
@@ -60,6 +74,7 @@ export class CloudBaseConnector {
 
     this.client = cachedClient;
     this.initialized = true;
+    lastInitTime = Date.now(); // 记录初始化时间
   }
 
   getClient(): any {

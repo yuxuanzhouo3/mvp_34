@@ -257,8 +257,8 @@ function GenerateContent() {
   }, [searchParams]);
 
   // Check if Android is the only selected platform
-  const isAndroidOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "android";
-  const hasAndroid = selectedPlatforms.includes("android");
+  const isAndroidOnly = selectedPlatforms.length === 1 && (selectedPlatforms[0] === "android-source" || selectedPlatforms[0] === "android-apk");
+  const hasAndroid = selectedPlatforms.includes("android-source") || selectedPlatforms.includes("android-apk");
   const hasIOS = selectedPlatforms.includes("ios");
   const hasWechat = selectedPlatforms.includes("wechat");
   const hasHarmonyOS = selectedPlatforms.includes("harmonyos");
@@ -476,7 +476,7 @@ function GenerateContent() {
 
         // 根据平台设置应用名称
         let currentAppName = appName;
-        if (platform === "android") {
+        if (platform === "android-source" || platform === "android-apk") {
           formData.append("appName", appName);
         } else if (platform === "chrome") {
           currentAppName = chromeExtensionName;
@@ -591,7 +591,11 @@ function GenerateContent() {
 
       // 收集需要上传的图标
       const iconsToUpload: Array<{ file: File; platform: string }> = [];
-      if (hasAndroid && appIcon) iconsToUpload.push({ file: appIcon, platform: "android" });
+      if (hasAndroid && appIcon) {
+        // 使用实际选中的 Android 平台 ID
+        const androidPlatform = selectedPlatforms.find(p => p === "android-source" || p === "android-apk") || "android-source";
+        iconsToUpload.push({ file: appIcon, platform: androidPlatform });
+      }
       if (hasIOS && iosIcon) iconsToUpload.push({ file: iosIcon, platform: "ios" });
       if (hasHarmonyOS && harmonyIcon) iconsToUpload.push({ file: harmonyIcon, platform: "harmonyos" });
       if (hasChrome && chromeExtensionIcon) iconsToUpload.push({ file: chromeExtensionIcon, platform: "chrome" });
@@ -650,11 +654,13 @@ function GenerateContent() {
 
       // 构建各平台配置
       if (hasAndroid) {
-        const latestIconPath = uploadedIconPathsRef.current.android || uploadedIconPaths.android;
+        // 使用实际选中的 Android 平台 ID
+        const androidPlatform = selectedPlatforms.find(p => p === "android-source" || p === "android-apk") || "android-source";
+        const latestIconPath = uploadedIconPathsRef.current[androidPlatform] || uploadedIconPaths[androidPlatform];
         platforms.push({
-          platform: "android", appName, packageName,
+          platform: androidPlatform, appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
-          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.android && { iconUrl: iconUrls.android }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls[androidPlatform] && { iconUrl: iconUrls[androidPlatform] }),
         });
       }
       if (hasIOS) {
@@ -708,13 +714,36 @@ function GenerateContent() {
         });
       }
 
-      // 发送批量构建请求（一次请求，服务端批量创建记录后立即返回）
-      const apiPath = IS_DOMESTIC_VERSION ? "/api/domestic/batch/build" : "/api/international/batch/build";
-      const response = await fetch(apiPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, platforms }),
-      });
+      // 检测是否为 Android APK 单独构建
+      const isAndroidApkOnly = platforms.length === 1 && platforms[0].platform === "android-apk";
+
+      let response;
+      if (isAndroidApkOnly && IS_DOMESTIC_VERSION) {
+        // Android APK 使用专用 API（仅国内版支持）
+        const formData = new FormData();
+        formData.append("url", url);
+        formData.append("appName", platforms[0].appName);
+        formData.append("packageName", platforms[0].packageName);
+        formData.append("versionName", platforms[0].versionName);
+        formData.append("versionCode", platforms[0].versionCode);
+        formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
+        if (platforms[0].iconPath) {
+          formData.append("iconPath", platforms[0].iconPath);
+        }
+
+        response = await fetch("/api/domestic/android-apk/build", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        // 发送批量构建请求（一次请求，服务端批量创建记录后立即返回）
+        const apiPath = IS_DOMESTIC_VERSION ? "/api/domestic/batch/build" : "/api/international/batch/build";
+        response = await fetch(apiPath, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, platforms }),
+        });
+      }
 
       if (!response.ok) {
         const error = await response.json();

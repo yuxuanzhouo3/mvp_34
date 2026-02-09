@@ -4,6 +4,7 @@ import { IS_DOMESTIC_VERSION } from "@/config";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import jwt from "jsonwebtoken";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { withCache } from "@/lib/cloudbase/cache";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,7 @@ export async function GET(req: Request) {
 
     const service = new CloudBaseAuthService();
     let user = await service.validateToken(token);
+    let isCloudBaseTimeout = false;
 
     // 如果CloudBase session验证失败，尝试JWT验证
     if (!user) {
@@ -41,31 +43,67 @@ export async function GET(req: Request) {
           process.env.JWT_SECRET || "fallback-secret-key-for-development-only"
         ) as { userId: string; email: string; region: string };
 
-        // 从数据库获取用户信息
-        const connector = new CloudBaseConnector({});
-        await connector.initialize();
-        const db = connector.getClient();
-        const users = await db.collection("users").doc(decoded.userId).get();
-        const userDoc = users?.data?.[0];
+        // 从数据库获取用户信息（使用缓存）
+        try {
+          const userDoc = await withCache(
+            `user:${decoded.userId}`,
+            300, // 5分钟缓存
+            async () => {
+              const connector = new CloudBaseConnector({});
+              await connector.initialize();
+              const db = connector.getClient();
+              const users = await db.collection("users").doc(decoded.userId).get();
+              return users?.data?.[0];
+            }
+          );
 
-        if (userDoc) {
-          user = {
-            id: decoded.userId,
-            email: userDoc.email,
-            name: userDoc.name,
-            avatar: userDoc.avatar,
-            createdAt: new Date(userDoc.createdAt),
-            metadata: {
-              pro: userDoc.pro || false,
-              region: "CN",
-              plan: userDoc.plan || "free",
-              plan_exp: userDoc.plan_exp || null,
-              hide_ads: userDoc.hide_ads || false,
-            },
-          };
+          if (userDoc) {
+            user = {
+              id: decoded.userId,
+              email: userDoc.email,
+              name: userDoc.name,
+              avatar: userDoc.avatar,
+              createdAt: new Date(userDoc.createdAt),
+              metadata: {
+                pro: userDoc.pro || false,
+                region: "CN",
+                plan: userDoc.plan || "free",
+                plan_exp: userDoc.plan_exp || null,
+                hide_ads: userDoc.hide_ads || false,
+              },
+            };
+          }
+        } catch (dbError: any) {
+          // CloudBase超时错误，但JWT有效
+          if (dbError?.code === "ETIMEDOUT" || dbError?.message?.includes("timeout")) {
+            isCloudBaseTimeout = true;
+            // 返回JWT中的基本信息，避免退出登录
+            user = {
+              id: decoded.userId,
+              email: decoded.email,
+              name: decoded.email.split("@")[0],
+              avatar: null,
+              createdAt: new Date(),
+              metadata: {
+                pro: false,
+                region: "CN",
+                plan: "free",
+                plan_exp: null,
+                hide_ads: false,
+              },
+            };
+            console.warn("[domestic/auth/me] CloudBase timeout, using JWT fallback for user:", decoded.userId);
+          } else {
+            throw dbError;
+          }
         }
-      } catch (jwtError) {
-        console.error("[domestic/auth/me] JWT verification failed:", jwtError);
+      } catch (jwtError: any) {
+        // 只有在JWT本身无效时才记录错误
+        if (jwtError?.name === "JsonWebTokenError" || jwtError?.name === "TokenExpiredError") {
+          console.error("[domestic/auth/me] JWT verification failed:", jwtError.message);
+        } else {
+          console.error("[domestic/auth/me] Unexpected error:", jwtError);
+        }
       }
     }
 
