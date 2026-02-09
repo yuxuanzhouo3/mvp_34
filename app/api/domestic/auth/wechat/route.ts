@@ -110,30 +110,18 @@ export async function POST(request: NextRequest) {
       isNewUser,
     }).catch((err) => console.warn("[auth/wechat] trackWechatLoginEvent error:", err));
 
-    // 生成 JWT token
-    const accessPayload = {
-      userId: result.user.id,
-      email: result.user.email,
-      region: "CN",
-    };
-
-    const accessToken = jwt.sign(
-      accessPayload,
-      process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
-      { expiresIn: "1h" }
-    );
-
+    // 使用 CloudBase session token（与构建API兼容）
     const res = NextResponse.json({
       success: true,
       user: result.user,
-      token: accessToken,
-      accessToken: accessToken,
+      token: result.session.access_token,
+      accessToken: result.session.access_token,
       tokenMeta: {
-        accessTokenExpiresIn: 3600, // 1 hour
+        accessTokenExpiresIn: Math.floor((result.session.expires_at - Date.now()) / 1000),
       },
     });
 
-    res.cookies.set("auth-token", accessToken, {
+    res.cookies.set("auth-token", result.session.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
