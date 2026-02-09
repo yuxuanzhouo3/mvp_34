@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import { getWechatUserByCode } from "@/lib/wechat/token-exchange";
 import * as jwt from "jsonwebtoken";
 import { z } from "zod";
