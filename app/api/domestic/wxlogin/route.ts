@@ -86,26 +86,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 生成 JWT token
-    const accessPayload = {
-      userId: result.user.id,
-      email: result.user.email,
-      region: "CN",
-    };
-
-    const accessToken = jwt.sign(
-      accessPayload,
-      process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
-      { expiresIn: "1h" }
-    );
-
-    // 计算过期时间（1小时）
-    const expiresIn = 3600;
+    // 使用 CloudBase session token（与构建API兼容）
+    const expiresIn = Math.floor((result.session.expires_at - Date.now()) / 1000);
 
     // 构建响应
     const res = NextResponse.json({
       success: true,
-      token: accessToken,
+      token: result.session.access_token,
       openid,
       expiresIn,
       user: {
@@ -120,11 +107,11 @@ export async function POST(request: NextRequest) {
     });
 
     // 设置 cookie
-    res.cookies.set("auth-token", accessToken, {
+    res.cookies.set("auth-token", result.session.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: expiresIn,
+      maxAge: 60 * 60 * 24 * 7,
       path: "/",
     });
 

@@ -241,29 +241,28 @@ export async function POST(request: NextRequest) {
       throw new Error("Failed to create or find user");
     }
 
-    // 生成 JWT tokens
-    const accessPayload = {
-      userId,
-      email: loginEmail,
-      region: "CN",
-      source: loginSource,
-    };
+    // 创建 CloudBase session（与构建API兼容）
+    const auth = new CloudBaseAuthService();
+    const sessionResult = await auth.signInWithWechat({
+      openid,
+      unionid: unionid || null,
+      nickname: resolvedNickName || null,
+      avatar: resolvedAvatar || null,
+    });
 
-    const accessToken = jwt.sign(
-      accessPayload,
-      process.env.JWT_SECRET || "fallback-secret-key-for-development-only",
-      { expiresIn: "1h" }
-    );
+    if (!sessionResult.user || !sessionResult.session) {
+      throw new Error("Failed to create CloudBase session");
+    }
 
-    console.log("[miniprogram/login] Generated JWT access token", { userId });
+    console.log("[miniprogram/login] Generated CloudBase session token", { userId });
 
     // 返回登录成功
     return NextResponse.json({
       success: true,
       data: {
-        token: accessToken,
+        token: sessionResult.session.access_token,
         userInfo: {
-          id: userId,
+          id: sessionResult.user.id,
           openid: openid,
           nickname: displayName,
           avatar: avatar,
@@ -271,7 +270,7 @@ export async function POST(request: NextRequest) {
         },
       },
       tokenMeta: {
-        accessTokenExpiresIn: 3600, // 1 hour
+        accessTokenExpiresIn: Math.floor((sessionResult.session.expires_at - Date.now()) / 1000),
       },
       message: "登录成功",
     });
