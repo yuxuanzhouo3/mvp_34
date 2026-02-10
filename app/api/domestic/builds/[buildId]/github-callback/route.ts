@@ -138,9 +138,26 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
 
     console.log(`[GitHub Callback] Starting artifact download for build ${buildId}, run ${runId}`);
 
+    // 获取构建记录以确定平台类型
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+
+    const buildDoc = await withDbRetry(
+      () => db.collection("builds").doc(buildId).get(),
+      'Get build record'
+    );
+    const build = buildDoc?.data?.[0];
+
+    if (!build) {
+      throw new Error("Build record not found");
+    }
+
+    const platform = build.platform as "android-apk" | "harmonyos-hap";
+
     // 下载 artifact（这是一个 zip 文件，包含 APK）
     const artifactName = `app-release-${buildId}`;
-    const artifactBuffer = await downloadGitHubArtifact(runId, artifactName);
+    const artifactBuffer = await downloadGitHubArtifact(runId, artifactName, platform);
 
     if (!artifactBuffer) {
       throw new Error("Failed to download artifact from GitHub");

@@ -3,6 +3,9 @@
  * 用于触发 GitHub Actions workflow 构建 Android APK
  */
 
+import { githubRateLimiter } from './github-rate-limiter';
+import { monitoring } from './monitoring';
+
 // 下载去重：记录正在下载的artifact，避免重复下载
 const downloadingArtifacts = new Map<string, Promise<Buffer | null>>();
 
@@ -10,6 +13,7 @@ interface GitHubBuildConfig {
   buildId: string;
   sourceUrl: string;
   callbackUrl?: string;
+  platform: "android-apk";
 }
 
 interface GitHubBuildResult {
@@ -26,18 +30,19 @@ export async function triggerGitHubBuild(
 ): Promise<GitHubBuildResult> {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
+  const repo = process.env.GITHUB_APK_REPO;
+  const workflowFile = "build-android-apk.yml";
 
   if (!token || !owner || !repo) {
     return {
       success: false,
-      error: "GitHub configuration missing (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO)",
+      error: "GitHub configuration missing (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_APK_REPO)",
     };
   }
 
   try {
     const response = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/actions/workflows/build-android-apk.yml/dispatches`,
+      `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`,
       {
         method: "POST",
         headers: {
@@ -57,6 +62,9 @@ export async function triggerGitHubBuild(
       }
     );
 
+    // 更新速率限制信息
+    githubRateLimiter.updateRateLimit(response.headers);
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[GitHub Build] API error:", errorText);
@@ -74,7 +82,7 @@ export async function triggerGitHubBuild(
     // 获取最新的workflow run ID
     try {
       const runsResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/build-android-apk.yml/runs?per_page=1`,
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?per_page=1`,
         {
           headers: {
             "Authorization": `Bearer ${token}`,
@@ -83,6 +91,9 @@ export async function triggerGitHubBuild(
           },
         }
       );
+
+      // 更新速率限制信息
+      githubRateLimiter.updateRateLimit(runsResponse.headers);
 
       if (runsResponse.ok) {
         const runsData = await runsResponse.json();
@@ -119,14 +130,16 @@ export async function triggerGitHubBuild(
 /**
  * 获取 GitHub Actions workflow 运行状态
  */
-export async function getGitHubBuildStatus(runId: string): Promise<{
+export async function getGitHubBuildStatus(
+  runId: string
+): Promise<{
   status: "queued" | "in_progress" | "completed";
   conclusion?: "success" | "failure" | "cancelled";
   error?: string;
 }> {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
+  const repo = process.env.GITHUB_APK_REPO;
 
   if (!token || !owner || !repo) {
     return {
@@ -136,7 +149,15 @@ export async function getGitHubBuildStatus(runId: string): Promise<{
     };
   }
 
+  // 检查速率限制
+  if (githubRateLimiter.isNearLimit()) {
+    console.warn('[GitHub API] ⚠️ Near rate limit, consider reducing request frequency');
+  }
+
   try {
+    // 记录 GitHub API 调用
+    monitoring.recordApiCall('github_api', true);
+
     const response = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}`,
       {
@@ -147,6 +168,9 @@ export async function getGitHubBuildStatus(runId: string): Promise<{
         },
       }
     );
+
+    // 更新速率限制信息
+    githubRateLimiter.updateRateLimit(response.headers);
 
     if (!response.ok) {
       return {
@@ -163,6 +187,9 @@ export async function getGitHubBuildStatus(runId: string): Promise<{
       conclusion: data.conclusion,
     };
   } catch (error) {
+    // 记录 GitHub API 调用失败
+    monitoring.recordApiCall('github_api', false);
+
     return {
       status: "completed",
       conclusion: "failure",
@@ -207,7 +234,7 @@ async function performDownload(
 
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
+  const repo = process.env.GITHUB_APK_REPO;
 
   if (!token || !owner || !repo) {
     console.error("[GitHub] ❌ Configuration missing");

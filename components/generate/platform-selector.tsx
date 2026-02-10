@@ -29,7 +29,7 @@ export function PlatformSelector({ selectedPlatforms, onSelectionChange }: Platf
   const [guestDialogType, setGuestDialogType] = useState<"platform" | "batch">("platform");
 
   // 游客���持的移动端平台
-  const guestSupportedPlatforms = ["android", "ios", "harmonyos"];
+  const guestSupportedPlatforms = ["android-source", "android-apk", "ios", "harmonyos-source", "harmonyos-hap"];
 
   useEffect(() => {
     if (!user) return;

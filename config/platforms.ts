@@ -59,9 +59,9 @@ export const PLATFORMS: Platform[] = [
     available: true,
   },
   {
-    id: "harmonyos",
-    name: { zh: "HarmonyOS", en: "HarmonyOS" },
-    description: { zh: "Harmony Source", en: "Harmony Source" },
+    id: "harmonyos-source",
+    name: { zh: "HarmonyOS Source", en: "HarmonyOS Source" },
+    description: { zh: "鸿蒙源码项目", en: "HarmonyOS Source Project" },
     category: "mobile",
     icon: Hexagon,
     color: "from-red-500 to-red-600",

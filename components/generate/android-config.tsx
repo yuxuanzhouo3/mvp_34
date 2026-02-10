@@ -20,6 +20,7 @@ interface AndroidConfigProps {
   onVersionCodeChange: (value: string) => void;
   onPrivacyPolicyChange: (value: string) => void;
   onIconChange: (file: File | null) => void;
+  isApkBuild?: boolean; // 是否为 APK 构建（用于显示 Debug 版本说明）
 }
 
 export function AndroidConfig({
@@ -34,6 +35,7 @@ export function AndroidConfig({
   onVersionCodeChange,
   onPrivacyPolicyChange,
   onIconChange,
+  isApkBuild = false,
 }: AndroidConfigProps) {
   const { currentLanguage } = useLanguage();
   const { iconUploadEnabled, maxImageUploadMB, validateFileSize } = useUploadConfig();
@@ -221,6 +223,24 @@ export function AndroidConfig({
             ? "唯一标识符，用于应用商店发布"
             : "Unique identifier for app store publishing"}
         </p>
+        {/* Debug Version Warning - 仅在 APK 构建时显示 */}
+        {isApkBuild && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div className="flex-1 text-sm">
+                <p className="font-medium text-amber-800 dark:text-amber-300 mb-1">
+                  {currentLanguage === "zh" ? "⚠️ Debug 版本说明" : "⚠️ Debug Version Notice"}
+                </p>
+                <p className="text-amber-700 dark:text-amber-400">
+                  {currentLanguage === "zh"
+                    ? "当前构建为 Debug 测试版本，实际包名将自动添加 .debug 后缀（例如：com.example.app.debug）"
+                    : "This build is a Debug version. The actual package name will automatically include a .debug suffix (e.g., com.example.app.debug)"}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Version Name & Version Code Row */}
@@ -313,18 +333,18 @@ export function AndroidConfig({
         <ul className="text-sm text-muted-foreground space-y-1">
           <li>
             {currentLanguage === "zh"
-              ? "• 构建完成后将生成 Android 源码工程压缩包"
-              : "• Build generates Android source project archive"}
+              ? "• 构建完成后将生成 Debug 版本 APK 文件"
+              : "• Build generates Debug version APK file"}
           </li>
           <li>
             {currentLanguage === "zh"
-              ? "• 下载后需使用 Android Studio 打开工程并编译生成 APK"
-              : "• Use Android Studio to open the project and build APK"}
+              ? "• Debug APK 可直接安装到 Android 设备进行测试"
+              : "• Debug APK can be directly installed on Android devices for testing"}
           </li>
           <li>
             {currentLanguage === "zh"
-              ? "• 源码工程可自由修改和二次开发"
-              : "• Source code can be freely modified and customized"}
+              ? "• 安装时需要开启「允许安装未知来源应用」权限"
+              : "• Requires enabling 'Install from Unknown Sources' permission"}
           </li>
         </ul>
       </div>

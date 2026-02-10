@@ -261,14 +261,14 @@ function GenerateContent() {
   const hasAndroid = selectedPlatforms.includes("android-source") || selectedPlatforms.includes("android-apk");
   const hasIOS = selectedPlatforms.includes("ios");
   const hasWechat = selectedPlatforms.includes("wechat");
-  const hasHarmonyOS = selectedPlatforms.includes("harmonyos");
+  const hasHarmonyOS = selectedPlatforms.includes("harmonyos-source");
   const hasChrome = selectedPlatforms.includes("chrome");
   const hasWindows = selectedPlatforms.includes("windows");
   const hasMacos = selectedPlatforms.includes("macos");
   const hasLinux = selectedPlatforms.includes("linux");
   const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
   const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
-  const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos";
+  const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos-source";
   const isChromeOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "chrome";
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -298,7 +298,7 @@ function GenerateContent() {
 
       // 游客模式仅支持移动端平台（Android、iOS、HarmonyOS）
       const unsupportedPlatforms = selectedPlatforms.filter(p =>
-        !["android", "ios", "harmonyos"].includes(p)
+        !["android-source", "android-apk", "ios", "harmonyos-source"].includes(p)
       );
       if (unsupportedPlatforms.length > 0) {
         toast.error(
@@ -675,11 +675,11 @@ function GenerateContent() {
         platforms.push({ platform: "wechat", appName, appId: wechatAppId, version: wechatVersion });
       }
       if (hasHarmonyOS) {
-        const latestIconPath = uploadedIconPathsRef.current.harmonyos || uploadedIconPaths.harmonyos;
+        const latestIconPath = uploadedIconPathsRef.current["harmonyos-source"] || uploadedIconPaths["harmonyos-source"];
         platforms.push({
-          platform: "harmonyos", appName, bundleName: harmonyBundleName,
+          platform: "harmonyos-source", appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
-          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.harmonyos && { iconUrl: iconUrls.harmonyos }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls["harmonyos-source"] && { iconUrl: iconUrls["harmonyos-source"] }),
         });
       }
       if (hasChrome) {
@@ -913,6 +913,7 @@ function GenerateContent() {
                   onVersionCodeChange={setAndroidVersionCode}
                   onPrivacyPolicyChange={setPrivacyPolicy}
                   onIconChange={(file) => handleIconChange(file, "android", setAppIcon)}
+                  isApkBuild={selectedPlatforms.includes("android-apk")}
                 />
               )}
 

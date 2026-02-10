@@ -121,19 +121,22 @@ async function syncBuildWithRunId(
       );
       const build = buildDoc?.data?.[0];
 
-      // 检查是否已经上传过APK，避免重复下载
-      if (build?.output_file_path && build.output_file_path.endsWith('.apk')) {
-        console.log(`[Sync GitHub Status] ⏭️ APK already uploaded, skipping download`);
+      // 检查是否已经上传过文件，避免重复下载
+      const isAlreadyUploaded = build?.output_file_path &&
+        build.output_file_path.endsWith('.apk');
+
+      if (isAlreadyUploaded) {
+        console.log(`[Sync GitHub Status] ⏭️ File already uploaded, skipping download`);
         return NextResponse.json({
           success: true,
           status: "completed",
-          message: "APK already uploaded",
+          message: "File already uploaded",
         });
       }
 
       console.log(`[Sync GitHub Status] Build completed successfully, downloading artifact...`);
 
-      const artifactName = `app-release-${buildId}`;
+      const artifactName = `app-debug-${buildId}`;
       const artifactBuffer = await downloadGitHubArtifact(runId, artifactName);
 
       if (!artifactBuffer) {
@@ -147,27 +150,28 @@ async function syncBuildWithRunId(
       const zip = new AdmZip(artifactBuffer);
       const zipEntries = zip.getEntries();
 
-      // 查找APK文件: android/app/build/outputs/apk/normal/release/*.apk
-      const apkEntry = zipEntries.find(entry =>
-        entry.entryName.includes('android/app/build/outputs/apk/normal/release/') &&
+      // 查找APK文件: android/app/build/outputs/apk/normal/debug/*.apk 或 release/*.apk
+      const fileEntry = zipEntries.find(entry =>
+        (entry.entryName.includes('android/app/build/outputs/apk/normal/debug/') ||
+         entry.entryName.includes('android/app/build/outputs/apk/normal/release/')) &&
         entry.entryName.endsWith('.apk')
       );
 
-      if (!apkEntry) {
+      if (!fileEntry) {
         return NextResponse.json({ error: "APK file not found in zip" }, { status: 500 });
       }
 
-      console.log(`[Sync GitHub Status] Found APK: ${apkEntry.entryName}`);
-      const apkBuffer = apkEntry.getData();
-      console.log(`[Sync GitHub Status] Uploading APK to CloudBase (${(apkBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+      console.log(`[Sync GitHub Status] Found APK: ${fileEntry.entryName}`);
+      const fileBuffer = fileEntry.getData();
+      console.log(`[Sync GitHub Status] Uploading APK to CloudBase (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
-      // 上传APK到云存储
+      // 上传文件到云存储
       const storage = getCloudBaseStorage();
-      const fileName = `builds/${buildId}/app-release.apk`;
+      const fileName = `builds/${buildId}/app-debug.apk`;
 
       await withDbRetry(
         async () => {
-          const result = await storage.uploadFile(fileName, apkBuffer);
+          const result = await storage.uploadFile(fileName, fileBuffer);
           if (!result) throw new Error("Upload returned null");
           return result;
         },

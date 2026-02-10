@@ -295,8 +295,8 @@ export default function BuildsClient() {
         }
       };
 
-      // 使用更快的轮询间隔（3秒）
-      const interval = setInterval(pollProcessingBuilds, 3000);
+      // 使用优化的轮询间隔（5秒），减少服务器负载
+      const interval = setInterval(pollProcessingBuilds, 5000);
       return () => clearInterval(interval);
     }
   }, [builds, fetchBuilds]);
@@ -531,6 +531,8 @@ export default function BuildsClient() {
     switch (platform) {
       case "android":
         return "Android";
+      case "android-apk":
+        return "Android-APK";
       case "ios":
         return "iOS";
       case "wechat":
@@ -911,7 +913,15 @@ export default function BuildsClient() {
 
                       {/* Info Row */}
                       <div className="mt-1.5 flex flex-col gap-0.5 text-sm text-muted-foreground">
-                        <span className="truncate">{build.package_name}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="truncate">{build.package_name}</span>
+                          {build.platform === "android-apk" && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs border border-amber-200 dark:border-amber-500/20">
+                              <AlertCircle className="h-3 w-3" />
+                              {currentLanguage === "zh" ? "Debug版本 (包名含.debug后缀)" : "Debug Version (package name includes .debug suffix)"}
+                            </span>
+                          )}
+                        </div>
                         <a
                           href={build.url}
                           target="_blank"
@@ -975,17 +985,6 @@ export default function BuildsClient() {
                             <span>{currentLanguage === "zh" ? "分享" : "Share"}</span>
                           </Button>
                         </>
-                      )}
-                      {build.status === "processing" && build.platform === "android-apk" && build.progress === 50 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-lg sm:rounded-xl gap-1.5 sm:gap-2 border-blue-500/30 text-blue-600 hover:bg-blue-500/10"
-                          onClick={() => handleSyncGitHub(build.id)}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          <span>{currentLanguage === "zh" ? "同步状态" : "Sync Status"}</span>
-                        </Button>
                       )}
                       {build.expires_at && isExpired(build.expires_at) && (
                         <Badge variant="outline" className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600">

@@ -201,6 +201,7 @@ async function processAndroidApkBuildAsync(
       buildId,
       sourceUrl,
       callbackUrl,
+      platform: "android-apk",
     });
 
     if (!githubResult.success) {
