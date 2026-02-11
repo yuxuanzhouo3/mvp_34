@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import { trackRegisterEvent } from "@/services/analytics";
+import { VerificationCodeService } from "@/lib/email/verification-code";
 
 export const runtime = "nodejs";
 
@@ -12,9 +13,19 @@ export async function POST(req: Request) {
       return new NextResponse(null, { status: 404 });
     }
 
-    const { email, password, name } = await req.json();
+    const { email, password, name, verificationCode } = await req.json();
     if (!email || !password) {
-      return NextResponse.json({ error: "Email and password required" }, { status: 400 });
+      return NextResponse.json({ error: "邮箱和密码不能为空" }, { status: 400 });
+    }
+
+    if (!verificationCode) {
+      return NextResponse.json({ error: "验证码不能为空" }, { status: 400 });
+    }
+
+    // 验证验证码
+    const codeVerification = VerificationCodeService.verifyCode(email, verificationCode);
+    if (!codeVerification.valid) {
+      return NextResponse.json({ error: codeVerification.error }, { status: 400 });
     }
 
     const service = new CloudBaseAuthService();
@@ -22,7 +33,7 @@ export async function POST(req: Request) {
 
     if (!result.user || !result.session) {
       return NextResponse.json(
-        { error: result.error?.message || "Register failed" },
+        { error: result.error?.message || "注册失败" },
         { status: 400 }
       );
     }

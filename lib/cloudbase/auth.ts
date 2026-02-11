@@ -397,6 +397,32 @@ export class CloudBaseAuthService {
     };
   }
 
+  async resetPassword(email: string, newPassword: string): Promise<{
+    success: boolean;
+    error?: Error;
+  }> {
+    try {
+      await this.ensureReady();
+      const result = await this.db.collection("users").where({ email }).get();
+      const user = result.data[0] as CloudBaseUser | undefined;
+
+      if (!user || !user._id) {
+        return { success: false, error: new Error("User not found") };
+      }
+
+      const hashed = await bcrypt.hash(newPassword, 10);
+      await this.db.collection("users").doc(user._id).update({
+        password: hashed,
+        updatedAt: new Date().toISOString()
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error("[cloudbase] resetPassword error", error);
+      return { success: false, error: error as Error };
+    }
+  }
+
   private async applyPendingDowngradeIfNeeded(
     userId: string,
     userDoc: CloudBaseUser

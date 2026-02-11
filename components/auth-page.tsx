@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Mail, Lock, User, Eye, EyeOff, Layers } from "lucide-react";
+import { Loader2, Mail, Lock, User, Eye, EyeOff, Layers, Send } from "lucide-react";
 import { toast } from "sonner";
 import { PrivacyPolicy } from "@/components/legal/privacy-policy";
 import {
@@ -22,7 +22,7 @@ import {
 import { getLoginErrorMessage } from "@/lib/auth/login-error";
 import { saveAuthState, type AuthUser } from "@/lib/auth-state-manager";
 
-type Mode = "login" | "signup";
+type Mode = "login" | "signup" | "reset";
 
 interface AuthPageProps {
   mode: Mode;
@@ -71,7 +71,6 @@ export function AuthPage({ mode }: AuthPageProps) {
 
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isInMiniProgram, setIsInMiniProgram] = useState(false);
   const [agreePrivacy, setAgreePrivacy] = useState(false);
   const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
@@ -79,9 +78,18 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [form, setForm] = useState({
     email: "",
     password: "",
-    confirmPassword: "",
     name: "",
+    verificationCode: "",
   });
+  const [sendingCode, setSendingCode] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   // 检测小程序环境
   useEffect(() => {
@@ -168,17 +176,89 @@ export function AuthPage({ mode }: AuthPageProps) {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handleSendCode = async () => {
+    if (!form.email) {
+      toast.error(isZhText ? "请先输入邮箱地址" : "Please enter email first");
+      return;
+    }
+
+    setSendingCode(true);
+
+    try {
+      const response = await fetch("/api/domestic/auth/send-verification-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email }),
+      });
+
+      const data = await response.json();
+      console.log("[handleSendCode] Response:", { ok: response.ok, status: response.status, data });
+
+      if (!response.ok) {
+        const errorMsg = data.error || (isZhText ? "发送验证码失败" : "Failed to send code");
+        console.log("[handleSendCode] Error:", errorMsg);
+        toast.error(errorMsg);
+        return;
+      }
+
+      setCountdown(60);
+      toast.success(isZhText ? "验证码已发送" : "Verification code sent");
+    } catch (err) {
+      console.error("[handleSendCode] Exception:", err);
+      toast.error(err instanceof Error ? err.message : (isZhText ? "发送验证码失败" : "Failed to send code"));
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      if (mode === "signup") {
-        // 验证密码匹配
-        if (form.password !== form.confirmPassword) {
-          throw new Error(isZhText ? "两次输入的密码不一致" : "Passwords do not match");
-        }
+      if (mode === "reset") {
+        // 找回密码模式
+        if (isDomesticVersion) {
+          // 国内版：使用验证码重置密码
+          if (!form.verificationCode) {
+            throw new Error(isZhText ? "请输入验证码" : "Please enter verification code");
+          }
+          if (!form.password) {
+            throw new Error(isZhText ? "请输入新密码" : "Please enter new password");
+          }
+          if (form.password.length < 6) {
+            throw new Error(isZhText ? "密码至少需要6个字符" : "Password must be at least 6 characters");
+          }
 
+          const res = await fetch("/api/domestic/auth/reset-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: form.email,
+              verificationCode: form.verificationCode,
+              newPassword: form.password,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || (isZhText ? "重置密码失败" : "Reset password failed"));
+
+          toast.success(isZhText ? "密码重置成功！请登录" : "Password reset successful! Please sign in");
+          router.push("/auth/login");
+          return;
+        } else {
+          // 国际版：使用 Supabase 邮件重置
+          const { error } = await supabase.auth.resetPasswordForEmail(
+            form.email,
+            { redirectTo: `${window.location.origin}/auth/update-password` }
+          );
+          if (error) throw error;
+          toast.success(isZhText ? "重置链接已发送到您的邮箱" : "Password reset link sent to your email");
+          router.push("/auth/login");
+          return;
+        }
+      }
+
+      if (mode === "signup") {
         // 验证密码长度
         if (form.password.length < 6) {
           throw new Error(isZhText ? "密码至少需要6个字符" : "Password must be at least 6 characters");
@@ -186,10 +266,19 @@ export function AuthPage({ mode }: AuthPageProps) {
 
         if (isDomesticVersion) {
           // 国内版：使用 CloudBase 注册
+          if (!form.verificationCode) {
+            throw new Error(isZhText ? "请输入验证码" : "Please enter verification code");
+          }
+
           const res = await fetch("/api/domestic/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: form.email, password: form.password, name: form.name }),
+            body: JSON.stringify({
+              email: form.email,
+              password: form.password,
+              name: form.name,
+              verificationCode: form.verificationCode
+            }),
           });
           const data = await res.json();
           if (!res.ok) {
@@ -460,14 +549,18 @@ export function AuthPage({ mode }: AuthPageProps) {
         {/* 表单卡片 */}
         <div className="bg-card/50 backdrop-blur-sm rounded-2xl border border-border/50 p-5 sm:p-6 shadow-xl">
           <h1 className="text-2xl font-bold text-center mb-2">
-            {isLoginMode
+            {mode === "login"
               ? isZhText ? "欢迎回来" : "Welcome Back"
-              : isZhText ? "创建账号" : "Create Account"}
+              : mode === "signup"
+                ? isZhText ? "创建账号" : "Create Account"
+                : isZhText ? "重置密码" : "Reset Password"}
           </h1>
           <p className="text-muted-foreground text-center mb-4">
-            {isLoginMode
+            {mode === "login"
               ? isZhText ? "登录以继续使用" : "Sign in to continue"
-              : isZhText ? "注册以开始使用" : "Sign up to get started"}
+              : mode === "signup"
+                ? isZhText ? "注册以开始使用" : "Sign up to get started"
+                : isZhText ? "输入您的邮箱，我们将发送重置链接" : "Enter your email to receive a reset link"}
           </p>
 
           {/* 第三方登录按钮 - 仅在登录模式显示 */}
@@ -523,7 +616,7 @@ export function AuthPage({ mode }: AuthPageProps) {
           {/* 邮箱表单 */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 注册时显示姓名输入 */}
-            {!isLoginMode && (
+            {mode === "signup" && (
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-sm font-medium">
                   {isZhText ? "姓名" : "Name"}
@@ -564,48 +657,61 @@ export function AuthPage({ mode }: AuthPageProps) {
               </div>
             </div>
 
-            {/* 密码输入 */}
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">
-                {isZhText ? "密码" : "Password"}
-              </Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder={isZhText ? "请输入密码" : "Enter your password"}
-                  value={form.password}
-                  onChange={handleChange}
-                  className="pl-10 pr-10 h-11 rounded-xl"
-                  required
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* 注册时显示确认密码 */}
-            {!isLoginMode && (
+            {/* 验证码输入 - 在注册模式或找回密码模式且国内版显示 */}
+            {(mode === "signup" || mode === "reset") && isDomesticVersion && (
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-sm font-medium">
-                  {isZhText ? "确认密码" : "Confirm Password"}
+                <Label htmlFor="verificationCode" className="text-sm font-medium">
+                  {isZhText ? "邮箱验证码" : "Verification Code"}
+                </Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id="verificationCode"
+                      name="verificationCode"
+                      type="text"
+                      placeholder={isZhText ? "输入6位验证码" : "Enter 6-digit code"}
+                      value={form.verificationCode}
+                      onChange={handleChange}
+                      className="h-11 rounded-xl"
+                      maxLength={6}
+                      required
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleSendCode}
+                    disabled={sendingCode || countdown > 0 || !form.email}
+                    className="h-11 px-4 rounded-xl bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-400 hover:to-pink-500 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {sendingCode ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : countdown > 0 ? (
+                      `${countdown}s`
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-1" />
+                        {isZhText ? "发送" : "Send"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* 密码输入 - 仅在登录和注册模式显示 */}
+            {mode !== "reset" && (
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium">
+                  {isZhText ? "密码" : "Password"}
                 </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    placeholder={isZhText ? "请再次输入密码" : "Confirm your password"}
-                    value={form.confirmPassword}
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder={isZhText ? "请输入密码" : "Enter your password"}
+                    value={form.password}
                     onChange={handleChange}
                     className="pl-10 pr-10 h-11 rounded-xl"
                     required
@@ -613,20 +719,20 @@ export function AuthPage({ mode }: AuthPageProps) {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
             )}
 
             {/* 登录时显示忘记密码链接 */}
-            {isLoginMode && !isDomesticVersion && (
+            {isLoginMode && (
               <div className="flex justify-end">
                 <Link
-                  href="/auth/forgot-password"
+                  href="/auth/reset-password"
                   className="text-sm text-cyan-500 hover:text-cyan-400"
                 >
                   {isZhText ? "忘记密码？" : "Forgot password?"}
@@ -663,10 +769,12 @@ export function AuthPage({ mode }: AuthPageProps) {
             >
               {isLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
-              ) : isLoginMode ? (
+              ) : mode === "login" ? (
                 isZhText ? "登录" : "Sign In"
-              ) : (
+              ) : mode === "signup" ? (
                 isZhText ? "注册" : "Sign Up"
+              ) : (
+                isZhText ? "发送重置邮件" : "Send Reset Email"
               )}
             </Button>
           </form>

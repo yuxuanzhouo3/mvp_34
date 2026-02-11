@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Analytics } from "@vercel/analytics/next";
 import Script from "next/script";
+import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -70,6 +71,7 @@ export default async function RootLayout({
             </AuthProvider>
           )}
         </ThemeProvider>
+        <Toaster position="top-center" richColors />
         <Analytics />
       </body>
     </html>
