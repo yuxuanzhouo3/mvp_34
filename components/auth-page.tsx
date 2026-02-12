@@ -378,19 +378,30 @@ export function AuthPage({ mode }: AuthPageProps) {
     try {
       // 检查是否在 Android WebView 环境中
       const isAndroidWebView = typeof window !== 'undefined' && !!(window as any).GoogleSignIn;
+      console.log('[handleGoogleSignIn] isAndroidWebView:', isAndroidWebView);
 
       if (isAndroidWebView) {
         // 使用 Android 原生 Google Sign-In SDK
         const { signInWithGoogle: signInWithGoogleBridge } = await import('@/lib/google-signin-bridge');
-        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+
+        // 从 window 对象获取 clientId（由 Android 注入）
+        const clientId = (window as any).GOOGLE_CLIENT_ID || '45279353784-rnugbfqp14rdqramf60gp9hk4mjl7klu.apps.googleusercontent.com';
+        console.log('[handleGoogleSignIn] clientId:', clientId);
 
         if (!clientId) {
           throw new Error('Google Client ID not configured');
         }
 
+        console.log('[handleGoogleSignIn] Calling signInWithGoogleBridge...');
         const result = await signInWithGoogleBridge(clientId);
+        console.log('[handleGoogleSignIn] Bridge result:', {
+          hasIdToken: !!result.idToken,
+          email: result.email,
+          displayName: result.displayName
+        });
 
         // 使用返回的 idToken 调用后端 API 完成登录
+        console.log('[handleGoogleSignIn] Calling backend API...');
         const response = await fetch('/api/auth/google-native', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -401,14 +412,24 @@ export function AuthPage({ mode }: AuthPageProps) {
           })
         });
 
+        console.log('[handleGoogleSignIn] Backend response status:', response.status);
+
         if (!response.ok) {
-          throw new Error('Failed to authenticate with backend');
+          const errorData = await response.json();
+          console.error('[handleGoogleSignIn] Backend error:', errorData);
+          throw new Error(errorData.error || 'Failed to authenticate with backend');
         }
 
         const data = await response.json();
+        console.log('[handleGoogleSignIn] Backend data:', {
+          hasSession: !!data.session,
+          hasUser: !!data.user,
+          success: data.success
+        });
 
         // 保存认证状态
         if (data.session && data.user) {
+          console.log('[handleGoogleSignIn] Saving auth state...');
           saveAuthState(
             data.session.access_token,
             data.session.refresh_token,
@@ -418,9 +439,13 @@ export function AuthPage({ mode }: AuthPageProps) {
               refreshTokenExpiresIn: data.session.refresh_token_expires_in || 86400
             }
           );
+          console.log('[handleGoogleSignIn] Auth state saved');
+        } else {
+          console.error('[handleGoogleSignIn] Missing session or user data');
         }
 
         toast.success(isZhText ? "登录成功！" : "Sign in successful!");
+        console.log('[handleGoogleSignIn] Redirecting to:', next);
         router.push(next);
         router.refresh();
       } else {
@@ -431,8 +456,9 @@ export function AuthPage({ mode }: AuthPageProps) {
       if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) {
         return;
       }
-      console.error("Google sign in error:", error);
-      toast.error(isZhText ? "Google登录失败" : "Google sign in failed");
+      console.error("[handleGoogleSignIn] Error:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(isZhText ? `Google登录失败: ${errorMessage}` : `Google sign in failed: ${errorMessage}`);
       setIsLoading(false);
     }
   };
