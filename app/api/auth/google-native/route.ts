@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     // 检查用户是否已存在
     const { data: existingUser, error: fetchError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
       .eq('email', payload.email)
       .single();
@@ -55,8 +55,8 @@ export async function POST(request: NextRequest) {
     if (existingUser) {
       // 用户已存在，更新最后登录时间
       const { data: updatedUser, error: updateError } = await supabase
-        .from('users')
-        .update({ last_sign_in_at: new Date().toISOString() })
+        .from('profiles')
+        .update({ updated_at: new Date().toISOString() })
         .eq('id', existingUser.id)
         .select()
         .single();
@@ -71,30 +71,47 @@ export async function POST(request: NextRequest) {
 
       user = updatedUser;
     } else {
-      // 创建新用户
-      const { data: newUser, error: insertError } = await supabase
-        .from('users')
+      // 创建新用户 - 需要先在 auth.users 中创建
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: payload.email!,
+        password: Math.random().toString(36).slice(-16), // 随机密码
+        options: {
+          data: {
+            name: displayName || payload.name,
+            avatar: payload.picture,
+          }
+        }
+      });
+
+      if (authError || !authData.user) {
+        console.error('Failed to create auth user:', authError);
+        return NextResponse.json(
+          { error: 'Failed to create user: ' + (authError?.message || 'Unknown error') },
+          { status: 500 }
+        );
+      }
+
+      // 创建 profile
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
         .insert({
+          id: authData.user.id,
           email: payload.email,
-          full_name: displayName || payload.name,
-          avatar_url: payload.picture,
-          email_verified: payload.email_verified,
-          provider: 'google',
-          created_at: new Date().toISOString(),
-          last_sign_in_at: new Date().toISOString(),
+          name: displayName || payload.name,
+          avatar: payload.picture,
         })
         .select()
         .single();
 
       if (insertError) {
-        console.error('Failed to create user:', insertError);
+        console.error('Failed to create profile:', insertError);
         return NextResponse.json(
-          { error: 'Failed to create user: ' + insertError.message },
+          { error: 'Failed to create profile: ' + insertError.message },
           { status: 500 }
         );
       }
 
-      user = newUser;
+      user = newProfile;
     }
 
     // 确保 user 不为 null
@@ -147,8 +164,8 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         email: user.email,
-        full_name: user.full_name,
-        avatar_url: user.avatar_url,
+        full_name: user.name,
+        avatar_url: user.avatar,
       },
       session,
     });
