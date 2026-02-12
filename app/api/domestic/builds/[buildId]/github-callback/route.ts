@@ -143,10 +143,10 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
     await connector.initialize();
     const db = connector.getClient();
 
-    const buildDoc = await withDbRetry(
+    const buildDoc = (await withDbRetry(
       () => db.collection("builds").doc(buildId).get(),
       'Get build record'
-    );
+    )) as any;
     const build = buildDoc?.data?.[0];
 
     if (!build) {
