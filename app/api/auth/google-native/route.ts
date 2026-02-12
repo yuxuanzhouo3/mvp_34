@@ -75,6 +75,10 @@ export async function POST(request: NextRequest) {
       console.log('Creating new user with Admin API');
       const serviceClient = createServiceClient();
 
+      let authUserId: string;
+      let isNewUser = false;
+
+      // 尝试创建用户
       const { data: authData, error: authError } = await serviceClient.auth.admin.createUser({
         email: payload.email!,
         email_confirm: true, // OAuth 用户邮箱已验证
@@ -85,41 +89,89 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      if (authError || !authData.user) {
-        console.error('Failed to create auth user:', authError);
+      if (authError) {
+        // 如果错误是邮箱已存在，获取现有用户
+        if (authError.message.includes('already been registered') || authError.message.includes('email_exists')) {
+          console.log('User already exists in auth.users, fetching existing user');
+
+          // 使用 Admin API 列出用户并找到匹配的邮箱
+          const { data: users, error: listError } = await serviceClient.auth.admin.listUsers();
+
+          if (listError || !users) {
+            console.error('Failed to list users:', listError);
+            return NextResponse.json(
+              { error: 'Failed to fetch existing user: ' + (listError?.message || 'Unknown error') },
+              { status: 500 }
+            );
+          }
+
+          const existingUser = users.users.find(u => u.email === payload.email);
+
+          if (!existingUser) {
+            console.error('User not found after email_exists error');
+            return NextResponse.json(
+              { error: 'User exists but could not be found' },
+              { status: 500 }
+            );
+          }
+
+          authUserId = existingUser.id;
+          console.log('Found existing user:', authUserId);
+        } else {
+          // 其他错误
+          console.error('Failed to create auth user:', authError);
+          return NextResponse.json(
+            { error: 'Failed to create user: ' + authError.message },
+            { status: 500 }
+          );
+        }
+      } else if (authData?.user) {
+        authUserId = authData.user.id;
+        isNewUser = true;
+        console.log('Auth user created:', authUserId);
+      } else {
+        console.error('No auth data returned');
         return NextResponse.json(
-          { error: 'Failed to create user: ' + (authError?.message || 'Unknown error') },
+          { error: 'Failed to create user: No data returned' },
           { status: 500 }
         );
       }
 
-      console.log('Auth user created:', authData.user.id);
+      // 检查 profile 是否存在
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUserId)
+        .maybeSingle();
 
-      // 等待触发器创建 profile（最多等待2秒）
-      let profile = null;
-      for (let i = 0; i < 4; i++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      let profile;
 
-        const { data: newProfile } = await supabase
+      if (existingProfile) {
+        // Profile 已存在，更新最后登录时间
+        console.log('Profile already exists, updating');
+        const { data: updatedProfile, error: updateError } = await supabase
           .from('profiles')
-          .select('*')
-          .eq('id', authData.user.id)
-          .maybeSingle();
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', authUserId)
+          .select()
+          .single();
 
-        if (newProfile) {
-          profile = newProfile;
-          console.log('Profile created by trigger');
-          break;
+        if (updateError) {
+          console.error('Failed to update profile:', updateError);
+          return NextResponse.json(
+            { error: 'Failed to update profile: ' + updateError.message },
+            { status: 500 }
+          );
         }
-      }
 
-      // Fallback: 如果触发器没有创建profile，使用 service role 手动创建（绕过 RLS）
-      if (!profile) {
-        console.warn('Trigger did not create profile, creating manually with service role');
-        const { data: manualProfile, error: insertError } = await serviceClient
+        profile = updatedProfile;
+      } else {
+        // Profile 不存在，创建新的
+        console.log('Profile does not exist, creating with service role');
+        const { data: newProfile, error: insertError } = await serviceClient
           .from('profiles')
           .insert({
-            id: authData.user.id,
+            id: authUserId,
             email: payload.email,
             name: displayName || payload.name,
             avatar: payload.picture,
@@ -128,15 +180,15 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (insertError) {
-          console.error('Failed to create profile manually:', insertError);
+          console.error('Failed to create profile:', insertError);
           return NextResponse.json(
-            { error: 'Failed to create user profile: ' + insertError.message },
+            { error: 'Failed to create profile: ' + insertError.message },
             { status: 500 }
           );
         }
 
-        profile = manualProfile;
-        console.log('Profile created manually with service role');
+        profile = newProfile;
+        console.log('Profile created successfully');
       }
 
       user = profile;
