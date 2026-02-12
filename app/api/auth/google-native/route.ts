@@ -223,8 +223,8 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         email: user.email,
-        full_name: user.name,
-        avatar_url: user.avatar,
+        name: user.name,        // ✅ 修正字段名
+        avatar: user.avatar,    // ✅ 修正字段名
       },
       session,
     });
