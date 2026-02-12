@@ -43,21 +43,35 @@ export async function POST(request: NextRequest) {
     // 使用 Supabase 创建或获取用户
     const supabase = await createClient();
 
-    // 检查用户是否已存在
-    const { data: existingUser, error: fetchError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', payload.email)
-      .single();
+    // 检查用户是否已存在于 auth.users
+    const { data: existingAuthUser } = await supabase.auth.admin.getUserByEmail(payload.email!);
 
     let user;
+    let authUserId: string;
 
-    if (existingUser) {
-      // 用户已存在，更新最后登录时间
+    if (existingAuthUser?.user) {
+      // 用户已存在，获取其 profile
+      authUserId = existingAuthUser.user.id;
+
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUserId)
+        .single();
+
+      if (fetchError) {
+        console.error('Failed to fetch profile:', fetchError);
+        return NextResponse.json(
+          { error: 'Failed to fetch user profile: ' + fetchError.message },
+          { status: 500 }
+        );
+      }
+
+      // 更新最后登录时间
       const { data: updatedUser, error: updateError } = await supabase
         .from('profiles')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', existingUser.id)
+        .eq('id', authUserId)
         .select()
         .single();
 
@@ -71,14 +85,14 @@ export async function POST(request: NextRequest) {
 
       user = updatedUser;
     } else {
-      // 创建新用户 - 需要先在 auth.users 中创建
+      // 创建新用户 - 使用正确的字段名，让触发器自动创建 profile
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: payload.email!,
         password: Math.random().toString(36).slice(-16), // 随机密码
         options: {
           data: {
-            name: displayName || payload.name,
-            avatar: payload.picture,
+            full_name: displayName || payload.name,  // ✅ 使用 full_name
+            avatar_url: payload.picture,             // ✅ 使用 avatar_url
           }
         }
       });
@@ -91,27 +105,34 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 创建 profile
-      const { data: newProfile, error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          email: payload.email,
-          name: displayName || payload.name,
-          avatar: payload.picture,
-        })
-        .select()
-        .single();
+      authUserId = authData.user.id;
 
-      if (insertError) {
-        console.error('Failed to create profile:', insertError);
-        return NextResponse.json(
-          { error: 'Failed to create profile: ' + insertError.message },
-          { status: 500 }
-        );
+      // 等待触发器创建 profile（最多等待3秒）
+      let profile = null;
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const { data: newProfile, error: fetchError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUserId)
+          .single();
+
+        if (newProfile) {
+          profile = newProfile;
+          break;
+        }
+
+        if (i === 5 && fetchError) {
+          console.error('Profile not created by trigger:', fetchError);
+          return NextResponse.json(
+            { error: 'Failed to create profile: ' + fetchError.message },
+            { status: 500 }
+          );
+        }
       }
 
-      user = newProfile;
+      user = profile;
     }
 
     // 确保 user 不为 null
