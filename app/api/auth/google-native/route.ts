@@ -137,63 +137,39 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 检查 profile 是否存在
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUserId)
-        .maybeSingle();
+      // 等待触发器创建 profile，然后获取它
+      console.log('Waiting for trigger to create profile');
 
-      let profile;
+      let profile = null;
+      let attempts = 0;
+      const maxAttempts = 10; // 最多等待5秒
 
-      if (existingProfile) {
-        // Profile 已存在，更新最后登录时间
-        console.log('Profile already exists, updating');
-        const { data: updatedProfile, error: updateError } = await supabase
+      while (attempts < maxAttempts && !profile) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        attempts++;
+
+        const { data: fetchedProfile } = await serviceClient
           .from('profiles')
-          .update({ updated_at: new Date().toISOString() })
+          .select('*')
           .eq('id', authUserId)
-          .select()
-          .single();
+          .maybeSingle();
 
-        if (updateError) {
-          console.error('Failed to update profile:', updateError);
-          return NextResponse.json(
-            { error: 'Failed to update profile: ' + updateError.message },
-            { status: 500 }
-          );
+        if (fetchedProfile) {
+          profile = fetchedProfile;
+          console.log('Profile found after', attempts * 500, 'ms');
+          break;
         }
-
-        profile = updatedProfile;
-      } else {
-        // Profile 不存在，使用 upsert 创建（处理并发冲突）
-        console.log('Profile does not exist, upserting with service role');
-        const { data: newProfile, error: upsertError } = await serviceClient
-          .from('profiles')
-          .upsert({
-            id: authUserId,
-            email: payload.email,
-            name: displayName || payload.name,
-            avatar: payload.picture,
-            updated_at: new Date().toISOString(),
-          }, {
-            onConflict: 'id',
-          })
-          .select()
-          .single();
-
-        if (upsertError) {
-          console.error('Failed to upsert profile:', upsertError);
-          return NextResponse.json(
-            { error: 'Failed to create profile: ' + upsertError.message },
-            { status: 500 }
-          );
-        }
-
-        profile = newProfile;
-        console.log('Profile upserted successfully');
       }
 
+      if (!profile) {
+        console.error('Profile not created by trigger after', maxAttempts * 500, 'ms');
+        return NextResponse.json(
+          { error: 'Profile creation timeout. Please try again.' },
+          { status: 500 }
+        );
+      }
+
+      console.log('Profile retrieved successfully');
       user = profile;
     }
 
