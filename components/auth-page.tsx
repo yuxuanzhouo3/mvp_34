@@ -376,7 +376,49 @@ export function AuthPage({ mode }: AuthPageProps) {
     if (isDomesticVersion) return;
     setIsLoading(true);
     try {
-      await signInWithGoogle(next);
+      // 检查是否在 Android WebView 环境中
+      const isAndroidWebView = typeof window !== 'undefined' && !!(window as any).GoogleSignIn;
+
+      if (isAndroidWebView) {
+        // 使用 Android 原生 Google Sign-In SDK
+        const { signInWithGoogle: signInWithGoogleBridge } = await import('@/lib/google-signin-bridge');
+        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+
+        if (!clientId) {
+          throw new Error('Google Client ID not configured');
+        }
+
+        const result = await signInWithGoogleBridge(clientId);
+
+        // 使用返回的 idToken 调用后端 API 完成登录
+        const response = await fetch('/api/auth/google-native', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken: result.idToken,
+            email: result.email,
+            displayName: result.displayName
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to authenticate with backend');
+        }
+
+        const data = await response.json();
+
+        // 保存认证状态
+        if (data.user) {
+          saveAuthState(data.user);
+        }
+
+        toast.success(isZhText ? "登录成功！" : "Sign in successful!");
+        router.push(next);
+        router.refresh();
+      } else {
+        // 使用 Supabase OAuth 流程（浏览器环境）
+        await signInWithGoogle(next);
+      }
     } catch (error) {
       if (error instanceof Error && error.message.includes("NEXT_REDIRECT")) {
         return;
