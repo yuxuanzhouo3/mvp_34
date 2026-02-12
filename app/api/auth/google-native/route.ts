@@ -166,29 +166,32 @@ export async function POST(request: NextRequest) {
 
         profile = updatedProfile;
       } else {
-        // Profile 不存在，创建新的
-        console.log('Profile does not exist, creating with service role');
-        const { data: newProfile, error: insertError } = await serviceClient
+        // Profile 不存在，使用 upsert 创建（处理并发冲突）
+        console.log('Profile does not exist, upserting with service role');
+        const { data: newProfile, error: upsertError } = await serviceClient
           .from('profiles')
-          .insert({
+          .upsert({
             id: authUserId,
             email: payload.email,
             name: displayName || payload.name,
             avatar: payload.picture,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'id',
           })
           .select()
           .single();
 
-        if (insertError) {
-          console.error('Failed to create profile:', insertError);
+        if (upsertError) {
+          console.error('Failed to upsert profile:', upsertError);
           return NextResponse.json(
-            { error: 'Failed to create profile: ' + insertError.message },
+            { error: 'Failed to create profile: ' + upsertError.message },
             { status: 500 }
           );
         }
 
         profile = newProfile;
-        console.log('Profile created successfully');
+        console.log('Profile upserted successfully');
       }
 
       user = profile;
