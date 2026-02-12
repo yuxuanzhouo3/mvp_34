@@ -186,10 +186,6 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
     const downloadUrl = await storage.getTempDownloadUrl(fileName);
 
     // 更新数据库记录（使用重试机制）
-    const connector = new CloudBaseConnector();
-    await connector.initialize();
-    const db = connector.getClient();
-
     await withDbRetry(
       () => db.collection("builds").doc(buildId).update({
         output_file_path: fileName,
@@ -205,10 +201,6 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
 
     // 更新构建记录为失败状态（使用重试机制）
     try {
-      const connector = new CloudBaseConnector();
-      await connector.initialize();
-      const db = connector.getClient();
-
       await withDbRetry(
         () => db.collection("builds").doc(buildId).update({
           status: "failed",
