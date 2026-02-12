@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 重新构建查询（使用重试机制）
-    const { data: builds } = await withDbRetry(
+    const { data: builds } = (await withDbRetry(
       () => db
         .collection("builds")
         .where(whereConditions)

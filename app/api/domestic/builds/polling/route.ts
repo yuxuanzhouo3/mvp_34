@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
     // 只查询 pending 和 processing 状态的构建（最近 1 小时内）
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-    const { data: processingBuilds } = await withDbRetry(
+    const { data: processingBuilds } = (await withDbRetry(
       () => db
         .collection("builds")
         .where({
