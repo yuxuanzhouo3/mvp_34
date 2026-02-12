@@ -91,9 +91,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 等待触发器创建 profile（最多等待3秒）
+      // 等待触发器创建 profile（最多等待2秒）
       let profile = null;
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 4; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
 
         const { data: newProfile } = await supabase
@@ -104,16 +104,35 @@ export async function POST(request: NextRequest) {
 
         if (newProfile) {
           profile = newProfile;
+          console.log('Profile created by trigger');
           break;
         }
       }
 
+      // Fallback: 如果触发器没有创建profile，手动创建
       if (!profile) {
-        console.error('Profile not created by trigger after 3 seconds');
-        return NextResponse.json(
-          { error: 'Failed to create user profile' },
-          { status: 500 }
-        );
+        console.warn('Trigger did not create profile, creating manually');
+        const { data: manualProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            email: payload.email,
+            name: displayName || payload.name,
+            avatar: payload.picture,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Failed to create profile manually:', insertError);
+          return NextResponse.json(
+            { error: 'Failed to create user profile: ' + insertError.message },
+            { status: 500 }
+          );
+        }
+
+        profile = manualProfile;
+        console.log('Profile created manually');
       }
 
       user = profile;
