@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
 
     // 检查用户是否已存在
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: fetchError } = await supabase
       .from('users')
       .select('*')
       .eq('email', payload.email)
@@ -54,16 +54,25 @@ export async function POST(request: NextRequest) {
 
     if (existingUser) {
       // 用户已存在，更新最后登录时间
-      const { data: updatedUser } = await supabase
+      const { data: updatedUser, error: updateError } = await supabase
         .from('users')
         .update({ last_sign_in_at: new Date().toISOString() })
         .eq('id', existingUser.id)
         .select()
         .single();
+
+      if (updateError) {
+        console.error('Failed to update user:', updateError);
+        return NextResponse.json(
+          { error: 'Failed to update user: ' + updateError.message },
+          { status: 500 }
+        );
+      }
+
       user = updatedUser;
     } else {
       // 创建新用户
-      const { data: newUser } = await supabase
+      const { data: newUser, error: insertError } = await supabase
         .from('users')
         .insert({
           email: payload.email,
@@ -76,7 +85,24 @@ export async function POST(request: NextRequest) {
         })
         .select()
         .single();
+
+      if (insertError) {
+        console.error('Failed to create user:', insertError);
+        return NextResponse.json(
+          { error: 'Failed to create user: ' + insertError.message },
+          { status: 500 }
+        );
+      }
+
       user = newUser;
+    }
+
+    // 确保 user 不为 null
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Failed to get user data' },
+        { status: 500 }
+      );
     }
 
     // 创建自定义会话（不使用 Supabase OAuth）
