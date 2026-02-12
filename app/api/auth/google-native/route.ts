@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { OAuth2Client } from 'google-auth-library';
 
 /**
@@ -109,10 +109,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Fallback: 如果触发器没有创建profile，手动创建
+      // Fallback: 如果触发器没有创建profile，使用 service role 手动创建（绕过 RLS）
       if (!profile) {
-        console.warn('Trigger did not create profile, creating manually');
-        const { data: manualProfile, error: insertError } = await supabase
+        console.warn('Trigger did not create profile, creating manually with service role');
+        const serviceClient = createServiceClient();
+        const { data: manualProfile, error: insertError } = await serviceClient
           .from('profiles')
           .insert({
             id: authData.user.id,
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest) {
         }
 
         profile = manualProfile;
-        console.log('Profile created manually');
+        console.log('Profile created manually with service role');
       }
 
       user = profile;
