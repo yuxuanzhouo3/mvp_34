@@ -31,7 +31,7 @@ const COMPLETED_CACHE_TTL = 5 * 60 * 1000; // 5分钟后清理缓存
 async function tryAcquireDistributedLock(db: any, buildId: string): Promise<boolean> {
   try {
     // 先读取当前构建记录，检查锁状态
-    const buildDoc = await db.collection("builds").doc(buildId).get();
+    const buildDoc = (await db.collection("builds").doc(buildId).get()) as any;
     const build = buildDoc?.data?.[0];
 
     if (!build) {

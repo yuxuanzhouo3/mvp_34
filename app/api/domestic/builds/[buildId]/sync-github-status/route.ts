@@ -22,7 +22,7 @@ export async function POST(
     const db = connector.getClient();
 
     // 获取构建记录
-    const buildDoc = await db.collection("builds").doc(buildId).get();
+    const buildDoc = (await db.collection("builds").doc(buildId).get()) as any;
     const build = buildDoc?.data?.[0];
 
     if (!build) {
@@ -115,10 +115,10 @@ async function syncBuildWithRunId(
     // 如果构建完成且成功，下载并上传 artifact
     if (status.status === "completed" && status.conclusion === "success") {
       // 先获取构建记录，检查是否已经上传过APK
-      const buildDoc = await withDbRetry(
+      const buildDoc = (await withDbRetry(
         () => db.collection("builds").doc(buildId).get(),
         'Get build record'
-      );
+      )) as any;
       const build = buildDoc?.data?.[0];
 
       // 检查是否已经上传过文件，避免重复下载
