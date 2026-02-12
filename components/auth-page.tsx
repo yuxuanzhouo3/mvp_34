@@ -21,6 +21,7 @@ import {
 } from "@/lib/wechat-mp";
 import { getLoginErrorMessage } from "@/lib/auth/login-error";
 import { saveAuthState, type AuthUser } from "@/lib/auth-state-manager";
+import { useAuth } from "@/context/AuthContext";
 
 type Mode = "login" | "signup" | "reset";
 
@@ -68,6 +69,7 @@ export function AuthPage({ mode }: AuthPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || searchParams.get("redirect") || "/";
+  const { updateUser } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -440,6 +442,10 @@ export function AuthPage({ mode }: AuthPageProps) {
             }
           );
           console.log('[handleGoogleSignIn] Auth state saved');
+
+          // 立即更新 AuthContext 的用户状态
+          updateUser(data.user);
+          console.log('[handleGoogleSignIn] AuthContext updated');
         } else {
           console.error('[handleGoogleSignIn] Missing session or user data');
         }

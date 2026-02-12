@@ -30,6 +30,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, name?: string) => Promise<{ error: Error | null; needsEmailVerification?: boolean; userId?: string }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  updateUser: (user: User | DomesticUser | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -320,6 +321,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   }, [supabase, router]);
 
+  const updateUser = useCallback((newUser: User | DomesticUser | null) => {
+    setUser(newUser);
+  }, []);
+
   const value = useMemo(() => ({
     user,
     session,
@@ -328,7 +333,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     signOut,
     refreshSession,
-  }), [user, session, loading, signIn, signUp, signOut, refreshSession]);
+    updateUser,
+  }), [user, session, loading, signIn, signUp, signOut, refreshSession, updateUser]);
 
   return (
     <AuthContext.Provider value={value}>
