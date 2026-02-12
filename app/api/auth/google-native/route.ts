@@ -71,16 +71,18 @@ export async function POST(request: NextRequest) {
 
       user = updatedUser;
     } else {
-      // 创建新用户 - 使用正确的字段名，让触发器自动创建 profile
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // 创建新用户 - 使用 Admin API 创建 OAuth 用户
+      console.log('Creating new user with Admin API');
+      const serviceClient = createServiceClient();
+
+      const { data: authData, error: authError } = await serviceClient.auth.admin.createUser({
         email: payload.email!,
-        password: Math.random().toString(36).slice(-16), // 随机密码
-        options: {
-          data: {
-            full_name: displayName || payload.name,  // ✅ 使用 full_name
-            avatar_url: payload.picture,             // ✅ 使用 avatar_url
-          }
-        }
+        email_confirm: true, // OAuth 用户邮箱已验证
+        user_metadata: {
+          full_name: displayName || payload.name,
+          avatar_url: payload.picture,
+          provider: 'google',
+        },
       });
 
       if (authError || !authData.user) {
@@ -90,6 +92,8 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
+
+      console.log('Auth user created:', authData.user.id);
 
       // 等待触发器创建 profile（最多等待2秒）
       let profile = null;
@@ -112,7 +116,6 @@ export async function POST(request: NextRequest) {
       // Fallback: 如果触发器没有创建profile，使用 service role 手动创建（绕过 RLS）
       if (!profile) {
         console.warn('Trigger did not create profile, creating manually with service role');
-        const serviceClient = createServiceClient();
         const { data: manualProfile, error: insertError } = await serviceClient
           .from('profiles')
           .insert({
