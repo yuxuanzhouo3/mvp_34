@@ -145,6 +145,12 @@ export async function GET(request: NextRequest) {
         .limit(20)
         .get(),
       'Get processing builds'
+    )) as any;
+        })
+        .orderBy("created_at", "desc")
+        .limit(20)
+        .get(),
+      'Get processing builds'
     );
 
     // 自动同步卡住的 APK 构建（异步处理，不阻塞响应）

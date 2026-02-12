@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
         .limit(safeLimit)
         .get(),
       'Get builds list'
-    );
+    )) as any;
 
     // 过滤掉中间产物（Android Source 临时构建记录）
     const filteredBuilds = (builds || []).filter((build: any) => {
