@@ -385,7 +385,7 @@ export function AuthPage({ mode }: AuthPageProps) {
         const { signInWithGoogle: signInWithGoogleBridge } = await import('@/lib/google-signin-bridge');
 
         // 从 window 对象获取 clientId（由 Android 注入）
-        const clientId = (window as any).GOOGLE_CLIENT_ID || '45279353784-rnugbfqp14rdqramf60gp9hk4mjl7klu.apps.googleusercontent.com';
+        const clientId = (window as any).GOOGLE_CLIENT_ID || '45279353784-kth63eeaaa2hqa0hauhb6vfsigbm2qeq.apps.googleusercontent.com';
         console.log('[handleGoogleSignIn] clientId:', clientId);
 
         if (!clientId) {
