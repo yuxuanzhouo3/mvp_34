@@ -168,6 +168,11 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
     // 获取下载链接
     const downloadUrl = await storage.getTempDownloadUrl(fileName);
 
+    // 连接数据库以更新记录
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+
     // 更新数据库记录（使用重试机制）
     await withDbRetry(
       () => db.collection("builds").doc(buildId).update({
