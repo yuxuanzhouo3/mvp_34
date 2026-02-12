@@ -43,35 +43,21 @@ export async function POST(request: NextRequest) {
     // 使用 Supabase 创建或获取用户
     const supabase = await createClient();
 
-    // 检查用户是否已存在于 auth.users
-    const { data: existingAuthUser } = await supabase.auth.admin.getUserByEmail(payload.email!);
+    // 检查用户是否已存在（通过 profiles 表）
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', payload.email)
+      .maybeSingle();
 
     let user;
-    let authUserId: string;
 
-    if (existingAuthUser?.user) {
-      // 用户已存在，获取其 profile
-      authUserId = existingAuthUser.user.id;
-
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUserId)
-        .single();
-
-      if (fetchError) {
-        console.error('Failed to fetch profile:', fetchError);
-        return NextResponse.json(
-          { error: 'Failed to fetch user profile: ' + fetchError.message },
-          { status: 500 }
-        );
-      }
-
-      // 更新最后登录时间
+    if (existingProfile) {
+      // 用户已存在，更新最后登录时间
       const { data: updatedUser, error: updateError } = await supabase
         .from('profiles')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', authUserId)
+        .eq('id', existingProfile.id)
         .select()
         .single();
 
@@ -105,31 +91,29 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      authUserId = authData.user.id;
-
       // 等待触发器创建 profile（最多等待3秒）
       let profile = null;
       for (let i = 0; i < 6; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        const { data: newProfile, error: fetchError } = await supabase
+        const { data: newProfile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', authUserId)
-          .single();
+          .eq('id', authData.user.id)
+          .maybeSingle();
 
         if (newProfile) {
           profile = newProfile;
           break;
         }
+      }
 
-        if (i === 5 && fetchError) {
-          console.error('Profile not created by trigger:', fetchError);
-          return NextResponse.json(
-            { error: 'Failed to create profile: ' + fetchError.message },
-            { status: 500 }
-          );
-        }
+      if (!profile) {
+        console.error('Profile not created by trigger after 3 seconds');
+        return NextResponse.json(
+          { error: 'Failed to create user profile' },
+          { status: 500 }
+        );
       }
 
       user = profile;
