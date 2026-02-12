@@ -408,8 +408,16 @@ export function AuthPage({ mode }: AuthPageProps) {
         const data = await response.json();
 
         // 保存认证状态
-        if (data.user) {
-          saveAuthState(data.user);
+        if (data.session && data.user) {
+          saveAuthState(
+            data.session.access_token,
+            data.session.refresh_token,
+            data.user,
+            {
+              accessTokenExpiresIn: data.session.expires_in || 3600,
+              refreshTokenExpiresIn: data.session.refresh_token_expires_in || 86400
+            }
+          );
         }
 
         toast.success(isZhText ? "登录成功！" : "Sign in successful!");
