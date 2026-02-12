@@ -157,7 +157,7 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
 
     // 下载 artifact（这是一个 zip 文件，包含 APK）
     const artifactName = `app-release-${buildId}`;
-    const artifactBuffer = await downloadGitHubArtifact(runId, artifactName, platform);
+    const artifactBuffer = await downloadGitHubArtifact(runId, artifactName);
 
     if (!artifactBuffer) {
       throw new Error("Failed to download artifact from GitHub");
