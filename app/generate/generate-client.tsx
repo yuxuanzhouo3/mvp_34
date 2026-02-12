@@ -724,8 +724,8 @@ function GenerateContent() {
         formData.append("url", url);
         formData.append("appName", platforms[0].appName);
         formData.append("packageName", platforms[0].packageName || "");
-        formData.append("versionName", platforms[0].versionName);
-        formData.append("versionCode", platforms[0].versionCode);
+        formData.append("versionName", platforms[0].versionName || "");
+        formData.append("versionCode", platforms[0].versionCode || "");
         formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
         if (platforms[0].iconPath) {
           formData.append("iconPath", platforms[0].iconPath);
