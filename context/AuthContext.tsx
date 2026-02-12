@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { IS_DOMESTIC_VERSION } from "@/config";
 import { trackLoginEventClient } from "@/services/analytics-client";
+import { getStoredAuthState } from "@/lib/auth-state-manager";
 
 // 国内版用户类型（兼容 Supabase User 接口的关键字段）
 interface DomesticUser {
