@@ -727,8 +727,8 @@ function GenerateContent() {
         formData.append("versionName", platforms[0].versionName || "");
         formData.append("versionCode", platforms[0].versionCode || "");
         formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
-        if (platforms[0].iconPath) {
-          formData.append("iconPath", platforms[0].iconPath);
+        if ((platforms[0] as any).iconPath) {
+          formData.append("iconPath", (platforms[0] as any).iconPath);
         }
 
         response = await fetch("/api/domestic/android-apk/build", {
