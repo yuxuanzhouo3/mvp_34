@@ -79,19 +79,42 @@ export async function POST(request: NextRequest) {
       user = newUser;
     }
 
-    // 创建会话
-    const { data: session, error: sessionError } = await supabase.auth.signInWithIdToken({
-      provider: 'google',
-      token: idToken,
-    });
+    // 创建自定义会话（不使用 Supabase OAuth）
+    // 生成访问令牌和刷新令牌
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key';
 
-    if (sessionError) {
-      console.error('Session creation error:', sessionError);
-      return NextResponse.json(
-        { error: 'Failed to create session' },
-        { status: 500 }
-      );
-    }
+    const accessToken = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: 'authenticated',
+      },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    const session = {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: 3600,
+      refresh_token_expires_in: 604800,
+      token_type: 'bearer',
+      user: {
+        id: user.id,
+        email: user.email,
+        role: 'authenticated',
+      },
+    };
 
     return NextResponse.json({
       success: true,
