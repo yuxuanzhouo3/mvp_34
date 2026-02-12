@@ -148,6 +148,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // 先检查 localStorage 是否有认证状态（用于 Android Native 登录）
+    const storedAuthState = getStoredAuthState();
+    if (storedAuthState?.user) {
+      console.log('[AuthContext] Found stored auth state, using it:', storedAuthState.user);
+      setUser(storedAuthState.user);
+      setSession(null); // Android Native 登录不使用 Supabase session
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
     refreshSession().finally(() => setLoading(false));
 
