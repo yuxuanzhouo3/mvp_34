@@ -335,7 +335,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 4. 清除 Supabase session（邮箱登录）- 不等待完成，避免中断
       try {
         if (supabase) {
-          supabase.auth.signOut().catch(err => console.error('Supabase signOut error:', err));
+          supabase.auth.signOut().catch((err: unknown) => console.error('Supabase signOut error:', err));
         }
       } catch (error) {
         console.error('触发 Supabase 登出失败:', error);
@@ -346,7 +346,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const isAndroidWebView = typeof window !== 'undefined' && !!(window as any).GoogleSignIn;
         if (isAndroidWebView) {
           const { signOutGoogle } = await import('@/lib/google-signin-bridge');
-          signOutGoogle().catch(err => console.error('Android signOut error:', err));
+          signOutGoogle().catch((err: unknown) => console.error('Android signOut error:', err));
         }
       } catch (error) {
         console.error('触发 Android Google 登出失败:', error);
@@ -358,7 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           fetch("/api/domestic/auth/logout", {
             method: "POST",
             credentials: "include",
-          }).catch(err => console.error('Domestic logout error:', err));
+          }).catch((err: unknown) => console.error('Domestic logout error:', err));
         } catch (error) {
           console.error('触发国内版登出失败:', error);
         }
