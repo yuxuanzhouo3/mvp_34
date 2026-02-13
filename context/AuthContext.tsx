@@ -293,32 +293,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   const signOut = useCallback(async () => {
-    if (IS_DOMESTIC_VERSION) {
-      // 国内版：调用登出 API
+    try {
+      // 1. 清除所有 cookie（包括 custom-jwt-token 和 Supabase session）
       try {
-        await fetch("/api/domestic/auth/logout", {
-          method: "POST",
-          credentials: "include",
-        });
+        const { deleteCookie } = await import('@/lib/cookie-helper');
+        // 清除自定义 JWT token
+        deleteCookie('custom-jwt-token');
+
+        // 清除所有 Supabase session cookie（sb-*-auth-token）
+        if (typeof document !== 'undefined') {
+          const cookies = document.cookie.split(';');
+          for (const cookie of cookies) {
+            const cookieName = cookie.split('=')[0].trim();
+            if (cookieName.startsWith('sb-') || cookieName.includes('auth')) {
+              deleteCookie(cookieName);
+            }
+          }
+        }
       } catch (error) {
-        console.error("[AuthContext] Domestic logout error:", error);
+        console.error('清除 cookie 失败:', error);
       }
-      setUser(null);
-      setSession(null);
-      router.refresh();
-      return;
-    }
 
-    // 国际版：使用 Supabase
-    if (!supabase) {
-      setUser(null);
-      setSession(null);
-      return;
-    }
+      // 2. 清除所有 localStorage 数据
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.clear();
+        }
+      } catch (error) {
+        console.error('清除 localStorage 失败:', error);
+      }
 
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
+      // 3. 清除所有 sessionStorage 数据
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.clear();
+        }
+      } catch (error) {
+        console.error('清除 sessionStorage 失败:', error);
+      }
+
+      // 4. 清除 Supabase session（邮箱登录）- 不等待完成，避免中断
+      try {
+        if (supabase) {
+          supabase.auth.signOut().catch(err => console.error('Supabase signOut error:', err));
+        }
+      } catch (error) {
+        console.error('触发 Supabase 登出失败:', error);
+      }
+
+      // 5. 清除 Android 端的 Google 登录缓存（不等待完成，避免中断）
+      try {
+        const isAndroidWebView = typeof window !== 'undefined' && !!(window as any).GoogleSignIn;
+        if (isAndroidWebView) {
+          const { signOutGoogle } = await import('@/lib/google-signin-bridge');
+          signOutGoogle().catch(err => console.error('Android signOut error:', err));
+        }
+      } catch (error) {
+        console.error('触发 Android Google 登出失败:', error);
+      }
+
+      // 6. 国内版：调用登出 API（不等待完成，避免中断）
+      if (IS_DOMESTIC_VERSION) {
+        try {
+          fetch("/api/domestic/auth/logout", {
+            method: "POST",
+            credentials: "include",
+          }).catch(err => console.error('Domestic logout error:', err));
+        } catch (error) {
+          console.error('触发国内版登出失败:', error);
+        }
+      }
+
+      // 7. 立即刷新页面
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+    } catch (error) {
+      console.error("退出登录失败:", error);
+      alert(`退出登录失败: ${error}`);
+    }
   }, [supabase, router]);
 
   const updateUser = useCallback((newUser: User | DomesticUser | null) => {
