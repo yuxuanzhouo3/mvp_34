@@ -261,7 +261,7 @@ export default function BuildsClient() {
     if (hasProcessingBuilds) {
       const pollProcessingBuilds = async () => {
         try {
-          const response = await fetch("/api/domestic/builds/polling");
+          const response = await fetch(api.builds.polling());
           if (response.ok) {
             const { builds: processingBuilds } = await response.json();
 

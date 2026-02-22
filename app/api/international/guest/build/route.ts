@@ -281,6 +281,22 @@ const PLATFORM_CONFIG: Record<Platform, { bucket: string; zipFile: string; confi
   },
 };
 
+const PLATFORM_ALIASES: Record<string, Platform> = {
+  android: "android",
+  "android-source": "android",
+  "android-apk": "android",
+  windows: "windows",
+  macos: "macos",
+  linux: "linux",
+  chrome: "chrome",
+};
+
+function normalizePlatform(platform: string | null): Platform | null {
+  if (!platform) return null;
+  const normalized = platform.trim().toLowerCase();
+  return PLATFORM_ALIASES[normalized] || null;
+}
+
 /**
  * 游客构建 API
  * - 不落库
@@ -329,10 +345,11 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const url = formData.get("url") as string;
     const rawAppName = formData.get("appName") as string;
-    const platform = (formData.get("platform") as string)?.toLowerCase() as Platform;
+    const rawPlatform = (formData.get("platform") as string | null) || null;
+    const platform = normalizePlatform(rawPlatform);
 
     // 验证必填字段
-    if (!url || !rawAppName || !platform) {
+    if (!url || !rawAppName || !rawPlatform) {
       return NextResponse.json(
         { error: "Missing required fields", message: "url, appName, and platform are required" },
         { status: 400 }
@@ -357,7 +374,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 验证平台
-    if (!PLATFORM_CONFIG[platform]) {
+    if (!platform) {
       return NextResponse.json(
         { error: "Invalid platform", message: `Supported platforms: ${Object.keys(PLATFORM_CONFIG).join(", ")}` },
         { status: 400 }

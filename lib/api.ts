@@ -33,6 +33,7 @@ export function buildApiPath(endpoint: string): string {
 export const API_ENDPOINTS = {
   // 构建相关
   BUILDS: "builds",
+  BUILDS_POLLING: "builds/polling",
   BUILD_BY_ID: (id: string) => `builds/${id}`,
 
   // 平台构建
@@ -52,6 +53,7 @@ export const API_ENDPOINTS = {
 export const api = {
   builds: {
     list: () => buildApiPath(API_ENDPOINTS.BUILDS),
+    polling: () => buildApiPath(API_ENDPOINTS.BUILDS_POLLING),
     get: (id: string) => buildApiPath(API_ENDPOINTS.BUILD_BY_ID(id)),
     delete: (id: string) => buildApiPath(API_ENDPOINTS.BUILD_BY_ID(id)),
   },

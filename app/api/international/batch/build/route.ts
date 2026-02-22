@@ -49,6 +49,28 @@ interface BatchBuildRequest {
   platforms: PlatformConfig[];
 }
 
+const PLATFORM_ALIASES: Record<string, string> = {
+  "android-source": "android",
+  "harmonyos-source": "harmonyos",
+  "harmonyos-hap": "harmonyos",
+};
+
+const SUPPORTED_PLATFORMS = new Set([
+  "android",
+  "ios",
+  "chrome",
+  "windows",
+  "macos",
+  "linux",
+  "wechat",
+  "harmonyos",
+]);
+
+function normalizePlatform(platform: string): string {
+  const normalized = platform.trim().toLowerCase();
+  return PLATFORM_ALIASES[normalized] || normalized;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // 1. 认证（只做一次）
@@ -83,7 +105,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const platformCount = platforms.length;
+    // 规范化平台别名，避免前端历史 ID 与后端枚举不一致
+    const normalizedPlatforms = platforms.map((config) => ({
+      ...config,
+      platform: normalizePlatform(config.platform || ""),
+    }));
+
+    const unsupportedPlatforms = platforms
+      .filter((config) => !SUPPORTED_PLATFORMS.has(normalizePlatform(config.platform || "")))
+      .map((config) => config.platform || "(empty)");
+
+    if (unsupportedPlatforms.length > 0) {
+      const uniqueUnsupported = Array.from(new Set(unsupportedPlatforms));
+      return NextResponse.json(
+        {
+          error: "Unsupported platform",
+          message: `Unsupported platform(s): ${uniqueUnsupported.join(", ")}`,
+          supportedPlatforms: Array.from(SUPPORTED_PLATFORMS),
+        },
+        { status: 400 }
+      );
+    }
+
+    const platformCount = normalizedPlatforms.length;
     const serviceClient = createServiceClient();
 
     // 3. 并行执行：额度检查 + 获取用户钱包信息（优化响应速度）
@@ -126,8 +170,8 @@ export async function POST(request: NextRequest) {
 
     // 6. 批量创建构建记录（按顺序设置时间戳，确保显示顺序正确）
     const now = Date.now();
-    const totalPlatforms = platforms.length;
-    const buildRecords = platforms.map((config, index) => ({
+    const totalPlatforms = normalizedPlatforms.length;
+    const buildRecords = normalizedPlatforms.map((config, index) => ({
       user_id: user.id,
       app_name: config.appName,
       package_name: getPackageName(config),
@@ -164,7 +208,7 @@ export async function POST(request: NextRequest) {
 
     // 8. 后台异步处理：上传图标 + 启动构建（立即返回，不等待构建完成）
     waitUntil(
-      processBuildsInBackground(serviceClient, user.id, url, platforms, builds)
+      processBuildsInBackground(serviceClient, user.id, url, normalizedPlatforms, builds)
     );
 
     return NextResponse.json({
@@ -185,10 +229,12 @@ export async function POST(request: NextRequest) {
 function getPackageName(config: PlatformConfig): string {
   switch (config.platform) {
     case "android":
+    case "android-source":
       return config.packageName || `com.app.${config.appName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
     case "ios":
       return config.bundleId || `com.app.${config.appName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
     case "harmonyos":
+    case "harmonyos-source":
       return config.bundleName || `com.app.${config.appName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
     case "wechat":
       return config.appId || "";
@@ -328,6 +374,7 @@ async function startPlatformBuild(
 ) {
   switch (platform) {
     case "android":
+    case "android-source":
       await processAndroidBuild(buildId, {
         url,
         appName: config.appName,
@@ -395,6 +442,7 @@ async function startPlatformBuild(
       break;
 
     case "harmonyos":
+    case "harmonyos-source":
       await processHarmonyOSBuild(buildId, {
         url,
         appName: config.appName,
