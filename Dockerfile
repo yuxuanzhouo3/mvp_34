@@ -6,7 +6,7 @@ FROM node:20-alpine AS deps
 RUN npm install -g pnpm
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN npm install --legacy-peer-deps
 
 # ========== 阶段2: 构建应用 ==========
 FROM node:20-alpine AS builder
