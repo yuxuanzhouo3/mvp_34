@@ -76,14 +76,7 @@ function normalizeTargetPath(rawValue: string | null, fallbackPath: string) {
   }
 }
 
-export async function GET(
-  request: NextRequest,
-  context: {
-    params: {
-      shareCode: string;
-    };
-  },
-) {
+export async function GET(request: NextRequest, context: any) {
   const requestOrigin = resolveRequestOrigin(request);
   const shareCode = String(context?.params?.shareCode || "").trim();
   if (!shareCode) {
