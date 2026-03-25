@@ -2,6 +2,7 @@
   "name": "mornclient",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.8.1",
   "scripts": {
     "predev": "node scripts/clean-trace.js",
     "build": "next build",
@@ -105,4 +106,3 @@
     "node": "24.x"
   }
 }
-
