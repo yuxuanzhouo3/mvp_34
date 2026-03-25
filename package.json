@@ -2,12 +2,6 @@
   "name": "mornclient",
   "version": "0.1.0",
   "private": true,
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@tailwindcss/oxide",
-      "sharp"
-    ]
-  },
   "scripts": {
     "predev": "node scripts/clean-trace.js",
     "build": "next build",
@@ -108,6 +102,6 @@
     "typescript": "^5"
   },
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   }
 }
