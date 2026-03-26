@@ -11,6 +11,21 @@ const nextConfig = {
       bodySizeLimit: 52428800, // 50MB (50 * 1024 * 1024 bytes) - 支持多平台图标上传
     },
   },
+  // Fix recharts/d3 ESM compatibility with webpack
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+    };
+    // Handle d3/internmap ESM modules
+    config.module.rules.push({
+      test: /\.js$/,
+      include: /node_modules\/(d3-.*|internmap|delaunator|robust-predicates)/,
+      resolve: {
+        fullySpecified: false,
+      },
+    });
+    return config;
+  },
   // 安全头配置
   async headers() {
     return [
@@ -34,3 +49,4 @@ const nextConfig = {
 }
 
 export default nextConfig
+
