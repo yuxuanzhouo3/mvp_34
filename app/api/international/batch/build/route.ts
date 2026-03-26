@@ -1,0 +1,461 @@
+import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
+import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
+import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
+import { getPlanBuildExpireDays } from "@/utils/plan-limits";
+
+// 导入各平台的构建处理器
+import { processAndroidBuild } from "@/lib/services/android-builder";
+import { processiOSBuild } from "@/lib/services/ios-builder";
+import { processChromeExtensionBuild } from "@/lib/services/chrome-extension-builder";
+import { processWindowsExeBuild } from "@/lib/services/windows-exe-builder";
+import { processMacOSAppBuild } from "@/lib/services/macos-app-builder";
+import { processLinuxAppBuild } from "@/lib/services/linux-app-builder";
+import { processWechatBuild } from "@/lib/services/wechat-builder";
+import { processHarmonyOSBuild } from "@/lib/services/harmonyos-builder";
+
+export const maxDuration = 120;
+
+// 平台配置类型
+interface PlatformConfig {
+  platform: string;
+  appName: string;
+  // Android
+  packageName?: string;
+  versionName?: string;
+  versionCode?: string;
+  privacyPolicy?: string;
+  // iOS
+  bundleId?: string;
+  versionString?: string;
+  buildNumber?: string;
+  // WeChat
+  appId?: string;
+  version?: string;
+  // HarmonyOS
+  bundleName?: string;
+  // Chrome
+  description?: string;
+  // 图标（支持 URL 或 base64）
+  iconUrl?: string; // 图标 URL（优先使用，避免 Vercel 4.5MB 限制）
+  iconBase64?: string; // 图标 base64（向后兼容）
+  iconType?: string;
+}
+
+interface BatchBuildRequest {
+  url: string;
+  platforms: PlatformConfig[];
+}
+
+const PLATFORM_ALIASES: Record<string, string> = {
+  "android-source": "android",
+  "harmonyos-source": "harmonyos",
+  "harmonyos-hap": "harmonyos",
+};
+
+const SUPPORTED_PLATFORMS = new Set([
+  "android",
+  "ios",
+  "chrome",
+  "windows",
+  "macos",
+  "linux",
+  "wechat",
+  "harmonyos",
+]);
+
+function normalizePlatform(platform: string): string {
+  const normalized = platform.trim().toLowerCase();
+  return PLATFORM_ALIASES[normalized] || normalized;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // 1. 认证（只做一次）
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Please login to create a build" },
+        { status: 401 }
+      );
+    }
+
+    // 2. 解析请求体
+    const body: BatchBuildRequest = await request.json();
+    const { url, platforms } = body;
+
+    if (!url || !platforms || platforms.length === 0) {
+      return NextResponse.json(
+        { error: "Missing required fields", message: "url and platforms are required" },
+        { status: 400 }
+      );
+    }
+
+    // 验证 URL 格式
+    try {
+      new URL(url);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid URL", message: "Please provide a valid URL" },
+        { status: 400 }
+      );
+    }
+
+    // 规范化平台别名，避免前端历史 ID 与后端枚举不一致
+    const normalizedPlatforms = platforms.map((config) => ({
+      ...config,
+      platform: normalizePlatform(config.platform || ""),
+    }));
+
+    const unsupportedPlatforms = platforms
+      .filter((config) => !SUPPORTED_PLATFORMS.has(normalizePlatform(config.platform || "")))
+      .map((config) => config.platform || "(empty)");
+
+    if (unsupportedPlatforms.length > 0) {
+      const uniqueUnsupported = Array.from(new Set(unsupportedPlatforms));
+      return NextResponse.json(
+        {
+          error: "Unsupported platform",
+          message: `Unsupported platform(s): ${uniqueUnsupported.join(", ")}`,
+          supportedPlatforms: Array.from(SUPPORTED_PLATFORMS),
+        },
+        { status: 400 }
+      );
+    }
+
+    const platformCount = normalizedPlatforms.length;
+    const serviceClient = createServiceClient();
+
+    // 3. 并行执行：额度检查 + 获取用户钱包信息（优化响应速度）
+    const [quotaCheck, wallet] = await Promise.all([
+      checkBuildQuota(user.id, platformCount),
+      getEffectiveSupabaseUserWallet(user.id),
+    ]);
+
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Failed to load wallet" },
+        { status: 503 }
+      );
+    }
+
+    if (!quotaCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: "Quota exceeded",
+          message: `Daily build quota exceeded. Need: ${platformCount}, Remaining: ${quotaCheck.remaining}/${quotaCheck.limit}`,
+          remaining: quotaCheck.remaining,
+          limit: quotaCheck.limit,
+        },
+        { status: 429 }
+      );
+    }
+
+    // 4. 扣除额度
+    const deductResult = await deductBuildQuota(user.id, platformCount);
+    if (!deductResult.success) {
+      return NextResponse.json(
+        { error: "Quota deduction failed", message: deductResult.error || "Failed to deduct build quota" },
+        { status: 500 }
+      );
+    }
+
+    // 5. 计算过期时间（使用已获取的钱包信息）
+    const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
+    const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
+
+    // 6. 批量创建构建记录（按顺序设置时间戳，确保显示顺序正确）
+    const now = Date.now();
+    const totalPlatforms = normalizedPlatforms.length;
+    const buildRecords = normalizedPlatforms.map((config, index) => ({
+      user_id: user.id,
+      app_name: config.appName,
+      package_name: getPackageName(config),
+      version_name: config.versionName || config.versionString || config.version || "1.0.0",
+      version_code: config.versionCode || config.buildNumber || "1",
+      privacy_policy: config.privacyPolicy || config.description || "",
+      url: url,
+      platform: config.platform,
+      status: "pending",
+      progress: 0,
+      icon_path: null,
+      expires_at: expiresAt,
+      // 第一个平台时间戳最大，这样按 created_at 降序时显示在最前面
+      created_at: new Date(now + (totalPlatforms - index)).toISOString(),
+    }));
+
+    const { data: builds, error: insertError } = await serviceClient
+      .from("builds")
+      .insert(buildRecords)
+      .select();
+
+    if (insertError || !builds) {
+      console.error("Batch insert error:", insertError);
+      // 回滚已扣除的额度
+      await refundBuildQuota(user.id, platformCount);
+      return NextResponse.json(
+        { error: "Database error", message: "Failed to create build records" },
+        { status: 500 }
+      );
+    }
+
+    // 7. 获取 buildIds
+    const buildIds = builds.map((b) => b.id);
+
+    // 8. 后台异步处理：上传图标 + 启动构建（立即返回，不等待构建完成）
+    waitUntil(
+      processBuildsInBackground(serviceClient, user.id, url, normalizedPlatforms, builds)
+    );
+
+    return NextResponse.json({
+      success: true,
+      buildIds: buildIds,
+      message: "Build tasks created successfully",
+    });
+  } catch (error) {
+    console.error("Batch build API error:", error);
+    return NextResponse.json(
+      { error: "Internal server error", message: "An unexpected error occurred" },
+      { status: 500 }
+    );
+  }
+}
+
+// 根据平台获取包名
+function getPackageName(config: PlatformConfig): string {
+  switch (config.platform) {
+    case "android":
+    case "android-source":
+      return config.packageName || `com.app.${config.appName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+    case "ios":
+      return config.bundleId || `com.app.${config.appName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+    case "harmonyos":
+    case "harmonyos-source":
+      return config.bundleName || `com.app.${config.appName.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
+    case "wechat":
+      return config.appId || "";
+    case "chrome":
+      return `chrome.extension.${config.appName.toLowerCase().replace(/\s+/g, "")}`;
+    case "windows":
+    case "macos":
+    case "linux":
+      return config.appName.replace(/\s+/g, "-").toLowerCase();
+    default:
+      return config.appName.toLowerCase().replace(/\s+/g, "-");
+  }
+}
+
+// 后台异步处理构建任务（并行优化）
+async function processBuildsInBackground(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  userId: string,
+  url: string,
+  platforms: PlatformConfig[],
+  builds: Array<{ id: string; platform: string }>
+) {
+  // 并行处理所有构建任务（大幅提升速度）
+  // 使用 Promise.allSettled 确保单个构建失败不影响其他构建
+  await Promise.allSettled(
+    builds.map(async (build, i) => {
+      const config = platforms[i];
+      let iconPath: string | null = null;
+
+      try {
+        // 更新状态为处理中
+        await serviceClient
+          .from("builds")
+          .update({ status: "processing", updated_at: new Date().toISOString() })
+          .eq("id", build.id);
+
+        // 上传图标（支持 URL 或 base64）
+        if (isIconUploadEnabled()) {
+          let iconBuffer: Buffer | null = null;
+          let contentType = "image/png";
+
+          // 优先使用 iconUrl（避免 Vercel 4.5MB 限制）
+          if (config.iconUrl) {
+            // 重试机制：最多尝试3次，超时时间递增
+            const maxRetries = 3;
+            const timeouts = [30000, 45000, 60000]; // 30s, 45s, 60s
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+              try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeouts[attempt]);
+
+                try {
+                  console.log(`[Batch] Fetching icon (attempt ${attempt + 1}/${maxRetries}, timeout: ${timeouts[attempt]}ms): ${config.iconUrl}`);
+                  const iconResponse = await fetch(config.iconUrl, {
+                    signal: controller.signal,
+                  });
+
+                  if (iconResponse.ok) {
+                    const arrayBuffer = await iconResponse.arrayBuffer();
+                    iconBuffer = Buffer.from(arrayBuffer);
+                    contentType = iconResponse.headers.get("content-type") || "image/png";
+                    console.log(`[Batch] Icon fetched successfully (${iconBuffer.length} bytes)`);
+                    break; // 成功，退出重试循环
+                  }
+                } finally {
+                  clearTimeout(timeoutId);
+                }
+              } catch (err) {
+                const isLastAttempt = attempt === maxRetries - 1;
+                if (isLastAttempt) {
+                  console.error(`[Batch] Failed to fetch icon after ${maxRetries} attempts: ${config.iconUrl}`, err);
+                } else {
+                  console.warn(`[Batch] Icon fetch attempt ${attempt + 1} failed, retrying...`, err);
+                  // 等待1秒后重试
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
+            }
+          }
+          // 向后兼容：支持 base64
+          else if (config.iconBase64) {
+            iconBuffer = Buffer.from(config.iconBase64, "base64");
+            contentType = config.iconType || "image/png";
+          }
+
+          // 上传图标到 Storage
+          if (iconBuffer) {
+            const sizeValidation = validateImageSize(iconBuffer.length);
+
+            if (sizeValidation.valid) {
+              const fileExt = contentType.split("/")[1] || "png";
+              const safeFileName = `icon_${Date.now()}_${i}.${fileExt}`;
+              const iconFileName = `icons/${userId}/${safeFileName}`;
+
+              const { error: uploadError } = await serviceClient.storage
+                .from("user-builds")
+                .upload(iconFileName, iconBuffer, {
+                  contentType,
+                  upsert: true,
+                });
+
+              if (!uploadError) {
+                iconPath = iconFileName;
+                await serviceClient
+                  .from("builds")
+                  .update({ icon_path: iconPath })
+                  .eq("id", build.id);
+              }
+            }
+          }
+        }
+
+        // 启动对应平台的构建（并行执行）
+        await startPlatformBuild(build.id, build.platform, url, config, iconPath);
+      } catch (err) {
+        console.error(`[Batch] Build process error for ${build.id}:`, err);
+        // 构建失败时回滚该平台的额度
+        await refundBuildQuota(userId, 1);
+        // 更新构建状态为失败
+        await serviceClient
+          .from("builds")
+          .update({ status: "failed", error_message: err instanceof Error ? err.message : "Build failed" })
+          .eq("id", build.id);
+      }
+    })
+  );
+}
+
+// 启动对应平台的构建
+async function startPlatformBuild(
+  buildId: string,
+  platform: string,
+  url: string,
+  config: PlatformConfig,
+  iconPath: string | null
+) {
+  switch (platform) {
+    case "android":
+    case "android-source":
+      await processAndroidBuild(buildId, {
+        url,
+        appName: config.appName,
+        packageName: config.packageName || "",
+        versionName: config.versionName || "1.0.0",
+        versionCode: config.versionCode || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      break;
+
+    case "ios":
+      await processiOSBuild(buildId, {
+        url,
+        appName: config.appName,
+        bundleId: config.bundleId || "",
+        versionString: config.versionString || "1.0.0",
+        buildNumber: config.buildNumber || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      break;
+
+    case "chrome":
+      await processChromeExtensionBuild(buildId, {
+        url,
+        appName: config.appName,
+        versionName: config.versionName || "1.0.0",
+        description: config.description || "",
+        iconPath,
+      });
+      break;
+
+    case "windows":
+      await processWindowsExeBuild(buildId, {
+        url,
+        appName: config.appName,
+        iconPath,
+      });
+      break;
+
+    case "macos":
+      await processMacOSAppBuild(buildId, {
+        url,
+        appName: config.appName,
+        iconPath,
+      });
+      break;
+
+    case "linux":
+      await processLinuxAppBuild(buildId, {
+        url,
+        appName: config.appName,
+        iconPath,
+      });
+      break;
+
+    case "wechat":
+      await processWechatBuild(buildId, {
+        url,
+        appName: config.appName,
+        appId: config.appId || "",
+        version: config.version || "1.0.0",
+      });
+      break;
+
+    case "harmonyos":
+    case "harmonyos-source":
+      await processHarmonyOSBuild(buildId, {
+        url,
+        appName: config.appName,
+        bundleName: config.bundleName || "",
+        versionName: config.versionName || "1.0.0",
+        versionCode: config.versionCode || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      break;
+
+    default:
+      console.error(`[Batch] Unknown platform: ${platform}`);
+      throw new Error(`Unsupported platform: ${platform}`);
+  }
+}

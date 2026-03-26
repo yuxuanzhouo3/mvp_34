@@ -1,0 +1,261 @@
+/**
+ * 国内版 HarmonyOS 构建服务
+ * 使用 CloudBase 云存储和数据库
+ */
+
+import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
+import { trackBuildCompleteEvent } from "@/services/analytics";
+import AdmZip from "adm-zip";
+import sharp from "sharp";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+
+interface HarmonyOSBuildConfig {
+  url: string;
+  appName: string;
+  bundleName: string;
+  versionName: string;
+  versionCode: string;
+  privacyPolicy: string;
+  iconPath: string | null;
+}
+
+export async function processHarmonyOSBuildDomestic(
+  buildId: string,
+  config: HarmonyOSBuildConfig
+): Promise<void> {
+  const connector = new CloudBaseConnector();
+  await connector.initialize();
+  const db = connector.getClient();
+  const storage = getCloudBaseStorage();
+
+  let tempDir: string | null = null;
+  let userId: string | null = null;
+  const buildStartTime = Date.now();
+
+  try {
+    // 获取构建记录以获取 user_id
+    const buildRecord = await db.collection("builds").doc(buildId).get();
+    userId = buildRecord?.data?.[0]?.user_id || null;
+
+    await updateBuildStatus(db, buildId, "processing", 5);
+
+    console.log(`[Domestic HarmonyOS Build ${buildId}] Downloading harmonyos.zip...`);
+    const zipBuffer = await storage.downloadFile("HarmonyOS/harmonyos.zip");
+
+    await updateBuildStatus(db, buildId, "processing", 20);
+
+    tempDir = path.join(os.tmpdir(), `harmonyos-build-${buildId}-${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const zip = new AdmZip(zipBuffer);
+    zip.extractAllTo(tempDir, true);
+
+    await updateBuildStatus(db, buildId, "processing", 35);
+
+    const projectRoot = findProjectRoot(tempDir);
+    if (!projectRoot) {
+      throw new Error("Invalid zip structure");
+    }
+
+    // Update appConfig.json
+    const configPath = path.join(projectRoot, "appConfig.json");
+    if (fs.existsSync(configPath)) {
+      const configContent = fs.readFileSync(configPath, "utf-8");
+      const appConfig = JSON.parse(configContent);
+      if (appConfig.general) {
+        appConfig.general.initialUrl = config.url;
+        appConfig.general.appName = config.appName;
+        appConfig.general.harmonyBundleName = config.bundleName;
+        appConfig.general.harmonyVersionName = config.versionName;
+        appConfig.general.harmonyVersionCode = parseInt(config.versionCode, 10) || 1;
+      }
+      fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
+    }
+
+    // Update app.json5 if exists
+    const appJson5Path = path.join(projectRoot, "AppScope", "app.json5");
+    if (fs.existsSync(appJson5Path)) {
+      let content = fs.readFileSync(appJson5Path, "utf-8");
+      content = content.replace(/"bundleName"\s*:\s*"[^"]*"/, `"bundleName": "${config.bundleName}"`);
+      content = content.replace(/"versionName"\s*:\s*"[^"]*"/, `"versionName": "${config.versionName}"`);
+      content = content.replace(/"versionCode"\s*:\s*\d+/, `"versionCode": ${parseInt(config.versionCode, 10) || 1}`);
+      fs.writeFileSync(appJson5Path, content, "utf-8");
+    }
+
+    await updateBuildStatus(db, buildId, "processing", 50);
+
+    // Update privacy policy
+    const privacyPath = path.join(projectRoot, "entry", "src", "main", "resources", "rawfile", "privacy_policy.md");
+    if (config.privacyPolicy && fs.existsSync(path.dirname(privacyPath))) {
+      fs.writeFileSync(privacyPath, config.privacyPolicy, "utf-8");
+    }
+
+    await updateBuildStatus(db, buildId, "processing", 60);
+
+    if (config.iconPath) {
+      console.log(`[Domestic HarmonyOS Build ${buildId}] ========== ICON PROCESSING START ==========`);
+      console.log(`[Domestic HarmonyOS Build ${buildId}] Icon path: ${config.iconPath}`);
+      console.log(`[Domestic HarmonyOS Build ${buildId}] Project root: ${projectRoot}`);
+
+      try {
+        console.log(`[Domestic HarmonyOS Build ${buildId}] Attempting to download icon from CloudBase Storage...`);
+        const iconBuffer = await storage.downloadFile(config.iconPath);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ✓ Icon downloaded successfully`);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] Icon buffer size: ${iconBuffer.length} bytes`);
+
+        if (!iconBuffer || iconBuffer.length === 0) {
+          throw new Error("Downloaded icon buffer is empty");
+        }
+
+        console.log(`[Domestic HarmonyOS Build ${buildId}] Starting icon processing...`);
+        await processIcons(projectRoot, iconBuffer);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ✓ Icon processing completed successfully`);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ========== ICON PROCESSING END ==========`);
+      } catch (iconError) {
+        console.error(`[Domestic HarmonyOS Build ${buildId}] ========== ICON PROCESSING FAILED ==========`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Error type: ${iconError instanceof Error ? iconError.constructor.name : typeof iconError}`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Error message: ${iconError instanceof Error ? iconError.message : String(iconError)}`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Error stack:`, iconError instanceof Error ? iconError.stack : "No stack trace");
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Icon path attempted: ${config.iconPath}`);
+        console.log(`[Domestic HarmonyOS Build ${buildId}] ⚠️ Continuing build without custom icons...`);
+        console.error(`[Domestic HarmonyOS Build ${buildId}] ========================================`);
+      }
+    } else {
+      console.log(`[Domestic HarmonyOS Build ${buildId}] No icon path provided, skipping icon processing`);
+    }
+
+    await updateBuildStatus(db, buildId, "processing", 75);
+
+    const newZip = new AdmZip();
+    addFolderToZip(newZip, tempDir, "");
+    const outputBuffer = newZip.toBuffer();
+
+    await updateBuildStatus(db, buildId, "processing", 85);
+
+    const outputPath = `user-builds/builds/${buildId}/harmonyos-source.zip`;
+    await storage.uploadFile(outputPath, outputBuffer);
+
+    const downloadUrl = await storage.getTempDownloadUrl(outputPath);
+
+    await db.collection("builds").doc(buildId).update({
+      status: "completed",
+      progress: 100,
+      output_file_path: outputPath,
+      download_url: downloadUrl,
+      file_size: outputBuffer.length,
+      updated_at: new Date().toISOString(),
+    });
+
+    console.log(`[Domestic HarmonyOS Build ${buildId}] Completed successfully!`);
+
+    // 记录构建完成事件用于统计
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "harmonyos",
+        success: true,
+        durationMs: Date.now() - buildStartTime,
+      }).catch((err) => {
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Failed to track build complete event:`, err);
+      });
+    }
+  } catch (error) {
+    console.error(`[Domestic HarmonyOS Build ${buildId}] Error:`, error);
+
+    await db.collection("builds").doc(buildId).update({
+      status: "failed",
+      error_message: error instanceof Error ? error.message : "Unknown error",
+      updated_at: new Date().toISOString(),
+    });
+
+    // 记录构建失败事件
+    if (userId) {
+      await trackBuildCompleteEvent(userId, {
+        buildId,
+        platform: "harmonyos",
+        success: false,
+        durationMs: Date.now() - buildStartTime,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      }).catch((err) => {
+        console.error(`[Domestic HarmonyOS Build ${buildId}] Failed to track build failure event:`, err);
+      });
+    }
+  } finally {
+    if (tempDir && fs.existsSync(tempDir)) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch { /* ignore */ }
+    }
+  }
+}
+
+async function updateBuildStatus(db: any, buildId: string, status: string, progress: number): Promise<void> {
+  await db.collection("builds").doc(buildId).update({
+    status,
+    progress,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+function findProjectRoot(dir: string, maxDepth: number = 3): string | null {
+  const appJson5Path = path.join(dir, "AppScope", "app.json5");
+  const configPath = path.join(dir, "appConfig.json");
+  if (fs.existsSync(appJson5Path) || fs.existsSync(configPath)) return dir;
+
+  if (maxDepth <= 0) return null;
+
+  try {
+    const items = fs.readdirSync(dir);
+    for (const item of items) {
+      const itemPath = path.join(dir, item);
+      if (fs.statSync(itemPath).isDirectory()) {
+        const result = findProjectRoot(itemPath, maxDepth - 1);
+        if (result) return result;
+      }
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
+async function processIcons(projectRoot: string, iconBuffer: Buffer): Promise<void> {
+  const mediaDir = path.join(projectRoot, "entry", "src", "main", "resources", "base", "media");
+
+  if (!fs.existsSync(mediaDir)) {
+    fs.mkdirSync(mediaDir, { recursive: true });
+  }
+
+  // App icon
+  const iconPath = path.join(mediaDir, "app_icon.png");
+  await sharp(iconBuffer)
+    .resize(192, 192, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toFile(iconPath);
+
+  // Foreground icon
+  const foregroundPath = path.join(mediaDir, "foreground.png");
+  await sharp(iconBuffer)
+    .resize(288, 288, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toFile(foregroundPath);
+}
+
+function addFolderToZip(zip: AdmZip, folderPath: string, zipPath: string): void {
+  const items = fs.readdirSync(folderPath);
+
+  for (const item of items) {
+    const itemPath = path.join(folderPath, item);
+    const itemZipPath = zipPath ? `${zipPath}/${item}` : item;
+    const stat = fs.statSync(itemPath);
+
+    if (stat.isDirectory()) {
+      addFolderToZip(zip, itemPath, itemZipPath);
+    } else {
+      const fileContent = fs.readFileSync(itemPath);
+      zip.addFile(itemZipPath, fileContent);
+    }
+  }
+}
