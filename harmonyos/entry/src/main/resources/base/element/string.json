@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "应用模块描述"
+    },
+    {
+      "name": "internet_permission_usage_reason",
+      "value": "应用需要网络访问以加载网页和同步数据"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "EntryAbility，用作应用的入口 Ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "MyApp"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "general": {
+    "initialUrl": "https://example.com",
+    "appName": "MyApp",
+    "bundleName": "com.example_harmony.app",
+    "versionName": "1.0.0",
+    "versionCode": 1
+  }
+}
