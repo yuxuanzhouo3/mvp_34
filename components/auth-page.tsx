@@ -435,8 +435,8 @@ export function AuthPage({ mode }: AuthPageProps) {
         // 使用 Android 原生 Google Sign-In SDK
         const { signInWithGoogle: signInWithGoogleBridge } = await import('@/lib/google-signin-bridge');
 
-        // 从 window 对象获取 clientId（由 Android 注入）
-        const clientId = (window as any).GOOGLE_CLIENT_ID || '45279353784-kth63eeaaa2hqa0hauhb6vfsigbm2qeq.apps.googleusercontent.com';
+        // 从 window 对象获取 clientId（由 Android 注入）或使用环境变量
+        const clientId = (window as any).GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
         console.log('[handleGoogleSignIn] clientId:', clientId);
 
         if (!clientId) {
@@ -478,21 +478,21 @@ export function AuthPage({ mode }: AuthPageProps) {
           success: data.success
         });
 
-        // 保存认证状态
+        // 使用 Supabase 客户端设置 session（设置 cookie，确保后续 API 调用能识别用户）
         if (data.session && data.user) {
-          console.log('[handleGoogleSignIn] Saving auth state...');
-          saveAuthState(
-            data.session.access_token,
-            data.session.refresh_token,
-            data.user,
-            {
-              accessTokenExpiresIn: data.session.expires_in || 3600,
-              refreshTokenExpiresIn: data.session.refresh_token_expires_in || 86400
-            }
-          );
-          console.log('[handleGoogleSignIn] Auth state saved');
+          console.log('[handleGoogleSignIn] Setting Supabase session...');
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          });
+          
+          if (sessionError) {
+            console.error('[handleGoogleSignIn] Failed to set session:', sessionError);
+            throw new Error('Failed to set session: ' + sessionError.message);
+          }
+          console.log('[handleGoogleSignIn] Supabase session set successfully');
 
-          // 立即更新 AuthContext 的用户状态
+          // 更新 AuthContext 的用户状态
           updateUser(data.user);
           console.log('[handleGoogleSignIn] AuthContext updated');
         } else {
@@ -501,8 +501,7 @@ export function AuthPage({ mode }: AuthPageProps) {
 
         toast.success(isZhText ? "登录成功！" : "Sign in successful!");
         console.log('[handleGoogleSignIn] Redirecting to:', next);
-        router.push(next);
-        router.refresh();
+        window.location.href = next;
       } else {
         // 使用 Supabase OAuth 流程（浏览器环境）
         await signInWithGoogle(next);
