@@ -51,6 +51,7 @@ interface BatchBuildRequest {
 
 const PLATFORM_ALIASES: Record<string, string> = {
   "android-source": "android",
+  "android-apk": "android",
   "harmonyos-source": "harmonyos",
   "harmonyos-hap": "harmonyos",
 };
