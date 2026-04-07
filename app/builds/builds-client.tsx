@@ -970,7 +970,13 @@ export default function BuildsClient() {
                             onClick={() => handleDownload(build.id)}
                           >
                             <Download className="h-4 w-4" />
-                            <span className="hidden sm:inline">{currentLanguage === "zh" ? "下载源码" : "Download Source"}</span>
+                            <span className="hidden sm:inline">{(() => {
+                              const p = build.platform;
+                              if (p === "ios-ipa") return currentLanguage === "zh" ? "下载 IPA" : "Download IPA";
+                              if (p === "harmonyos-hap") return currentLanguage === "zh" ? "下载 HAP" : "Download HAP";
+                              if (p === "android-apk") return currentLanguage === "zh" ? "下载 APK" : "Download APK";
+                              return currentLanguage === "zh" ? "下载源码" : "Download Source";
+                            })()}</span>
                             <span className="sm:hidden">{currentLanguage === "zh" ? "下载" : "Download"}</span>
                           </Button>
                           <Button

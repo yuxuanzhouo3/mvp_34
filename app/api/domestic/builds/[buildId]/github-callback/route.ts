@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { withDbRetry } from "@/lib/cloudbase/retry-wrapper";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export async function POST(
   request: NextRequest,
@@ -51,13 +52,34 @@ export async function POST(
       updateData.error_message = "GitHub Actions build failed. Check the workflow logs for details.";
     }
 
-    // 更新构建记录（使用重试机制）
-    await withDbRetry(
-      () => db.collection("builds").doc(buildId).update(updateData),
-      'Update build status'
-    );
+    // 更新构建记录 - CloudBase（使用重试机制）
+    try {
+      await withDbRetry(
+        () => db.collection("builds").doc(buildId).update(updateData),
+        'Update build status in CloudBase'
+      );
+      console.log(`[GitHub Callback] Updated CloudBase build ${buildId} to status: ${buildStatus}`);
+    } catch (cbError) {
+      console.error(`[GitHub Callback] CloudBase update failed (may not exist there):`, cbError);
+    }
 
-    console.log(`[GitHub Callback] Updated build ${buildId} to status: ${buildStatus}`);
+    // 同时更新 Supabase（iOS/HarmonyOS 构建记录在 Supabase 中）
+    try {
+      const supabase = createServiceClient();
+      const supabaseUpdate: any = {
+        status: buildStatus,
+        progress,
+        github_run_id: run_id,
+        updated_at: new Date().toISOString(),
+      };
+      if (buildStatus === "failed") {
+        supabaseUpdate.error_message = "GitHub Actions build failed. Check the workflow logs for details.";
+      }
+      await supabase.from("builds").update(supabaseUpdate).eq("id", buildId);
+      console.log(`[GitHub Callback] Updated Supabase build ${buildId} to status: ${buildStatus}`);
+    } catch (sbError) {
+      console.error(`[GitHub Callback] Supabase update failed (may not exist there):`, sbError);
+    }
 
     // 如果构建成功，触发 artifact 下载（异步处理）
     if (status === "success" && run_id) {
@@ -198,15 +220,42 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
     // 获取下载链接
     const downloadUrl = await storage.getTempDownloadUrl(fileName);
 
-    // 更新数据库记录（使用重试机制）
-    await withDbRetry(
-      () => db.collection("builds").doc(buildId).update({
+    // 更新 CloudBase 数据库记录（使用重试机制）
+    try {
+      await withDbRetry(
+        () => db.collection("builds").doc(buildId).update({
+          output_file_path: fileName,
+          download_url: downloadUrl,
+          updated_at: new Date().toISOString(),
+        }),
+        'Update build with download URL in CloudBase'
+      );
+    } catch (cbError) {
+      console.error(`[GitHub Callback] CloudBase artifact update failed:`, cbError);
+    }
+
+    // 同时更新 Supabase 记录（iOS/HarmonyOS 在 Supabase 中）
+    try {
+      const supabase = createServiceClient();
+      // 也上传到 Supabase Storage 以备国际版下载
+      await supabase.storage.from("user-builds").upload(fileName, artifactBuffer!, {
+        contentType: "application/zip",
+        upsert: true,
+      });
+      const { data: signedData } = await supabase.storage
+        .from("user-builds")
+        .createSignedUrl(fileName, 3600);
+      await supabase.from("builds").update({
         output_file_path: fileName,
-        download_url: downloadUrl,
+        file_size: artifactBuffer!.length,
+        status: "completed",
+        progress: 100,
         updated_at: new Date().toISOString(),
-      }),
-      'Update build with download URL'
-    );
+      }).eq("id", buildId);
+      console.log(`[GitHub Callback] Updated Supabase with artifact for build ${buildId}`);
+    } catch (sbError) {
+      console.error(`[GitHub Callback] Supabase artifact update failed:`, sbError);
+    }
 
     console.log(`[GitHub Callback] Successfully processed artifact for build ${buildId}`);
   } catch (error) {
