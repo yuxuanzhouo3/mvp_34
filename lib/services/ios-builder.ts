@@ -16,6 +16,11 @@ interface iOSBuildConfig {
   iconPath: string | null;
 }
 
+interface iOSBuildOptions {
+  /** When true, don't set status to 'completed' at end (used in IPA pipeline where GitHub Actions still needs to run) */
+  skipFinalStatus?: boolean;
+}
+
 // iOS 应用图标尺寸
 const IOS_APP_ICON_SIZES = [
   { name: "icon-29.png", size: 29 },
@@ -48,7 +53,8 @@ const IOS_HEADER_IMAGE_SIZES = [
 
 export async function processiOSBuild(
   buildId: string,
-  config: iOSBuildConfig
+  config: iOSBuildConfig,
+  options?: iOSBuildOptions
 ): Promise<void> {
   const supabase = createServiceClient();
   let tempDir: string | null = null;
@@ -187,14 +193,18 @@ export async function processiOSBuild(
     await updateBuildStatus(supabase, buildId, "processing", 95);
 
     // Step 9: Update build record with output path
+    const updateData: Record<string, unknown> = {
+      output_file_path: outputPath,
+      file_size: outputBuffer.length,
+    };
+    // Only set completed status if not in IPA pipeline (where GitHub Actions still needs to run)
+    if (!options?.skipFinalStatus) {
+      updateData.status = "completed";
+      updateData.progress = 100;
+    }
     const { error: updateError } = await supabase
       .from("builds")
-      .update({
-        status: "completed",
-        progress: 100,
-        output_file_path: outputPath,
-        file_size: outputBuffer.length,
-      })
+      .update(updateData)
       .eq("id", buildId);
 
     if (updateError) {

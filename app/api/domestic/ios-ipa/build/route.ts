@@ -154,7 +154,7 @@ async function processIOSIpaBuildAsync(
       buildNumber: params.buildNumber,
       privacyPolicy: params.privacyPolicy,
       iconPath: params.iconPath,
-    });
+    }, { skipFinalStatus: true });
 
     // 获取生成的源文件路径（ios-builder 存的是 output_file_path，不是 download_url）
     const { data: sourceBuild } = await serviceClient
