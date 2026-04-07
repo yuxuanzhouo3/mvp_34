@@ -96,6 +96,29 @@ export async function triggerGitHubBuild(
   }
 
   try {
+    // Dynamically get the default branch for the repo
+    let defaultBranch = "main";
+    try {
+      const repoInfoResp = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        }
+      );
+      if (repoInfoResp.ok) {
+        const repoInfo = await repoInfoResp.json();
+        defaultBranch = repoInfo.default_branch || "main";
+      }
+    } catch (e) {
+      console.warn("[GitHub Build] Failed to get default branch, using 'main'");
+    }
+
+    console.log(`[GitHub Build] Dispatching workflow ${workflowFile} on ${owner}/${repo} ref=${defaultBranch}`);
+
     const response = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`,
       {
@@ -107,7 +130,7 @@ export async function triggerGitHubBuild(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ref: "master",
+          ref: defaultBranch,
           inputs: {
             build_id: config.buildId,
             source_url: config.sourceUrl,
