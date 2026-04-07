@@ -76,11 +76,24 @@ jobs:
         run: |
           cd "source/$XCODE_DIR"
           
-          # 获取 scheme 名称
+          # 获取 scheme 名称（排除 Tests scheme）
           if [ "$BUILD_TYPE" = "workspace" ]; then
-            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); schemes=data.get('workspace',{}).get('schemes',[]); print(schemes[0] if schemes else '')" 2>/dev/null || echo "")
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+schemes=data.get('workspace',{}).get('schemes',[])
+# 过滤掉 Tests 结尾的 scheme
+non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]
+print(non_test[0] if non_test else (schemes[0] if schemes else ''))
+" 2>/dev/null || echo "")
           else
-            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['project']['schemes'][0])" 2>/dev/null || echo "")
+            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+schemes=data.get('project',{}).get('schemes',[])
+non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]
+print(non_test[0] if non_test else (schemes[0] if schemes else ''))
+" 2>/dev/null || echo "")
           fi
           
           if [ -z "$SCHEME" ]; then
