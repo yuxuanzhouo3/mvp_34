@@ -33,22 +33,75 @@ jobs:
           mkdir -p source
           cd source
           unzip ../source.zip
-          # 找到 .xcodeproj 所在的目录
-          XCODE_DIR=$(find . -name "*.xcodeproj" -maxdepth 3 | head -1 | xargs dirname)
-          echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
-          echo "Found Xcode project in: $XCODE_DIR"
+          
+          # 查找 Xcode 项目目录（排除 Pods 目录）
+          # 优先使用 .xcworkspace（CocoaPods 项目需要）
+          WORKSPACE=$(find . -name "*.xcworkspace" -not -path "*/Pods/*" -not -path "*/.build/*" -maxdepth 4 | head -1)
+          if [ -n "$WORKSPACE" ]; then
+            XCODE_DIR=$(dirname "$WORKSPACE")
+            WORKSPACE_NAME=$(basename "$WORKSPACE")
+            echo "Found workspace: $WORKSPACE"
+            echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
+            echo "BUILD_TYPE=workspace" >> $GITHUB_ENV
+            echo "WORKSPACE_NAME=$WORKSPACE_NAME" >> $GITHUB_ENV
+          else
+            # 回退到 .xcodeproj（排除 Pods）
+            PROJ=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" -not -path "*/.build/*" -maxdepth 4 | head -1)
+            if [ -n "$PROJ" ]; then
+              XCODE_DIR=$(dirname "$PROJ")
+              PROJ_NAME=$(basename "$PROJ")
+              echo "Found project: $PROJ"
+              echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
+              echo "BUILD_TYPE=project" >> $GITHUB_ENV
+              echo "PROJ_NAME=$PROJ_NAME" >> $GITHUB_ENV
+            else
+              echo "ERROR: No Xcode project found!"
+              exit 1
+            fi
+          fi
+          echo "Xcode directory: $XCODE_DIR"
+          ls -la "$XCODE_DIR/"
+
+      - name: Install CocoaPods (if needed)
+        run: |
+          cd "source/$XCODE_DIR"
+          if [ -f "Podfile" ]; then
+            echo "Podfile found, installing CocoaPods dependencies..."
+            pod install --repo-update || pod install
+          else
+            echo "No Podfile found, skipping CocoaPods"
+          fi
 
       - name: Build IPA
         run: |
           cd "source/$XCODE_DIR"
           
           # 获取 scheme 名称
-          SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['project']['schemes'][0])" 2>/dev/null || echo "WebViewApp")
+          if [ "$BUILD_TYPE" = "workspace" ]; then
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); schemes=data.get('workspace',{}).get('schemes',[]); print(schemes[0] if schemes else '')" 2>/dev/null || echo "")
+          else
+            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['project']['schemes'][0])" 2>/dev/null || echo "")
+          fi
+          
+          if [ -z "$SCHEME" ]; then
+            # 尝试从目录名推断 scheme
+            SCHEME=$(ls -d *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
+            if [ -z "$SCHEME" ]; then
+              SCHEME="WebViewApp"
+            fi
+          fi
           echo "Using scheme: $SCHEME"
           
-          # 构建 archive（无签名，用于导出未签名 IPA）
-          xcodebuild archive \
-            -project *.xcodeproj \
+          # 构建命令 - 根据 workspace 或 project
+          BUILD_CMD="xcodebuild archive"
+          if [ "$BUILD_TYPE" = "workspace" ]; then
+            BUILD_CMD="$BUILD_CMD -workspace $WORKSPACE_NAME"
+          else
+            BUILD_CMD="$BUILD_CMD -project $PROJ_NAME"
+          fi
+          
+          # 执行构建（无签名，用于导出未签名 IPA）
+          $BUILD_CMD \
             -scheme "$SCHEME" \
             -archivePath build/app.xcarchive \
             -destination 'generic/platform=iOS' \
@@ -58,11 +111,23 @@ jobs:
             -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            2>&1 | tail -20
+            2>&1 | tail -50
+          
+          # 验证 archive 产物
+          echo "=== Archive contents ==="
+          ls -la build/app.xcarchive/Products/Applications/ 2>/dev/null || echo "WARNING: No Applications directory found"
           
           # 创建无签名 IPA
           mkdir -p build/Payload
-          cp -r build/app.xcarchive/Products/Applications/*.app build/Payload/
+          if [ -d "build/app.xcarchive/Products/Applications/" ]; then
+            cp -r build/app.xcarchive/Products/Applications/*.app build/Payload/
+          else
+            echo "ERROR: No .app bundle found in archive!"
+            echo "Archive structure:"
+            find build/app.xcarchive -maxdepth 3 -type d
+            exit 1
+          fi
+          
           cd build
           zip -r ../app-release.ipa Payload/
           cd ..
