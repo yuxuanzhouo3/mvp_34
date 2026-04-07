@@ -1,25 +1,28 @@
 /**
- * 国内版 iOS IPA 构建 API
+ * iOS IPA 构建 API（兼容国际版 Supabase 认证）
  * 使用 GitHub Actions 编译 IPA
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateUser, checkAndDeductQuota, createBuildRecord } from "@/lib/domestic/build-helpers";
-import { processiOSBuildDomestic } from "@/lib/services/domestic/ios-builder";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
+import { getPlanBuildExpireDays } from "@/utils/plan-limits";
+import { processiOSBuild } from "@/lib/services/ios-builder";
 import { triggerGitHubBuild } from "@/lib/services/github-builder";
-import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
-import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { waitUntil } from "@vercel/functions";
 
-export const maxDuration = 300; // IPA 构建需要更长时间
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. 验证用户身份
-    const authResult = await authenticateUser();
-    if (!authResult.success) {
+    // 1. 验证用户身份（Supabase 认证）
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
       return NextResponse.json(
-        { error: authResult.error },
-        { status: authResult.status }
+        { error: "Unauthorized", message: "Please login to create a build" },
+        { status: 401 }
       );
     }
 
@@ -27,86 +30,95 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const url = formData.get("url") as string;
     const appName = formData.get("appName") as string;
-    const bundleId = formData.get("bundleId") as string;
+    const bundleId = formData.get("bundleId") as string || `com.${(appName || "app").toLowerCase().replace(/[^a-z0-9]/g, "")}.ios`;
     const versionString = formData.get("versionString") as string || "1.0.0";
     const buildNumber = formData.get("buildNumber") as string || "1";
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const preUploadedIconPath = formData.get("iconPath") as string | null;
 
     // 3. 验证必填字段
-    if (!url || !appName || !bundleId) {
+    if (!url || !appName) {
       return NextResponse.json(
-        { error: "Missing required fields", message: "url, appName, and bundleId are required" },
+        { error: "Missing required fields", message: "url and appName are required" },
         { status: 400 }
       );
     }
 
-    // 4. 验证 Bundle ID 格式
-    const bundleRegex = /^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+$/i;
-    if (!bundleRegex.test(bundleId)) {
-      return NextResponse.json(
-        { error: "Invalid bundle ID", message: "Bundle ID should be in format: com.example.app" },
-        { status: 400 }
-      );
-    }
-
-    // 5. 检查并扣除构建配额
-    const quotaResult = await checkAndDeductQuota(authResult.user!.id);
-    if (!quotaResult.success) {
+    // 4. 检查配额
+    const quotaCheck = await checkBuildQuota(user.id, 1);
+    if (!quotaCheck.allowed) {
       return NextResponse.json(
         {
           error: "Quota exceeded",
-          message: quotaResult.error,
-          remaining: quotaResult.remaining,
-          limit: quotaResult.limit,
+          message: `Daily build quota exceeded. Remaining: ${quotaCheck.remaining}/${quotaCheck.limit}`,
+          remaining: quotaCheck.remaining,
+          limit: quotaCheck.limit,
         },
         { status: 429 }
       );
     }
 
-    // 6. 创建构建记录
-    const buildResult = await createBuildRecord({
-      userId: authResult.user!.id,
-      platform: "ios-ipa",
-      appName,
-      url,
-      packageName: bundleId,
-      versionName: versionString,
-      versionCode: parseInt(buildNumber),
-      privacyPolicy,
-      iconPath: preUploadedIconPath,
-    });
-
-    if (!buildResult.success) {
+    // 5. 扣除配额
+    const deductResult = await deductBuildQuota(user.id, 1);
+    if (!deductResult.success) {
       return NextResponse.json(
-        { error: buildResult.error },
+        { error: "Quota deduction failed", message: deductResult.error || "Failed to deduct build quota" },
         { status: 500 }
       );
     }
 
-    const buildId = buildResult.buildId!;
-    console.log(`[Domestic iOS IPA Build] Build record created with ID: ${buildId}`);
+    // 6. 计算过期时间
+    const wallet = await getEffectiveSupabaseUserWallet(user.id);
+    const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
+    const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
 
-    // 7. 异步处理构建
-    processIOSIpaBuildAsync(buildId, {
-      url,
-      appName,
-      bundleId,
-      versionString,
-      buildNumber,
-      privacyPolicy,
-      iconPath: preUploadedIconPath,
-      userId: authResult.user!.id,
-    }).catch(console.error);
+    // 7. 创建构建记录
+    const serviceClient = createServiceClient();
+    const { data: build, error: insertError } = await serviceClient
+      .from("builds")
+      .insert({
+        user_id: user.id,
+        platform: "ios-ipa",
+        status: "pending",
+        progress: 0,
+        app_name: appName,
+        package_name: bundleId,
+        version_name: versionString,
+        version_code: buildNumber,
+        url: url,
+        privacy_policy: privacyPolicy,
+        icon_path: preUploadedIconPath,
+        expires_at: expiresAt,
+      })
+      .select()
+      .single();
 
+    if (insertError || !build) {
+      console.error("[iOS IPA Build] Database insert error:", insertError);
+      await refundBuildQuota(user.id, 1);
+      return NextResponse.json(
+        { error: "Database error", message: "Failed to create build record" },
+        { status: 500 }
+      );
+    }
+
+    const buildId = build.id;
+    console.log(`[iOS IPA Build] Build record created: ${buildId}`);
+
+    // 8. 异步处理构建（立即返回给用户）
+    waitUntil(processIOSIpaBuildAsync(serviceClient, buildId, {
+      url, appName, bundleId, versionString, buildNumber, privacyPolicy,
+      iconPath: preUploadedIconPath, userId: user.id,
+    }));
+
+    // 触发额度刷新
     return NextResponse.json({
       success: true,
-      buildId,
-      message: "IPA build started, estimated time: 5-15 minutes",
-      status: "pending",
+      buildIds: [buildId],
+      message: "iOS IPA build started",
     });
   } catch (error) {
-    console.error("[Domestic iOS IPA Build API] Error:", error);
+    console.error("[iOS IPA Build API] Error:", error);
     return NextResponse.json(
       { error: "Internal server error", message: "An unexpected error occurred" },
       { status: 500 }
@@ -118,52 +130,23 @@ export async function POST(request: NextRequest) {
  * 异步处理 iOS IPA 构建
  */
 async function processIOSIpaBuildAsync(
+  serviceClient: ReturnType<typeof createServiceClient>,
   buildId: string,
   params: {
-    url: string;
-    appName: string;
-    bundleId: string;
-    versionString: string;
-    buildNumber: string;
-    privacyPolicy: string;
-    iconPath: string | null;
-    userId: string;
+    url: string; appName: string; bundleId: string;
+    versionString: string; buildNumber: string; privacyPolicy: string;
+    iconPath: string | null; userId: string;
   }
 ) {
-  const connector = new CloudBaseConnector();
-  await connector.initialize();
-  const db = connector.getClient();
-  const storage = getCloudBaseStorage();
-
-  const tempSourceBuildId = `${buildId}-source`;
-
   try {
     // 更新状态为处理中
-    await db.collection("builds").doc(buildId).update({
-      status: "processing",
-      progress: 10,
-      updated_at: new Date().toISOString(),
-    });
+    await serviceClient.from("builds").update({
+      status: "processing", progress: 10, updated_at: new Date().toISOString(),
+    }).eq("id", buildId);
 
-    // 步骤 1: 生成 iOS Source（使用现有的构建服务）
+    // 步骤 1: 生成 iOS Source
     console.log(`[iOS IPA Build ${buildId}] Step 1: Generating iOS Source...`);
-
-    // 创建临时构建记录
-    await db.collection("builds").add({
-      _id: tempSourceBuildId,
-      user_id: params.userId,
-      platform: "ios",
-      app_name: params.appName,
-      package_name: params.bundleId,
-      url: params.url,
-      status: "pending",
-      progress: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-
-    // 调用现有的 iOS Source 构建服务
-    await processiOSBuildDomestic(tempSourceBuildId, {
+    await processiOSBuild(buildId, {
       url: params.url,
       appName: params.appName,
       bundleId: params.bundleId,
@@ -173,64 +156,47 @@ async function processIOSIpaBuildAsync(
       iconPath: params.iconPath,
     });
 
-    // 获取生成的 iOS Source 下载 URL
-    const sourceBuild = await db.collection("builds").doc(tempSourceBuildId).get();
-    const sourceData = sourceBuild?.data?.[0];
+    // 获取生成的源文件下载 URL
+    const { data: sourceBuild } = await serviceClient
+      .from("builds").select("download_url").eq("id", buildId).single();
 
-    if (!sourceData || !sourceData.download_url) {
-      console.error(`[iOS IPA Build ${buildId}] Failed to get download_url`);
-      throw new Error("Failed to generate iOS Source");
+    if (!sourceBuild?.download_url) {
+      throw new Error("Failed to generate iOS Source - no download URL");
     }
 
-    const sourceUrl = sourceData.download_url;
-    console.log(`[iOS IPA Build ${buildId}] iOS Source generated: ${sourceUrl}`);
+    const sourceUrl = sourceBuild.download_url;
+    console.log(`[iOS IPA Build ${buildId}] Source generated: ${sourceUrl}`);
 
-    // 更新进度
-    await db.collection("builds").doc(buildId).update({
-      progress: 30,
-      updated_at: new Date().toISOString(),
-    });
+    await serviceClient.from("builds").update({
+      progress: 30, updated_at: new Date().toISOString(),
+    }).eq("id", buildId);
 
     // 步骤 2: 触发 GitHub Actions 构建
     console.log(`[iOS IPA Build ${buildId}] Step 2: Triggering GitHub Actions...`);
-
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/domestic/builds/${buildId}/github-callback`;
 
     const githubResult = await triggerGitHubBuild({
-      buildId,
-      sourceUrl,
-      callbackUrl,
-      platform: "ios-ipa",
+      buildId, sourceUrl, callbackUrl, platform: "ios-ipa",
     });
 
     if (!githubResult.success) {
       throw new Error(`GitHub Actions trigger failed: ${githubResult.error}`);
     }
 
-    console.log(`[iOS IPA Build ${buildId}] GitHub Actions triggered successfully`);
-
-    // 更新状态：等待 GitHub Actions 完成
-    await db.collection("builds").doc(buildId).update({
-      status: "processing",
-      progress: 50,
-      github_build_triggered: true,
-      github_run_id: githubResult.runId || null,
+    console.log(`[iOS IPA Build ${buildId}] GitHub Actions triggered`);
+    await serviceClient.from("builds").update({
+      status: "processing", progress: 50,
       updated_at: new Date().toISOString(),
-    });
-
-    // 清理临时的 source build 记录
-    await db.collection("builds").doc(tempSourceBuildId).delete().catch(() => {});
+    }).eq("id", buildId);
 
   } catch (error) {
     console.error(`[iOS IPA Build ${buildId}] Error:`, error);
-
-    await db.collection("builds").doc(buildId).update({
+    await serviceClient.from("builds").update({
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
       updated_at: new Date().toISOString(),
-    });
+    }).eq("id", buildId);
 
-    // 清理临时的 source build 记录（失败情况）
-    await db.collection("builds").doc(tempSourceBuildId).delete().catch(() => {});
+    await refundBuildQuota(params.userId, 1);
   }
 }

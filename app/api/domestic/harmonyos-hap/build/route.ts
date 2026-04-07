@@ -1,25 +1,28 @@
 /**
- * 国内版 HarmonyOS HAP 构建 API
+ * HarmonyOS HAP 构建 API（兼容国际版 Supabase 认证）
  * 使用 GitHub Actions 编译 HAP
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateUser, checkAndDeductQuota, createBuildRecord } from "@/lib/domestic/build-helpers";
-import { processHarmonyOSBuildDomestic } from "@/lib/services/domestic/harmonyos-builder";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
+import { getPlanBuildExpireDays } from "@/utils/plan-limits";
+import { processHarmonyOSBuild } from "@/lib/services/harmonyos-builder";
 import { triggerGitHubBuild } from "@/lib/services/github-builder";
-import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
-import { CloudBaseConnector } from "@/lib/cloudbase/connector";
+import { waitUntil } from "@vercel/functions";
 
-export const maxDuration = 300;
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. 验证用户身份
-    const authResult = await authenticateUser();
-    if (!authResult.success) {
+    // 1. 验证用户身份（Supabase 认证）
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
       return NextResponse.json(
-        { error: authResult.error },
-        { status: authResult.status }
+        { error: "Unauthorized", message: "Please login to create a build" },
+        { status: 401 }
       );
     }
 
@@ -27,77 +30,94 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const url = formData.get("url") as string;
     const appName = formData.get("appName") as string;
-    const bundleName = formData.get("bundleName") as string;
+    const bundleName = formData.get("bundleName") as string || `com.${(appName || "app").toLowerCase().replace(/[^a-z0-9]/g, "")}.harmony`;
     const versionName = formData.get("versionName") as string || "1.0.0";
     const versionCode = formData.get("versionCode") as string || "1";
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const preUploadedIconPath = formData.get("iconPath") as string | null;
 
     // 3. 验证必填字段
-    if (!url || !appName || !bundleName) {
+    if (!url || !appName) {
       return NextResponse.json(
-        { error: "Missing required fields", message: "url, appName, and bundleName are required" },
+        { error: "Missing required fields", message: "url and appName are required" },
         { status: 400 }
       );
     }
 
-    // 4. 检查并扣除构建配额
-    const quotaResult = await checkAndDeductQuota(authResult.user!.id);
-    if (!quotaResult.success) {
+    // 4. 检查配额
+    const quotaCheck = await checkBuildQuota(user.id, 1);
+    if (!quotaCheck.allowed) {
       return NextResponse.json(
         {
           error: "Quota exceeded",
-          message: quotaResult.error,
-          remaining: quotaResult.remaining,
-          limit: quotaResult.limit,
+          message: `Daily build quota exceeded. Remaining: ${quotaCheck.remaining}/${quotaCheck.limit}`,
+          remaining: quotaCheck.remaining,
+          limit: quotaCheck.limit,
         },
         { status: 429 }
       );
     }
 
-    // 5. 创建构建记录
-    const buildResult = await createBuildRecord({
-      userId: authResult.user!.id,
-      platform: "harmonyos-hap",
-      appName,
-      url,
-      packageName: bundleName,
-      versionName,
-      versionCode: parseInt(versionCode),
-      privacyPolicy,
-      iconPath: preUploadedIconPath,
-    });
-
-    if (!buildResult.success) {
+    // 5. 扣除配额
+    const deductResult = await deductBuildQuota(user.id, 1);
+    if (!deductResult.success) {
       return NextResponse.json(
-        { error: buildResult.error },
+        { error: "Quota deduction failed", message: deductResult.error || "Failed to deduct build quota" },
         { status: 500 }
       );
     }
 
-    const buildId = buildResult.buildId!;
-    console.log(`[Domestic HarmonyOS HAP Build] Build record created with ID: ${buildId}`);
+    // 6. 计算过期时间
+    const wallet = await getEffectiveSupabaseUserWallet(user.id);
+    const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
+    const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
 
-    // 6. 异步处理构建
-    processHarmonyOSHapBuildAsync(buildId, {
-      url,
-      appName,
-      bundleName,
-      versionName,
-      versionCode,
-      privacyPolicy,
-      iconPath: preUploadedIconPath,
-      userId: authResult.user!.id,
-    }).catch(console.error);
+    // 7. 创建构建记录
+    const serviceClient = createServiceClient();
+    const { data: build, error: insertError } = await serviceClient
+      .from("builds")
+      .insert({
+        user_id: user.id,
+        platform: "harmonyos-hap",
+        status: "pending",
+        progress: 0,
+        app_name: appName,
+        package_name: bundleName,
+        version_name: versionName,
+        version_code: versionCode,
+        url: url,
+        privacy_policy: privacyPolicy,
+        icon_path: preUploadedIconPath,
+        expires_at: expiresAt,
+      })
+      .select()
+      .single();
+
+    if (insertError || !build) {
+      console.error("[HarmonyOS HAP Build] Database insert error:", insertError);
+      await refundBuildQuota(user.id, 1);
+      return NextResponse.json(
+        { error: "Database error", message: "Failed to create build record" },
+        { status: 500 }
+      );
+    }
+
+    const buildId = build.id;
+    console.log(`[HarmonyOS HAP Build] Build record created: ${buildId}`);
+
+    // 8. 异步处理构建
+    waitUntil(processHarmonyHapBuildAsync(serviceClient, buildId, {
+      url, appName, bundleName, versionName, versionCode, privacyPolicy,
+      iconPath: preUploadedIconPath, userId: user.id,
+    }));
 
     return NextResponse.json({
       success: true,
-      buildId,
-      message: "HAP build started, estimated time: 3-10 minutes",
-      status: "pending",
+      buildIds: [buildId],
+      message: "HarmonyOS HAP build started",
     });
   } catch (error) {
-    console.error("[Domestic HarmonyOS HAP Build API] Error:", error);
+    console.error("[HarmonyOS HAP Build API] Error:", error);
     return NextResponse.json(
       { error: "Internal server error", message: "An unexpected error occurred" },
       { status: 500 }
@@ -108,51 +128,24 @@ export async function POST(request: NextRequest) {
 /**
  * 异步处理 HarmonyOS HAP 构建
  */
-async function processHarmonyOSHapBuildAsync(
+async function processHarmonyHapBuildAsync(
+  serviceClient: ReturnType<typeof createServiceClient>,
   buildId: string,
   params: {
-    url: string;
-    appName: string;
-    bundleName: string;
-    versionName: string;
-    versionCode: string;
-    privacyPolicy: string;
-    iconPath: string | null;
-    userId: string;
+    url: string; appName: string; bundleName: string;
+    versionName: string; versionCode: string; privacyPolicy: string;
+    iconPath: string | null; userId: string;
   }
 ) {
-  const connector = new CloudBaseConnector();
-  await connector.initialize();
-  const db = connector.getClient();
-  const storage = getCloudBaseStorage();
-
-  const tempSourceBuildId = `${buildId}-source`;
-
   try {
     // 更新状态为处理中
-    await db.collection("builds").doc(buildId).update({
-      status: "processing",
-      progress: 10,
-      updated_at: new Date().toISOString(),
-    });
+    await serviceClient.from("builds").update({
+      status: "processing", progress: 10, updated_at: new Date().toISOString(),
+    }).eq("id", buildId);
 
     // 步骤 1: 生成 HarmonyOS Source
     console.log(`[HarmonyOS HAP Build ${buildId}] Step 1: Generating HarmonyOS Source...`);
-
-    await db.collection("builds").add({
-      _id: tempSourceBuildId,
-      user_id: params.userId,
-      platform: "harmonyos-source",
-      app_name: params.appName,
-      package_name: params.bundleName,
-      url: params.url,
-      status: "pending",
-      progress: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-
-    await processHarmonyOSBuildDomestic(tempSourceBuildId, {
+    await processHarmonyOSBuild(buildId, {
       url: params.url,
       appName: params.appName,
       bundleName: params.bundleName,
@@ -162,59 +155,47 @@ async function processHarmonyOSHapBuildAsync(
       iconPath: params.iconPath,
     });
 
-    const sourceBuild = await db.collection("builds").doc(tempSourceBuildId).get();
-    const sourceData = sourceBuild?.data?.[0];
+    // 获取生成的源文件下载 URL
+    const { data: sourceBuild } = await serviceClient
+      .from("builds").select("download_url").eq("id", buildId).single();
 
-    if (!sourceData || !sourceData.download_url) {
-      console.error(`[HarmonyOS HAP Build ${buildId}] Failed to get download_url`);
-      throw new Error("Failed to generate HarmonyOS Source");
+    if (!sourceBuild?.download_url) {
+      throw new Error("Failed to generate HarmonyOS Source - no download URL");
     }
 
-    const sourceUrl = sourceData.download_url;
-    console.log(`[HarmonyOS HAP Build ${buildId}] HarmonyOS Source generated: ${sourceUrl}`);
+    const sourceUrl = sourceBuild.download_url;
+    console.log(`[HarmonyOS HAP Build ${buildId}] Source generated: ${sourceUrl}`);
 
-    await db.collection("builds").doc(buildId).update({
-      progress: 30,
-      updated_at: new Date().toISOString(),
-    });
+    await serviceClient.from("builds").update({
+      progress: 30, updated_at: new Date().toISOString(),
+    }).eq("id", buildId);
 
     // 步骤 2: 触发 GitHub Actions 构建
     console.log(`[HarmonyOS HAP Build ${buildId}] Step 2: Triggering GitHub Actions...`);
-
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/domestic/builds/${buildId}/github-callback`;
 
     const githubResult = await triggerGitHubBuild({
-      buildId,
-      sourceUrl,
-      callbackUrl,
-      platform: "harmonyos-hap",
+      buildId, sourceUrl, callbackUrl, platform: "harmonyos-hap",
     });
 
     if (!githubResult.success) {
       throw new Error(`GitHub Actions trigger failed: ${githubResult.error}`);
     }
 
-    console.log(`[HarmonyOS HAP Build ${buildId}] GitHub Actions triggered successfully`);
-
-    await db.collection("builds").doc(buildId).update({
-      status: "processing",
-      progress: 50,
-      github_build_triggered: true,
-      github_run_id: githubResult.runId || null,
+    console.log(`[HarmonyOS HAP Build ${buildId}] GitHub Actions triggered`);
+    await serviceClient.from("builds").update({
+      status: "processing", progress: 50,
       updated_at: new Date().toISOString(),
-    });
-
-    await db.collection("builds").doc(tempSourceBuildId).delete().catch(() => {});
+    }).eq("id", buildId);
 
   } catch (error) {
     console.error(`[HarmonyOS HAP Build ${buildId}] Error:`, error);
-
-    await db.collection("builds").doc(buildId).update({
+    await serviceClient.from("builds").update({
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
       updated_at: new Date().toISOString(),
-    });
+    }).eq("id", buildId);
 
-    await db.collection("builds").doc(tempSourceBuildId).delete().catch(() => {});
+    await refundBuildQuota(params.userId, 1);
   }
 }
