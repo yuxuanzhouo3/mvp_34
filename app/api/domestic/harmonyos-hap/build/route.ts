@@ -176,7 +176,7 @@ async function processHarmonyHapBuildAsync(
     console.log(`[HarmonyOS HAP Build ${buildId}] Source generated: ${sourceUrl.substring(0, 80)}...`);
 
     await serviceClient.from("builds").update({
-      progress: 30, updated_at: new Date().toISOString(),
+      progress: 96, updated_at: new Date().toISOString(),
     }).eq("id", buildId);
 
     // 步骤 2: 触发 GitHub Actions 构建
@@ -193,7 +193,7 @@ async function processHarmonyHapBuildAsync(
 
     console.log(`[HarmonyOS HAP Build ${buildId}] GitHub Actions triggered`);
     await serviceClient.from("builds").update({
-      status: "processing", progress: 50,
+      status: "processing", progress: 97,
       updated_at: new Date().toISOString(),
     }).eq("id", buildId);
 

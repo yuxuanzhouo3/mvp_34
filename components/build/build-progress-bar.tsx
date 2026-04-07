@@ -26,9 +26,9 @@ export function BuildProgressBar({
   const animationRef = useRef<number | null>(null);
   const prevProgressRef = useRef(0);
 
-  // 平滑动画更新进度
+  // 平滑动画更新进度（永不倒退）
   useEffect(() => {
-    const targetProgress = progress;
+    const targetProgress = Math.max(progress, prevProgressRef.current);
     const startProgress = prevProgressRef.current;
 
     // 取消之前的动画
@@ -198,9 +198,9 @@ export function BuildProgressBarCompact({
   const animationRef = useRef<number | null>(null);
   const prevProgressRef = useRef(0);
 
-  // 平滑动画更新进度
+  // 平滑动画更新进度（永不倒退）
   useEffect(() => {
-    const targetProgress = progress;
+    const targetProgress = Math.max(progress, prevProgressRef.current);
     const startProgress = prevProgressRef.current;
 
     if (animationRef.current) {
