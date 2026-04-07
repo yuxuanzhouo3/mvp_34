@@ -53,18 +53,19 @@ const PLATFORM_ALIASES: Record<string, string> = {
   "android-source": "android",
   "android-apk": "android",
   "harmonyos-source": "harmonyos",
-  "harmonyos-hap": "harmonyos",
 };
 
 const SUPPORTED_PLATFORMS = new Set([
   "android",
   "ios",
+  "ios-ipa",
   "chrome",
   "windows",
   "macos",
   "linux",
   "wechat",
   "harmonyos",
+  "harmonyos-hap",
 ]);
 
 function normalizePlatform(platform: string): string {
@@ -444,12 +445,25 @@ async function startPlatformBuild(
 
     case "harmonyos":
     case "harmonyos-source":
+    case "harmonyos-hap":
       await processHarmonyOSBuild(buildId, {
         url,
         appName: config.appName,
         bundleName: config.bundleName || "",
         versionName: config.versionName || "1.0.0",
         versionCode: config.versionCode || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      break;
+
+    case "ios-ipa":
+      await processiOSBuild(buildId, {
+        url,
+        appName: config.appName,
+        bundleId: config.bundleId || "",
+        versionString: config.versionString || "1.0.0",
+        buildNumber: config.buildNumber || "1",
         privacyPolicy: config.privacyPolicy || "",
         iconPath,
       });

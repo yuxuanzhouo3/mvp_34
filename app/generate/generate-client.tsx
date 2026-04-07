@@ -729,7 +729,7 @@ function GenerateContent() {
       const isSingleGitHubBuild = isAndroidApkOnly || isIOSIpaOnly || isHarmonyHapOnly;
 
       let response;
-      if (isSingleGitHubBuild && IS_DOMESTIC_VERSION) {
+      if (isSingleGitHubBuild) {
         // 使用专用编译 API（GitHub Actions 编译）
         const formData = new FormData();
         formData.append("url", url);
