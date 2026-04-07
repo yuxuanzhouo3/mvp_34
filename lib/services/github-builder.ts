@@ -22,17 +22,17 @@ function getGitHubRepoConfig(platform: "android-apk" | "ios-ipa" | "harmonyos-ha
   switch (platform) {
     case "android-apk":
       return {
-        repo: process.env.GITHUB_APK_REPO,
+        repo: process.env.GITHUB_APK_REPO?.trim(),
         workflowFile: "build-android-apk.yml",
       };
     case "ios-ipa":
       return {
-        repo: process.env.GITHUB_IPA_REPO,
+        repo: process.env.GITHUB_IPA_REPO?.trim(),
         workflowFile: "build-ios-ipa.yml",
       };
     case "harmonyos-hap":
       return {
-        repo: process.env.GITHUB_HAP_REPO,
+        repo: process.env.GITHUB_HAP_REPO?.trim(),
         workflowFile: "build-harmonyos-hap.yml",
       };
   }
@@ -48,7 +48,7 @@ function getGitHubRepoForPlatform(runId: string): string | undefined {
     return runIdToRepo.get(runId);
   }
   // 回退到 APK 仓库（兼容旧的构建记录）
-  return process.env.GITHUB_APK_REPO;
+  return process.env.GITHUB_APK_REPO?.trim();
 }
 
 interface GitHubBuildConfig {
@@ -70,8 +70,8 @@ interface GitHubBuildResult {
 export async function triggerGitHubBuild(
   config: GitHubBuildConfig
 ): Promise<GitHubBuildResult> {
-  const token = process.env.GITHUB_TOKEN;
-  const owner = process.env.GITHUB_OWNER;
+  const token = process.env.GITHUB_TOKEN?.trim();
+  const owner = process.env.GITHUB_OWNER?.trim();
 
   // Select repo and workflow based on platform
   const { repo, workflowFile } = getGitHubRepoConfig(config.platform);
