@@ -54,6 +54,32 @@ export const BUILD_STAGES: Record<string, StageInfo[]> = {
     { stage: "completed", progress: 100, label: { zh: "构建完成", en: "Build completed" } },
   ],
 
+  // iOS IPA 构建阶段（源码生成 + GitHub Actions 云端编译）
+  "ios-ipa": [
+    { stage: "initializing", progress: 0, label: { zh: "初始化构建环境", en: "Initializing build environment" } },
+    { stage: "downloading", progress: 5, label: { zh: "下载iOS模板", en: "Downloading iOS template" } },
+    { stage: "extracting", progress: 15, label: { zh: "解压项目文件", en: "Extracting project files" } },
+    { stage: "configuring", progress: 35, label: { zh: "配置应用信息", en: "Configuring app info" } },
+    { stage: "processing_privacy", progress: 55, label: { zh: "处理隐私政策", en: "Processing privacy policy" } },
+    { stage: "processing_icons", progress: 75, label: { zh: "生成应用图标", en: "Generating app icons" } },
+    { stage: "uploading", progress: 85, label: { zh: "上传源码到云端", en: "Uploading source to cloud" } },
+    { stage: "packaging", progress: 96, label: { zh: "云端编译IPA中", en: "Compiling IPA in cloud" } },
+    { stage: "completed", progress: 100, label: { zh: "构建完成", en: "Build completed" } },
+  ],
+
+  // HarmonyOS HAP 构建阶段（源码生成 + GitHub Actions 云端编译）
+  "harmonyos-hap": [
+    { stage: "initializing", progress: 0, label: { zh: "初始化构建环境", en: "Initializing build environment" } },
+    { stage: "downloading", progress: 5, label: { zh: "下载鸿蒙模板", en: "Downloading HarmonyOS template" } },
+    { stage: "extracting", progress: 15, label: { zh: "解压项目文件", en: "Extracting project files" } },
+    { stage: "configuring", progress: 35, label: { zh: "配置应用信息", en: "Configuring app info" } },
+    { stage: "processing_privacy", progress: 55, label: { zh: "处理隐私政策", en: "Processing privacy policy" } },
+    { stage: "processing_icons", progress: 75, label: { zh: "生成应用图标", en: "Generating app icons" } },
+    { stage: "uploading", progress: 85, label: { zh: "上传源码到云端", en: "Uploading source to cloud" } },
+    { stage: "packaging", progress: 96, label: { zh: "云端编译HAP中", en: "Compiling HAP in cloud" } },
+    { stage: "completed", progress: 100, label: { zh: "构建完成", en: "Build completed" } },
+  ],
+
   // Chrome 扩展构建阶段
   chrome: [
     { stage: "initializing", progress: 0, label: { zh: "初始化构建环境", en: "Initializing build environment" } },
