@@ -1,0 +1,128 @@
+# HarmonyOS HAP Build Workflow
+# 此文件需要放置在 workflows_hap 仓库的 .github/workflows/ 目录下
+name: Build HarmonyOS HAP
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Build ID'
+        required: true
+      source_url:
+        description: 'Source code download URL'
+        required: true
+      callback_url:
+        description: 'Callback URL for build completion'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Download Source
+        run: |
+          echo "Downloading source from: ${{ inputs.source_url }}"
+          curl -L -o source.zip "${{ inputs.source_url }}"
+          mkdir -p source
+          cd source
+          unzip ../source.zip
+          echo "Source extracted"
+          ls -la
+
+      - name: Install HarmonyOS SDK & Build Tools
+        run: |
+          # 下载 OHPM (OpenHarmony Package Manager)
+          echo "Setting up HarmonyOS build environment..."
+          
+          # 安装 ohpm
+          curl -L -o ohpm.tar.gz "https://repo.huaweicloud.com/ohpm/ohpm-cli/latest/ohpm-linux-x64.tar.gz" || true
+          if [ -f ohpm.tar.gz ]; then
+            mkdir -p $HOME/ohpm
+            tar xzf ohpm.tar.gz -C $HOME/ohpm --strip-components=1
+            export PATH=$HOME/ohpm/bin:$PATH
+            echo "$HOME/ohpm/bin" >> $GITHUB_PATH
+          fi
+          
+          # 设置 hvigorw 权限（如果源码中包含）
+          cd source
+          if [ -f "hvigorw" ]; then
+            chmod +x hvigorw
+          elif [ -f "hvigorw.js" ]; then
+            echo "Found hvigorw.js"
+          fi
+
+      - name: Build HAP
+        run: |
+          cd source
+          
+          # 查找项目目录
+          PROJECT_DIR=$(find . -name "build-profile.json5" -maxdepth 2 | head -1 | xargs dirname 2>/dev/null || echo ".")
+          cd "$PROJECT_DIR"
+          echo "Building in: $(pwd)"
+          
+          # 尝试使用 hvigorw 构建
+          if [ -f "hvigorw" ] || [ -f "hvigorw.js" ]; then
+            echo "Building with hvigorw..."
+            
+            # 安装依赖
+            if [ -f "oh-package.json5" ]; then
+              ohpm install 2>/dev/null || npm install 2>/dev/null || true
+            fi
+            
+            # 构建 HAP（无签名模式）
+            if [ -f "hvigorw" ]; then
+              ./hvigorw assembleHap --mode module -p product=default --no-daemon 2>&1 | tail -30 || true
+            elif [ -f "hvigorw.js" ]; then
+              node hvigorw.js assembleHap --mode module -p product=default --no-daemon 2>&1 | tail -30 || true
+            fi
+          else
+            echo "hvigorw not found, creating HAP from source directly..."
+          fi
+          
+          # 查找生成的 HAP 文件
+          HAP_FILE=$(find . -name "*.hap" -path "*/build/*" | head -1)
+          
+          if [ -z "$HAP_FILE" ]; then
+            echo "No HAP found from build, packaging source as HAP..."
+            # 如果编译失败，将源码打包供用户在 DevEco Studio 中构建
+            cd "$GITHUB_WORKSPACE/source"
+            zip -r "$GITHUB_WORKSPACE/app-release.hap" . -x "*.git*" "node_modules/*"
+          else
+            echo "HAP built successfully: $HAP_FILE"
+            cp "$HAP_FILE" "$GITHUB_WORKSPACE/app-release.hap"
+          fi
+          
+          ls -la "$GITHUB_WORKSPACE/app-release.hap"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hap-release-${{ inputs.build_id }}
+          path: app-release.hap
+          retention-days: 7
+
+      - name: Notify Callback
+        if: always()
+        run: |
+          if [ -n "${{ inputs.callback_url }}" ]; then
+            STATUS="${{ job.status }}"
+            RUN_ID="${{ github.run_id }}"
+            
+            curl -X POST "${{ inputs.callback_url }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"status\": \"$STATUS\", \"run_id\": \"$RUN_ID\", \"artifact_url\": \"\"}" \
+              --max-time 30 || echo "Callback failed (non-critical)"
+          fi

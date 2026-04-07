@@ -51,11 +51,20 @@ export const PLATFORMS: Platform[] = [
   },
   {
     id: "ios",
-    name: { zh: "iOS", en: "iOS" },
-    description: { zh: "iOS Source", en: "iOS Source" },
+    name: { zh: "iOS Source", en: "iOS Source" },
+    description: { zh: "iOS 源码项目", en: "iOS Source Project" },
     category: "mobile",
     icon: Apple,
     color: "from-gray-700 to-gray-900",
+    available: true,
+  },
+  {
+    id: "ios-ipa",
+    name: { zh: "iOS IPA", en: "iOS IPA" },
+    description: { zh: "iOS 安装包", en: "iOS Package" },
+    category: "mobile",
+    icon: Apple,
+    color: "from-gray-800 to-black",
     available: true,
   },
   {
@@ -65,6 +74,15 @@ export const PLATFORMS: Platform[] = [
     category: "mobile",
     icon: Hexagon,
     color: "from-red-500 to-red-600",
+    available: true,
+  },
+  {
+    id: "harmonyos-hap",
+    name: { zh: "HarmonyOS HAP", en: "HarmonyOS HAP" },
+    description: { zh: "鸿蒙安装包", en: "HarmonyOS Package" },
+    category: "mobile",
+    icon: Hexagon,
+    color: "from-red-600 to-red-700",
     available: true,
   },
   // 小程序

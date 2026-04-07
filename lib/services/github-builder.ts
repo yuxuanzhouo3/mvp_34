@@ -9,11 +9,53 @@ import { monitoring } from './monitoring';
 // 下载去重：记录正在下载的artifact，避免重复下载
 const downloadingArtifacts = new Map<string, Promise<Buffer | null>>();
 
+// 记录 runId 对应的 repo，用于状态查询和 artifact 下载
+const runIdToRepo = new Map<string, string>();
+
+/**
+ * 根据平台类型获取 GitHub 仓库和 workflow 配置
+ */
+function getGitHubRepoConfig(platform: "android-apk" | "ios-ipa" | "harmonyos-hap"): {
+  repo: string | undefined;
+  workflowFile: string;
+} {
+  switch (platform) {
+    case "android-apk":
+      return {
+        repo: process.env.GITHUB_APK_REPO,
+        workflowFile: "build-android-apk.yml",
+      };
+    case "ios-ipa":
+      return {
+        repo: process.env.GITHUB_IPA_REPO,
+        workflowFile: "build-ios-ipa.yml",
+      };
+    case "harmonyos-hap":
+      return {
+        repo: process.env.GITHUB_HAP_REPO,
+        workflowFile: "build-harmonyos-hap.yml",
+      };
+  }
+}
+
+/**
+ * 根据 runId 获取对应的 GitHub 仓库
+ * 优先从缓存获取，如果没有则尝试所有仓库
+ */
+function getGitHubRepoForPlatform(runId: string): string | undefined {
+  // 先从缓存获取
+  if (runIdToRepo.has(runId)) {
+    return runIdToRepo.get(runId);
+  }
+  // 回退到 APK 仓库（兼容旧的构建记录）
+  return process.env.GITHUB_APK_REPO;
+}
+
 interface GitHubBuildConfig {
   buildId: string;
   sourceUrl: string;
   callbackUrl?: string;
-  platform: "android-apk";
+  platform: "android-apk" | "ios-ipa" | "harmonyos-hap";
 }
 
 interface GitHubBuildResult {
@@ -30,13 +72,14 @@ export async function triggerGitHubBuild(
 ): Promise<GitHubBuildResult> {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_APK_REPO;
-  const workflowFile = "build-android-apk.yml";
+
+  // Select repo and workflow based on platform
+  const { repo, workflowFile } = getGitHubRepoConfig(config.platform);
 
   if (!token || !owner || !repo) {
     return {
       success: false,
-      error: "GitHub configuration missing (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_APK_REPO)",
+      error: `GitHub configuration missing for platform ${config.platform} (GITHUB_TOKEN, GITHUB_OWNER, or repo env)`,
     };
   }
 
@@ -100,6 +143,8 @@ export async function triggerGitHubBuild(
         const latestRun = runsData.workflow_runs?.[0];
         if (latestRun) {
           console.log(`[GitHub Build] Found run ID: ${latestRun.id}`);
+          // 缓存 runId 对应的 repo，用于后续状态查询
+          runIdToRepo.set(String(latestRun.id), repo);
           return {
             success: true,
             runId: String(latestRun.id),
@@ -139,7 +184,7 @@ export async function getGitHubBuildStatus(
 }> {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_APK_REPO;
+  const repo = getGitHubRepoForPlatform(runId);
 
   if (!token || !owner || !repo) {
     return {
@@ -234,7 +279,7 @@ async function performDownload(
 
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_APK_REPO;
+  const repo = getGitHubRepoForPlatform(runId);
 
   if (!token || !owner || !repo) {
     console.error("[GitHub] ❌ Configuration missing");
@@ -325,5 +370,15 @@ async function performDownload(
   } catch (error) {
     console.error("[GitHub] ❌ Download error:", error instanceof Error ? error.message : String(error));
     return null;
+  }
+}
+
+/**
+ * 设置 runId 对应的 repo（供外部回调使用）
+ */
+export function setRunIdRepo(runId: string, platform: "android-apk" | "ios-ipa" | "harmonyos-hap") {
+  const { repo } = getGitHubRepoConfig(platform);
+  if (repo) {
+    runIdToRepo.set(runId, repo);
   }
 }

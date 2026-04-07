@@ -365,10 +365,31 @@ async function startPlatformBuild(
       break;
 
     case "android-apk":
-      // Android APK 构建暂不支持批量构建
-      // 用户需要单独选择 Android APK 平台进行构建
-      console.warn(`[Domestic Batch] Android APK build is not supported in batch mode for build ${buildId}`);
-      throw new Error("Android APK build is not supported in batch mode. Please build Android APK separately.");
+      // Android APK: 先生成源码，再触发 GitHub Actions 编译
+      await processAndroidBuildDomestic(buildId, {
+        url,
+        appName: config.appName,
+        packageName: config.packageName || "",
+        versionName: config.versionName || "1.0.0",
+        versionCode: config.versionCode || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      // 注意：批量构建中的 APK 暂时只生成源码，完整编译请单独使用 android-apk API
+      break;
+
+    case "ios-ipa":
+      // iOS IPA: 先生成源码，再触发 GitHub Actions 编译
+      await processiOSBuildDomestic(buildId, {
+        url,
+        appName: config.appName,
+        bundleId: config.bundleId || "",
+        versionString: config.versionString || "1.0.0",
+        buildNumber: config.buildNumber || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      // 注意：批量构建中的 IPA 暂时只生成源码，完整编译请单独使用 ios-ipa API
       break;
 
     case "ios":
@@ -427,6 +448,19 @@ async function startPlatformBuild(
       break;
 
     case "harmonyos":
+      await processHarmonyOSBuildDomestic(buildId, {
+        url,
+        appName: config.appName,
+        bundleName: config.bundleName || "",
+        versionName: config.versionName || "1.0.0",
+        versionCode: config.versionCode || "1",
+        privacyPolicy: config.privacyPolicy || "",
+        iconPath,
+      });
+      break;
+
+    case "harmonyos-hap":
+      // HarmonyOS HAP: 在批量模式下先生成源码，完整编译请单独使用 harmonyos-hap API
       await processHarmonyOSBuildDomestic(buildId, {
         url,
         appName: config.appName,

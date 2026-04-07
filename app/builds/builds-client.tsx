@@ -49,7 +49,7 @@ function isExpired(expiresAt: string): boolean {
 
 // Category classification helper
 function getBuildCategory(platform: string): "mobile" | "miniprogram" | "desktop" | "browser" {
-  if (platform === "android-source" || platform === "android-apk" || platform === "ios" || platform === "harmonyos") return "mobile";
+  if (platform === "android-source" || platform === "android-apk" || platform === "ios" || platform === "ios-ipa" || platform === "harmonyos" || platform === "harmonyos-source" || platform === "harmonyos-hap") return "mobile";
   if (platform === "wechat") return "miniprogram";
   if (platform === "chrome") return "browser";
   return "desktop"; // windows, macos, linux, etc.
@@ -534,11 +534,16 @@ export default function BuildsClient() {
       case "android-apk":
         return "Android-APK";
       case "ios":
-        return "iOS";
+        return "iOS Source";
+      case "ios-ipa":
+        return "iOS-IPA";
       case "wechat":
         return "WeChat";
       case "harmonyos":
-        return "HarmonyOS";
+      case "harmonyos-source":
+        return "HarmonyOS Source";
+      case "harmonyos-hap":
+        return "HarmonyOS-HAP";
       case "chrome":
         return "Chrome";
       case "windows":

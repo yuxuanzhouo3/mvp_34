@@ -138,8 +138,39 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
 
     console.log(`[GitHub Callback] Starting artifact download for build ${buildId}, run ${runId}`);
 
-    // 下载 artifact（这是一个 zip 文件，包含 APK）
-    const artifactName = `app-release-${buildId}`;
+    // 获取构建记录以确定平台
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+
+    const buildRecord = await db.collection("builds").doc(buildId).get();
+    const buildData = buildRecord?.data?.[0];
+    const platform = buildData?.platform || "android-apk";
+
+    // 根据平台设置 runId 对应的 repo
+    const { setRunIdRepo } = await import("@/lib/services/github-builder");
+    if (platform === "ios-ipa" || platform === "harmonyos-hap" || platform === "android-apk") {
+      setRunIdRepo(runId, platform as "android-apk" | "ios-ipa" | "harmonyos-hap");
+    }
+
+    // 根据平台确定 artifact 名称和文件名
+    let artifactName: string;
+    let fileName: string;
+    switch (platform) {
+      case "ios-ipa":
+        artifactName = `ipa-release-${buildId}`;
+        fileName = `builds/${buildId}/app-release.zip`;
+        break;
+      case "harmonyos-hap":
+        artifactName = `hap-release-${buildId}`;
+        fileName = `builds/${buildId}/app-release.zip`;
+        break;
+      default:
+        artifactName = `app-release-${buildId}`;
+        fileName = `builds/${buildId}/app-release.zip`;
+    }
+
+    // 下载 artifact
     const artifactBuffer = await downloadGitHubArtifact(runId, artifactName);
 
     if (!artifactBuffer) {
@@ -150,7 +181,6 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
 
     // 上传到云存储（使用重试机制）
     const storage = getCloudBaseStorage();
-    const fileName = `builds/${buildId}/app-release.zip`;
 
     const uploadResult = await withDbRetry(
       async () => {
@@ -167,11 +197,6 @@ async function downloadAndUpdateArtifact(buildId: string, runId: string) {
 
     // 获取下载链接
     const downloadUrl = await storage.getTempDownloadUrl(fileName);
-
-    // 连接数据库以更新记录
-    const connector = new CloudBaseConnector();
-    await connector.initialize();
-    const db = connector.getClient();
 
     // 更新数据库记录（使用重试机制）
     await withDbRetry(

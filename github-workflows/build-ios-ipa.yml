@@ -1,0 +1,91 @@
+# iOS IPA Build Workflow
+# 此文件需要放置在 workflows_ipa 仓库的 .github/workflows/ 目录下
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Build ID'
+        required: true
+      source_url:
+        description: 'Source code download URL'
+        required: true
+      callback_url:
+        description: 'Callback URL for build completion'
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Download Source
+        run: |
+          echo "Downloading source from: ${{ inputs.source_url }}"
+          curl -L -o source.zip "${{ inputs.source_url }}"
+          mkdir -p source
+          cd source
+          unzip ../source.zip
+          # 找到 .xcodeproj 所在的目录
+          XCODE_DIR=$(find . -name "*.xcodeproj" -maxdepth 3 | head -1 | xargs dirname)
+          echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
+          echo "Found Xcode project in: $XCODE_DIR"
+
+      - name: Build IPA
+        run: |
+          cd "source/$XCODE_DIR"
+          
+          # 获取 scheme 名称
+          SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['project']['schemes'][0])" 2>/dev/null || echo "WebViewApp")
+          echo "Using scheme: $SCHEME"
+          
+          # 构建 archive（无签名，用于导出未签名 IPA）
+          xcodebuild archive \
+            -project *.xcodeproj \
+            -scheme "$SCHEME" \
+            -archivePath build/app.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            2>&1 | tail -20
+          
+          # 创建无签名 IPA
+          mkdir -p build/Payload
+          cp -r build/app.xcarchive/Products/Applications/*.app build/Payload/
+          cd build
+          zip -r ../app-release.ipa Payload/
+          cd ..
+          
+          echo "IPA created successfully"
+          ls -la app-release.ipa
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa-release-${{ inputs.build_id }}
+          path: source/${{ env.XCODE_DIR }}/app-release.ipa
+          retention-days: 7
+
+      - name: Notify Callback
+        if: always()
+        run: |
+          if [ -n "${{ inputs.callback_url }}" ]; then
+            STATUS="${{ job.status }}"
+            RUN_ID="${{ github.run_id }}"
+            
+            curl -X POST "${{ inputs.callback_url }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"status\": \"$STATUS\", \"run_id\": \"$RUN_ID\", \"artifact_url\": \"\"}" \
+              --max-time 30 || echo "Callback failed (non-critical)"
+          fi

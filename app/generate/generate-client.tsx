@@ -259,16 +259,16 @@ function GenerateContent() {
   // Check if Android is the only selected platform
   const isAndroidOnly = selectedPlatforms.length === 1 && (selectedPlatforms[0] === "android-source" || selectedPlatforms[0] === "android-apk");
   const hasAndroid = selectedPlatforms.includes("android-source") || selectedPlatforms.includes("android-apk");
-  const hasIOS = selectedPlatforms.includes("ios");
+  const hasIOS = selectedPlatforms.includes("ios") || selectedPlatforms.includes("ios-ipa");
   const hasWechat = selectedPlatforms.includes("wechat");
-  const hasHarmonyOS = selectedPlatforms.includes("harmonyos-source");
+  const hasHarmonyOS = selectedPlatforms.includes("harmonyos-source") || selectedPlatforms.includes("harmonyos-hap");
   const hasChrome = selectedPlatforms.includes("chrome");
   const hasWindows = selectedPlatforms.includes("windows");
   const hasMacos = selectedPlatforms.includes("macos");
   const hasLinux = selectedPlatforms.includes("linux");
-  const isIOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "ios";
+  const isIOSOnly = selectedPlatforms.length === 1 && (selectedPlatforms[0] === "ios" || selectedPlatforms[0] === "ios-ipa");
   const isWechatOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "wechat";
-  const isHarmonyOSOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "harmonyos-source";
+  const isHarmonyOSOnly = selectedPlatforms.length === 1 && (selectedPlatforms[0] === "harmonyos-source" || selectedPlatforms[0] === "harmonyos-hap");
   const isChromeOnly = selectedPlatforms.length === 1 && selectedPlatforms[0] === "chrome";
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -298,7 +298,7 @@ function GenerateContent() {
 
       // 游客模式仅支持移动端平台（Android、iOS、HarmonyOS）
       const unsupportedPlatforms = selectedPlatforms.filter(p =>
-        !["android-source", "android-apk", "ios", "harmonyos-source"].includes(p)
+        !["android-source", "android-apk", "ios", "ios-ipa", "harmonyos-source", "harmonyos-hap"].includes(p)
       );
       if (unsupportedPlatforms.length > 0) {
         toast.error(
@@ -596,8 +596,14 @@ function GenerateContent() {
         const androidPlatform = selectedPlatforms.find(p => p === "android-source" || p === "android-apk") || "android-source";
         iconsToUpload.push({ file: appIcon, platform: androidPlatform });
       }
-      if (hasIOS && iosIcon) iconsToUpload.push({ file: iosIcon, platform: "ios" });
-      if (hasHarmonyOS && harmonyIcon) iconsToUpload.push({ file: harmonyIcon, platform: "harmonyos" });
+      if (hasIOS && iosIcon) {
+        const iosPlatform = selectedPlatforms.find(p => p === "ios" || p === "ios-ipa") || "ios";
+        iconsToUpload.push({ file: iosIcon, platform: iosPlatform });
+      }
+      if (hasHarmonyOS && harmonyIcon) {
+        const harmonyPlatform = selectedPlatforms.find(p => p === "harmonyos-source" || p === "harmonyos-hap") || "harmonyos-source";
+        iconsToUpload.push({ file: harmonyIcon, platform: harmonyPlatform });
+      }
       if (hasChrome && chromeExtensionIcon) iconsToUpload.push({ file: chromeExtensionIcon, platform: "chrome" });
       if (hasWindows && windowsIcon) iconsToUpload.push({ file: windowsIcon, platform: "windows" });
       if (hasMacos && macosIcon) iconsToUpload.push({ file: macosIcon, platform: "macos" });
@@ -664,22 +670,24 @@ function GenerateContent() {
         });
       }
       if (hasIOS) {
-        const latestIconPath = uploadedIconPathsRef.current.ios || uploadedIconPaths.ios;
+        const iosPlatform = selectedPlatforms.find(p => p === "ios" || p === "ios-ipa") || "ios";
+        const latestIconPath = uploadedIconPathsRef.current[iosPlatform] || uploadedIconPaths[iosPlatform];
         platforms.push({
-          platform: "ios", appName, bundleId,
+          platform: iosPlatform, appName, bundleId,
           versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
-          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls.ios && { iconUrl: iconUrls.ios }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls[iosPlatform] && { iconUrl: iconUrls[iosPlatform] }),
         });
       }
       if (hasWechat) {
         platforms.push({ platform: "wechat", appName, appId: wechatAppId, version: wechatVersion });
       }
       if (hasHarmonyOS) {
-        const latestIconPath = uploadedIconPathsRef.current["harmonyos-source"] || uploadedIconPaths["harmonyos-source"];
+        const harmonyPlatform = selectedPlatforms.find(p => p === "harmonyos-source" || p === "harmonyos-hap") || "harmonyos-source";
+        const latestIconPath = uploadedIconPathsRef.current[harmonyPlatform] || uploadedIconPaths[harmonyPlatform];
         platforms.push({
-          platform: "harmonyos-source", appName, bundleName: harmonyBundleName,
+          platform: harmonyPlatform, appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
-          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls["harmonyos-source"] && { iconUrl: iconUrls["harmonyos-source"] }),
+          ...(IS_DOMESTIC_VERSION && latestIconPath ? { iconPath: latestIconPath } : iconUrls[harmonyPlatform] && { iconUrl: iconUrls[harmonyPlatform] }),
         });
       }
       if (hasChrome) {
@@ -714,24 +722,47 @@ function GenerateContent() {
         });
       }
 
-      // 检测是否为 Android APK 单独构建
+      // 检测是否为需要专用 API 的单独构建
       const isAndroidApkOnly = platforms.length === 1 && platforms[0].platform === "android-apk";
+      const isIOSIpaOnly = platforms.length === 1 && platforms[0].platform === "ios-ipa";
+      const isHarmonyHapOnly = platforms.length === 1 && platforms[0].platform === "harmonyos-hap";
+      const isSingleGitHubBuild = isAndroidApkOnly || isIOSIpaOnly || isHarmonyHapOnly;
 
       let response;
-      if (isAndroidApkOnly && IS_DOMESTIC_VERSION) {
-        // Android APK 使用专用 API（仅国内版支持）
+      if (isSingleGitHubBuild && IS_DOMESTIC_VERSION) {
+        // 使用专用编译 API（GitHub Actions 编译）
         const formData = new FormData();
         formData.append("url", url);
         formData.append("appName", platforms[0].appName);
-        formData.append("packageName", platforms[0].packageName || "");
-        formData.append("versionName", platforms[0].versionName || "");
-        formData.append("versionCode", platforms[0].versionCode || "");
-        formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
+
+        if (isAndroidApkOnly) {
+          formData.append("packageName", platforms[0].packageName || "");
+          formData.append("versionName", platforms[0].versionName || "");
+          formData.append("versionCode", platforms[0].versionCode || "");
+          formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
+        } else if (isIOSIpaOnly) {
+          formData.append("bundleId", platforms[0].bundleId || "");
+          formData.append("versionString", platforms[0].versionString || "");
+          formData.append("buildNumber", platforms[0].buildNumber || "");
+          formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
+        } else if (isHarmonyHapOnly) {
+          formData.append("bundleName", platforms[0].bundleName || "");
+          formData.append("versionName", platforms[0].versionName || "");
+          formData.append("versionCode", platforms[0].versionCode || "");
+          formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
+        }
+
         if ((platforms[0] as any).iconPath) {
           formData.append("iconPath", (platforms[0] as any).iconPath);
         }
 
-        response = await fetch("/api/domestic/android-apk/build", {
+        const apiPath = isAndroidApkOnly
+          ? "/api/domestic/android-apk/build"
+          : isIOSIpaOnly
+            ? "/api/domestic/ios-ipa/build"
+            : "/api/domestic/harmonyos-hap/build";
+
+        response = await fetch(apiPath, {
           method: "POST",
           body: formData,
         });
