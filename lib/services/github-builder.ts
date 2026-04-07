@@ -77,9 +77,21 @@ export async function triggerGitHubBuild(
   const { repo, workflowFile } = getGitHubRepoConfig(config.platform);
 
   if (!token || !owner || !repo) {
+    console.error(`[GitHub Build] Missing config for ${config.platform}:`, {
+      hasToken: !!token,
+      tokenLength: token?.length || 0,
+      tokenPrefix: token?.substring(0, 4) || "(empty)",
+      owner: owner || "(empty)",
+      repo: repo || "(empty)",
+      rawToken: process.env.GITHUB_TOKEN ? `(set, len=${process.env.GITHUB_TOKEN.length})` : "(unset)",
+      rawOwner: process.env.GITHUB_OWNER || "(unset)",
+      rawIpaRepo: process.env.GITHUB_IPA_REPO || "(unset)",
+      rawHapRepo: process.env.GITHUB_HAP_REPO || "(unset)",
+      rawApkRepo: process.env.GITHUB_APK_REPO || "(unset)",
+    });
     return {
       success: false,
-      error: `GitHub configuration missing for platform ${config.platform} (GITHUB_TOKEN, GITHUB_OWNER, or repo env)`,
+      error: `GitHub configuration missing for platform ${config.platform} (GITHUB_TOKEN=${!!token}, GITHUB_OWNER=${!!owner}, repo=${!!repo})`,
     };
   }
 
