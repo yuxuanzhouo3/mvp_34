@@ -156,16 +156,25 @@ async function processIOSIpaBuildAsync(
       iconPath: params.iconPath,
     });
 
-    // 获取生成的源文件下载 URL
+    // 获取生成的源文件路径（ios-builder 存的是 output_file_path，不是 download_url）
     const { data: sourceBuild } = await serviceClient
-      .from("builds").select("download_url").eq("id", buildId).single();
+      .from("builds").select("output_file_path, status").eq("id", buildId).single();
 
-    if (!sourceBuild?.download_url) {
-      throw new Error("Failed to generate iOS Source - no download URL");
+    if (!sourceBuild?.output_file_path || sourceBuild.status === "failed") {
+      throw new Error("Failed to generate iOS Source - build failed or no output file");
     }
 
-    const sourceUrl = sourceBuild.download_url;
-    console.log(`[iOS IPA Build ${buildId}] Source generated: ${sourceUrl}`);
+    // 从 Storage 生成临时下载链接（1小时有效）
+    const { data: signedData } = await serviceClient.storage
+      .from("user-builds")
+      .createSignedUrl(sourceBuild.output_file_path, 3600);
+
+    if (!signedData?.signedUrl) {
+      throw new Error("Failed to generate download URL for iOS Source");
+    }
+
+    const sourceUrl = signedData.signedUrl;
+    console.log(`[iOS IPA Build ${buildId}] Source generated: ${sourceUrl.substring(0, 80)}...`);
 
     await serviceClient.from("builds").update({
       progress: 30, updated_at: new Date().toISOString(),
