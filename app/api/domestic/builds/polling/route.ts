@@ -261,10 +261,10 @@ async function autoSyncStuckBuilds(builds: any[]) {
           if (sbBuild?.github_run_id) {
             build.github_run_id = sbBuild.github_run_id;
             console.log(`[AutoSync] 📥 Got github_run_id from Supabase: ${build.github_run_id}`);
-            // 同步回 CloudBase
-            const syncConnector = new CloudBaseConnector();
-            await syncConnector.initialize();
-            const syncDb = syncConnector.getClient();
+            // 同步回 CloudBase（复用外部 db 连接）
+            const outerConnector = new CloudBaseConnector();
+            await outerConnector.initialize();
+            const syncDb = outerConnector.getClient();
             await syncDb.collection("builds").doc(build._id).update({
               github_run_id: build.github_run_id,
             }).catch(() => {});
@@ -407,96 +407,84 @@ async function autoSyncStuckBuilds(builds: any[]) {
 
         console.log(`[AutoSync] ✅ Found ${artifactConfig.ext}: ${fileEntry.entryName}`);
         const fileBuffer = fileEntry.getData();
-        console.log(`[AutoSync] 📤 Uploading to CloudBase (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`[AutoSync] 📤 Uploading (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB) to both storages in parallel...`);
 
-        // 上传文件到云存储
         const storage = getCloudBaseStorage();
         const fileName = `builds/${build._id}/${artifactConfig.prefix}${artifactConfig.ext}`;
 
-        await withDbRetry(
-          async () => {
-            const result = await storage.uploadFile(fileName, fileBuffer);
-            if (!result) throw new Error("Upload returned null");
-            return result;
-          },
-          'Upload artifact to CloudBase'
-        );
+        // 并行上传到 CloudBase 和 Supabase 存储
+        const [cbUploadResult] = await Promise.allSettled([
+          withDbRetry(
+            async () => {
+              const result = await storage.uploadFile(fileName, fileBuffer);
+              if (!result) throw new Error("Upload returned null");
+              return result;
+            },
+            'Upload artifact to CloudBase'
+          ),
+          (async () => {
+            if (build.platform === "ios-ipa" || build.platform === "harmonyos-hap") {
+              const supabase = createServiceClient();
+              await supabase.storage.from("user-builds").upload(fileName, fileBuffer, {
+                contentType: "application/octet-stream",
+                upsert: true,
+              });
+            }
+          })().catch(e => console.error(`[AutoSync] Supabase storage upload failed:`, e)),
+        ]);
 
-        // 获取下载链接
-        const downloadUrl = await storage.getTempDownloadUrl(fileName);
+        // 获取 CloudBase 下载链接
+        const downloadUrl = cbUploadResult.status === "fulfilled"
+          ? await storage.getTempDownloadUrl(fileName)
+          : "";
 
-        // 更新构建记录
-        const connector = new CloudBaseConnector();
-        await connector.initialize();
-        const db = connector.getClient();
+        // 并行更新 CloudBase 和 Supabase 数据库记录
+        const completedData = {
+          status: "completed",
+          progress: 100,
+          output_file_path: fileName,
+          updated_at: new Date().toISOString(),
+        };
 
-        await withDbRetry(
-          () => db.collection("builds").doc(build._id).update({
-            status: "completed",
-            progress: 100,
-            output_file_path: fileName,
-            download_url: downloadUrl,
-            updated_at: new Date().toISOString(),
-          }),
-          'Update build status'
-        );
-
-        // 清理中间产物
-        const sourceId = `${build._id}-source`;
-        await db.collection("builds").doc(sourceId).remove().catch(() => {});
-
-        // 同步到 Supabase（iOS/HAP 的主记录在 Supabase）
-        try {
-          const supabase = createServiceClient();
-          if (build.platform === "ios-ipa" || build.platform === "harmonyos-hap") {
-            await supabase.storage.from("user-builds").upload(fileName, fileBuffer, {
-              contentType: "application/octet-stream",
-              upsert: true,
-            });
-          }
-          await supabase.from("builds").update({
-            status: "completed",
-            progress: 100,
-            output_file_path: fileName,
-            updated_at: new Date().toISOString(),
-          }).eq("id", build._id);
-        } catch (sbError) {
-          console.error(`[AutoSync] Supabase sync failed (non-critical):`, sbError);
-        }
+        await Promise.allSettled([
+          withDbRetry(
+            () => db.collection("builds").doc(build._id).update({
+              ...completedData,
+              download_url: downloadUrl,
+            }),
+            'Update build status'
+          ),
+          (async () => {
+            const supabase = createServiceClient();
+            await supabase.from("builds").update(completedData).eq("id", build._id);
+          })().catch(e => console.error(`[AutoSync] Supabase update failed:`, e)),
+          db.collection("builds").doc(`${build._id}-source`).remove().catch(() => {}),
+        ]);
 
         console.log(`[AutoSync] 🎉 Build ${build._id} synced successfully`);
         completedBuilds.set(build._id, Date.now()); // 添加到已完成缓存
         await releaseDistributedLock(db, build._id); // 释放数据库锁
         shouldCleanupLock = true;
       } else if (status.status === "completed" && status.conclusion === "failure") {
-        // 构建失败
+        // 构建失败 - 并行更新 CloudBase 和 Supabase
         console.log(`[AutoSync] ❌ Build failed`);
-        const connector = new CloudBaseConnector();
-        await connector.initialize();
-        const db = connector.getClient();
+        const failData = {
+          status: "failed",
+          progress: 100,
+          error_message: "GitHub Actions build failed",
+          updated_at: new Date().toISOString(),
+        };
 
-        await withDbRetry(
-          () => db.collection("builds").doc(build._id).update({
-            status: "failed",
-            progress: 100,
-            error_message: "GitHub Actions build failed",
-            updated_at: new Date().toISOString(),
-          }),
-          'Update build status to failed'
-        );
-
-        // 同步到 Supabase
-        try {
-          const supabase = createServiceClient();
-          await supabase.from("builds").update({
-            status: "failed",
-            progress: 100,
-            error_message: "GitHub Actions build failed",
-            updated_at: new Date().toISOString(),
-          }).eq("id", build._id);
-        } catch (sbError) {
-          console.error(`[AutoSync] Supabase sync failed (non-critical):`, sbError);
-        }
+        await Promise.allSettled([
+          withDbRetry(
+            () => db.collection("builds").doc(build._id).update(failData),
+            'Update build status to failed'
+          ),
+          (async () => {
+            const supabase = createServiceClient();
+            await supabase.from("builds").update(failData).eq("id", build._id);
+          })().catch(e => console.error(`[AutoSync] Supabase fail update error:`, e)),
+        ]);
 
         completedBuilds.set(build._id, Date.now()); // 添加到已完成缓存
         await releaseDistributedLock(db, build._id); // 释放数据库锁

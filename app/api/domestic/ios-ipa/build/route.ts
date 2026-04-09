@@ -73,24 +73,33 @@ export async function POST(request: NextRequest) {
     const expireDays = getPlanBuildExpireDays(wallet?.plan || "Free");
     const expiresAt = new Date(Date.now() + expireDays * 24 * 60 * 60 * 1000).toISOString();
 
-    // 7. 创建构建记录
+    // 7. 创建构建记录（Supabase + CloudBase 并行）
     const serviceClient = createServiceClient();
+    const buildRecordData = {
+      user_id: user.id,
+      platform: "ios-ipa" as const,
+      status: "pending" as const,
+      progress: 0,
+      app_name: appName,
+      package_name: bundleId,
+      version_name: versionString,
+      version_code: buildNumber,
+      url: url,
+      privacy_policy: privacyPolicy,
+      icon_path: preUploadedIconPath,
+      expires_at: expiresAt,
+    };
+
+    // 先插入 Supabase（需要返回 buildId），同时准备 CloudBase 连接
+    const connectorPromise = (async () => {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      return connector.getClient();
+    })();
+
     const { data: build, error: insertError } = await serviceClient
       .from("builds")
-      .insert({
-        user_id: user.id,
-        platform: "ios-ipa",
-        status: "pending",
-        progress: 0,
-        app_name: appName,
-        package_name: bundleId,
-        version_name: versionString,
-        version_code: buildNumber,
-        url: url,
-        privacy_policy: privacyPolicy,
-        icon_path: preUploadedIconPath,
-        expires_at: expiresAt,
-      })
+      .insert(buildRecordData)
       .select()
       .single();
 
@@ -106,32 +115,18 @@ export async function POST(request: NextRequest) {
     const buildId = build.id;
     console.log(`[iOS IPA Build] Build record created: ${buildId}`);
 
-    // 同步创建 CloudBase 记录（国内版 UI 从 CloudBase 读取）
-    try {
-      const connector = new CloudBaseConnector();
-      await connector.initialize();
-      const db = connector.getClient();
+    // 异步同步到 CloudBase（不阻塞响应）
+    connectorPromise.then(async (db) => {
       await db.collection("builds").add({
         _id: buildId,
-        user_id: user.id,
-        platform: "ios-ipa",
-        status: "pending",
-        progress: 0,
-        app_name: appName,
-        package_name: bundleId,
-        version_name: versionString,
-        version_code: buildNumber,
-        url: url,
-        privacy_policy: privacyPolicy,
-        icon_path: preUploadedIconPath,
-        expires_at: expiresAt,
+        ...buildRecordData,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
       console.log(`[iOS IPA Build] CloudBase record synced: ${buildId}`);
-    } catch (cbError) {
+    }).catch((cbError) => {
       console.error(`[iOS IPA Build] CloudBase sync failed:`, cbError);
-    }
+    });
 
     // 8. 异步处理构建（立即返回给用户）
     waitUntil(processIOSIpaBuildAsync(serviceClient, buildId, {
