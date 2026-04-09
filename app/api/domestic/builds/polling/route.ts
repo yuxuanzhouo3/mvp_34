@@ -14,7 +14,10 @@ import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { githubRateLimiter } from "@/lib/services/github-rate-limiter";
 import { monitoring } from "@/lib/services/monitoring";
 import { createServiceClient } from "@/lib/supabase/server";
+import { waitUntil } from "@vercel/functions";
 import AdmZip from "adm-zip";
+
+export const maxDuration = 120;
 
 // 全局同步锁：防止同一个build被并发同步
 const syncingBuilds = new Set<string>();
@@ -150,9 +153,9 @@ export async function GET(request: NextRequest) {
 
     // 自动同步卡住的 APK 构建（异步处理，不阻塞响应）
     if (processingBuilds && processingBuilds.length > 0) {
-      autoSyncStuckBuilds(processingBuilds).catch((error) => {
+      waitUntil(autoSyncStuckBuilds(processingBuilds).catch((error) => {
         console.error("[Polling] Auto-sync error:", error);
-      });
+      }));
     }
 
     // 返回简化的数据（只包含必要字段）
