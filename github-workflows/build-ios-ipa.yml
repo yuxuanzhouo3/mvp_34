@@ -47,9 +47,11 @@ jobs:
           echo "Xcode directory: $XCODE_DIR"
           ls -la "$XCODE_DIR/"
 
-          # Step 2: 安装 CocoaPods 依赖（必须在查找 workspace 之前）
+          # Step 2: 安装 CocoaPods 依赖（仅在 Pods 目录不存在时）
           cd "$XCODE_DIR"
-          if [ -f "Podfile" ]; then
+          if [ -d "Pods" ]; then
+            echo "Pods directory already exists, skipping pod install"
+          elif [ -f "Podfile" ]; then
             echo "Podfile found, installing CocoaPods dependencies..."
             pod install --repo-update || pod install
             echo "CocoaPods installed successfully"
