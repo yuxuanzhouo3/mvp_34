@@ -27,15 +27,17 @@ export async function POST(
 
     // 根据 GitHub Actions 的 job.status 更新构建状态
     // job.status 可能的值: "success", "failure", "cancelled"
-    let buildStatus: "completed" | "failed";
+    // 注意: 成功时保持 processing 状态，让 auto-sync 下载 artifact 后再设为 completed
+    // 因为 Vercel 会在回调响应后杀掉后台任务，异步下载 artifact 大概率失败
+    let buildStatus: "processing" | "failed";
     let progress: number;
 
     if (status === "success") {
-      buildStatus = "completed";
-      progress = 100;
+      buildStatus = "processing";
+      progress = 98; // 标记为即将完成，等待 auto-sync 下载 artifact
     } else {
       buildStatus = "failed";
-      progress = 100; // 失败也算完成了流程
+      progress = 100;
     }
 
     // 更新构建记录
