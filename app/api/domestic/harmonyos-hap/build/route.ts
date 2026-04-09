@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
+import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { processHarmonyOSBuild } from "@/lib/services/harmonyos-builder";
 import { triggerGitHubBuild } from "@/lib/services/github-builder";
 import { waitUntil } from "@vercel/functions";
@@ -191,11 +192,26 @@ async function processHarmonyHapBuildAsync(
       throw new Error(`GitHub Actions trigger failed: ${githubResult.error}`);
     }
 
-    console.log(`[HarmonyOS HAP Build ${buildId}] GitHub Actions triggered`);
+    console.log(`[HarmonyOS HAP Build ${buildId}] GitHub Actions triggered, runId: ${githubResult.runId}`);
     await serviceClient.from("builds").update({
       status: "processing", progress: 97,
+      github_run_id: githubResult.runId || null,
       updated_at: new Date().toISOString(),
     }).eq("id", buildId);
+
+    // 同步 github_run_id 到 CloudBase（用于 auto-sync 轮询检测）
+    try {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      await db.collection("builds").doc(buildId).update({
+        github_run_id: githubResult.runId || null,
+        progress: 97,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (cbError) {
+      console.error(`[HarmonyOS HAP Build ${buildId}] CloudBase sync github_run_id failed:`, cbError);
+    }
 
   } catch (error) {
     console.error(`[HarmonyOS HAP Build ${buildId}] Error:`, error);

@@ -1,7 +1,7 @@
 /**
  * 构建状态轮询接口（优化版 + 自动同步）
  * 只返回 pending/processing 状态的构建，减少数据传输
- * 自动检测并同步卡住的 APK 构建
+ * 自动检测并同步卡住的云端构建（APK/IPA/HAP）
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,6 +13,7 @@ import { getGitHubBuildStatus, downloadGitHubArtifact } from "@/lib/services/git
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { githubRateLimiter } from "@/lib/services/github-rate-limiter";
 import { monitoring } from "@/lib/services/monitoring";
+import { createServiceClient } from "@/lib/supabase/server";
 import AdmZip from "adm-zip";
 
 // 全局同步锁：防止同一个build被并发同步
@@ -149,7 +150,7 @@ export async function GET(request: NextRequest) {
 
     // 自动同步卡住的 APK 构建（异步处理，不阻塞响应）
     if (processingBuilds && processingBuilds.length > 0) {
-      autoSyncStuckApkBuilds(processingBuilds).catch((error) => {
+      autoSyncStuckBuilds(processingBuilds).catch((error) => {
         console.error("[Polling] Auto-sync error:", error);
       });
     }
@@ -177,7 +178,7 @@ export async function GET(request: NextRequest) {
  * 自动同步卡住的 APK 构建
  * 检测停留在 50% 超过 5 分钟的 APK 构建，自动同步 GitHub 状态
  */
-async function autoSyncStuckApkBuilds(builds: any[]) {
+async function autoSyncStuckBuilds(builds: any[]) {
   console.log(`[AutoSync] 🚀 === FUNCTION CALLED === Total builds received: ${builds.length}`);
 
   const now = Date.now();
@@ -206,8 +207,9 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
     console.log(`[AutoSync]    Output File: ${build.output_file_path}`);
     console.log(`[AutoSync]    Updated At: ${build.updated_at}`);
 
-    // 只处理 android-apk 平台
-    if (build.platform !== "android-apk") {
+    // 只处理支持 GitHub Actions 云端构建的平台
+    const supportedPlatforms = ["android-apk", "ios-ipa", "harmonyos-hap"];
+    if (!supportedPlatforms.includes(build.platform)) {
       console.log(`[AutoSync] ⏭️ Skip: not supported platform (is ${build.platform})`);
       continue;
     }
@@ -236,9 +238,9 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
       continue;
     }
 
-    // 检查更新时间（只对非 android-apk 平台检查卡住时间）
-    // android-apk 平台直接检查 GitHub 状态，不需要等待卡住
-    if (build.platform !== "android-apk") {
+    // 检查更新时间（只对非云端构建平台检查卡住时间）
+    // 支持的云端构建平台直接检查 GitHub 状态，不需要等待卡住
+    if (!supportedPlatforms.includes(build.platform)) {
       const updatedAt = new Date(build.updated_at).getTime();
       const stuckDuration = now - updatedAt;
 
@@ -248,11 +250,11 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
       }
     }
 
-    // 检查是否已经上传过APK，避免重复下载
+    // 检查是否已经上传过构建产物，避免重复下载
     const isAlreadyUploaded = build.output_file_path &&
       typeof build.output_file_path === 'string' &&
       build.output_file_path.trim() !== '' &&
-      build.output_file_path.endsWith('.apk');
+      (build.output_file_path.endsWith('.apk') || build.output_file_path.endsWith('.ipa') || build.output_file_path.endsWith('.hap'));
 
     if (isAlreadyUploaded) {
       console.log(`[AutoSync] ⏭️ Skip: File already uploaded (${build.output_file_path})`);
@@ -283,7 +285,7 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
 
     try {
       // 查询 GitHub Actions 状态
-      const status = await getGitHubBuildStatus(build.github_run_id);
+      const status = await getGitHubBuildStatus(build.github_run_id, build.platform);
 
       if (status.error) {
         console.error(`[AutoSync] ❌ GitHub status error: ${status.error}`);
@@ -292,10 +294,38 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
 
       // 如果构建完成且成功，下载并上传 artifact
       if (status.status === "completed" && status.conclusion === "success") {
-        console.log(`[AutoSync] ✅ Build completed, downloading artifact...`);
+        console.log(`[AutoSync] ✅ Build completed (${build.platform}), downloading artifact...`);
 
-        const artifactName = `app-debug-${build._id}`;
-        const artifactBuffer = await downloadGitHubArtifact(build.github_run_id, artifactName);
+        // 根据平台确定 artifact 名称、文件扩展名和搜索规则
+        const platformArtifactConfig: Record<string, { prefix: string; ext: string; findEntry: (entry: { entryName: string }) => boolean }> = {
+          "android-apk": {
+            prefix: "app-debug",
+            ext: ".apk",
+            findEntry: (entry) =>
+              (entry.entryName.includes('android/app/build/outputs/apk/normal/debug/') ||
+               entry.entryName.includes('android/app/build/outputs/apk/normal/release/')) &&
+              entry.entryName.endsWith('.apk'),
+          },
+          "ios-ipa": {
+            prefix: "ipa-release",
+            ext: ".ipa",
+            findEntry: (entry) => entry.entryName.endsWith('.ipa'),
+          },
+          "harmonyos-hap": {
+            prefix: "hap-release",
+            ext: ".hap",
+            findEntry: (entry) => entry.entryName.endsWith('.hap'),
+          },
+        };
+
+        const artifactConfig = platformArtifactConfig[build.platform];
+        if (!artifactConfig) {
+          console.error(`[AutoSync] ❌ Unknown platform: ${build.platform}`);
+          continue;
+        }
+
+        const artifactName = `${artifactConfig.prefix}-${build._id}`;
+        const artifactBuffer = await downloadGitHubArtifact(build.github_run_id, artifactName, build.platform);
 
         if (!artifactBuffer) {
           console.error(`[AutoSync] ❌ Download failed`);
@@ -304,30 +334,25 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
 
         console.log(`[AutoSync] 📤 Uploading to CloudBase (${(artifactBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
-        // 解压zip并提取APK
-        console.log(`[AutoSync] 📦 Extracting APK from zip...`);
+        // 解压zip并提取构建产物
+        console.log(`[AutoSync] 📦 Extracting ${artifactConfig.ext} from zip...`);
         const zip = new AdmZip(artifactBuffer);
         const zipEntries = zip.getEntries();
 
-        // 查找APK文件: android/app/build/outputs/apk/normal/debug/*.apk 或 release/*.apk
-        const fileEntry = zipEntries.find(entry =>
-          (entry.entryName.includes('android/app/build/outputs/apk/normal/debug/') ||
-           entry.entryName.includes('android/app/build/outputs/apk/normal/release/')) &&
-          entry.entryName.endsWith('.apk')
-        );
+        const fileEntry = zipEntries.find(entry => artifactConfig.findEntry(entry));
 
         if (!fileEntry) {
-          console.error(`[AutoSync] ❌ APK file not found in zip`);
+          console.error(`[AutoSync] ❌ ${artifactConfig.ext} file not found in zip`);
           continue;
         }
 
-        console.log(`[AutoSync] ✅ Found APK: ${fileEntry.entryName}`);
+        console.log(`[AutoSync] ✅ Found ${artifactConfig.ext}: ${fileEntry.entryName}`);
         const fileBuffer = fileEntry.getData();
-        console.log(`[AutoSync] 📤 Uploading APK to CloudBase (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`[AutoSync] 📤 Uploading to CloudBase (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
         // 上传文件到云存储
         const storage = getCloudBaseStorage();
-        const fileName = `builds/${build._id}/app-debug.apk`;
+        const fileName = `builds/${build._id}/${artifactConfig.prefix}${artifactConfig.ext}`;
 
         await withDbRetry(
           async () => {
@@ -361,6 +386,25 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
         const sourceId = `${build._id}-source`;
         await db.collection("builds").doc(sourceId).remove().catch(() => {});
 
+        // 同步到 Supabase（iOS/HAP 的主记录在 Supabase）
+        try {
+          const supabase = createServiceClient();
+          if (build.platform === "ios-ipa" || build.platform === "harmonyos-hap") {
+            await supabase.storage.from("user-builds").upload(fileName, fileBuffer, {
+              contentType: "application/octet-stream",
+              upsert: true,
+            });
+          }
+          await supabase.from("builds").update({
+            status: "completed",
+            progress: 100,
+            output_file_path: fileName,
+            updated_at: new Date().toISOString(),
+          }).eq("id", build._id);
+        } catch (sbError) {
+          console.error(`[AutoSync] Supabase sync failed (non-critical):`, sbError);
+        }
+
         console.log(`[AutoSync] 🎉 Build ${build._id} synced successfully`);
         completedBuilds.set(build._id, Date.now()); // 添加到已完成缓存
         await releaseDistributedLock(db, build._id); // 释放数据库锁
@@ -381,6 +425,20 @@ async function autoSyncStuckApkBuilds(builds: any[]) {
           }),
           'Update build status to failed'
         );
+
+        // 同步到 Supabase
+        try {
+          const supabase = createServiceClient();
+          await supabase.from("builds").update({
+            status: "failed",
+            progress: 100,
+            error_message: "GitHub Actions build failed",
+            updated_at: new Date().toISOString(),
+          }).eq("id", build._id);
+        } catch (sbError) {
+          console.error(`[AutoSync] Supabase sync failed (non-critical):`, sbError);
+        }
+
         completedBuilds.set(build._id, Date.now()); // 添加到已完成缓存
         await releaseDistributedLock(db, build._id); // 释放数据库锁
         shouldCleanupLock = true;
