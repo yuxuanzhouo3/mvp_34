@@ -78,20 +78,20 @@ jobs:
       - name: Build IPA
         run: |
           cd "source/$XCODE_DIR"
-          
-          # 获取 scheme 名称（排除 Tests scheme）
+
+          # 从 .xcodeproj 名称推断主 app scheme
+          APP_NAME=$(ls -d *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
+          echo "Project name: $APP_NAME"
+
+          # 获取 scheme 列表，优先选择匹配项目名的 scheme
           if [ "$BUILD_TYPE" = "workspace" ]; then
-            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); schemes=data.get('workspace',{}).get('schemes',[]); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; print(non_test[0] if non_test else (schemes[0] if schemes else ''))" 2>/dev/null || echo "")
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "import sys,json,os; data=json.load(sys.stdin); schemes=data.get('workspace',{}).get('schemes',[]); app=os.environ.get('APP_NAME',''); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; match=[s for s in non_test if s==app]; print(match[0] if match else (non_test[0] if non_test else (schemes[0] if schemes else '')))" 2>/dev/null || echo "")
           else
-            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); schemes=data.get('project',{}).get('schemes',[]); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; print(non_test[0] if non_test else (schemes[0] if schemes else ''))" 2>/dev/null || echo "")
+            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json,os; data=json.load(sys.stdin); schemes=data.get('project',{}).get('schemes',[]); app=os.environ.get('APP_NAME',''); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; match=[s for s in non_test if s==app]; print(match[0] if match else (non_test[0] if non_test else (schemes[0] if schemes else '')))" 2>/dev/null || echo "")
           fi
-          
+
           if [ -z "$SCHEME" ]; then
-            # 尝试从目录名推断 scheme
-            SCHEME=$(ls -d *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
-            if [ -z "$SCHEME" ]; then
-              SCHEME="WebViewApp"
-            fi
+            SCHEME="${APP_NAME:-WebViewApp}"
           fi
           echo "Using scheme: $SCHEME"
           
