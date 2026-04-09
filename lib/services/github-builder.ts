@@ -211,7 +211,8 @@ export async function triggerGitHubBuild(
  * 获取 GitHub Actions workflow 运行状态
  */
 export async function getGitHubBuildStatus(
-  runId: string
+  runId: string,
+  platform?: "android-apk" | "ios-ipa" | "harmonyos-hap"
 ): Promise<{
   status: "queued" | "in_progress" | "completed";
   conclusion?: "success" | "failure" | "cancelled";
@@ -219,7 +220,10 @@ export async function getGitHubBuildStatus(
 }> {
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = getGitHubRepoForPlatform(runId);
+  // 优先使用平台参数查找仓库，回退到 runId 缓存
+  const repo = platform
+    ? getGitHubRepoConfig(platform).repo
+    : getGitHubRepoForPlatform(runId);
 
   if (!token || !owner || !repo) {
     return {
@@ -283,7 +287,8 @@ export async function getGitHubBuildStatus(
  */
 export async function downloadGitHubArtifact(
   runId: string,
-  artifactName: string
+  artifactName: string,
+  platform?: "android-apk" | "ios-ipa" | "harmonyos-hap"
 ): Promise<Buffer | null> {
   // 下载去重：如果同一个artifact正在下载，等待现有下载完成
   const downloadKey = `${runId}-${artifactName}`;
@@ -292,7 +297,7 @@ export async function downloadGitHubArtifact(
   }
 
   // 创建下载Promise并缓存
-  const downloadPromise = performDownload(runId, artifactName);
+  const downloadPromise = performDownload(runId, artifactName, platform);
   downloadingArtifacts.set(downloadKey, downloadPromise);
 
   // 下载完成后清理缓存
@@ -308,13 +313,16 @@ export async function downloadGitHubArtifact(
  */
 async function performDownload(
   runId: string,
-  artifactName: string
+  artifactName: string,
+  platform?: "android-apk" | "ios-ipa" | "harmonyos-hap"
 ): Promise<Buffer | null> {
   console.log(`[GitHub] 📥 Downloading ${artifactName}`);
 
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
-  const repo = getGitHubRepoForPlatform(runId);
+  const repo = platform
+    ? getGitHubRepoConfig(platform).repo
+    : getGitHubRepoForPlatform(runId);
 
   if (!token || !owner || !repo) {
     console.error("[GitHub] ❌ Configuration missing");
