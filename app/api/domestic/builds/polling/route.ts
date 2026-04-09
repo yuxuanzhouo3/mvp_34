@@ -14,7 +14,6 @@ import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { githubRateLimiter } from "@/lib/services/github-rate-limiter";
 import { monitoring } from "@/lib/services/monitoring";
 import { createServiceClient } from "@/lib/supabase/server";
-import { waitUntil } from "@vercel/functions";
 import AdmZip from "adm-zip";
 
 export const maxDuration = 120;
@@ -151,11 +150,43 @@ export async function GET(request: NextRequest) {
       'Get processing builds'
     )) as any;
 
-    // 自动同步卡住的 APK 构建（异步处理，不阻塞响应）
+    // 自动同步卡住的构建（同步等待，确保在 Vercel 函数超时前完成）
+    // 注意：不使用 waitUntil，因为 Hobby 计划 waitUntil 仅 15 秒，不够下载 artifact
     if (processingBuilds && processingBuilds.length > 0) {
-      waitUntil(autoSyncStuckBuilds(processingBuilds).catch((error) => {
+      try {
+        await autoSyncStuckBuilds(processingBuilds);
+      } catch (error) {
         console.error("[Polling] Auto-sync error:", error);
-      }));
+      }
+
+      // 同步完成后，重新查询以获取最新状态
+      try {
+        const { data: refreshedBuilds } = (await withDbRetry(
+          () => db
+            .collection("builds")
+            .where({
+              user_id: user.id,
+              status: db.command.in(["pending", "processing"]),
+              created_at: db.command.gte(oneHourAgo),
+            })
+            .orderBy("created_at", "desc")
+            .limit(20)
+            .get(),
+          'Refresh processing builds'
+        )) as any;
+
+        const builds = (refreshedBuilds || []).map((build: any) => ({
+          id: build._id,
+          status: build.status,
+          progress: build.progress,
+          platform: build.platform,
+          github_run_id: build.github_run_id,
+        }));
+
+        return NextResponse.json({ builds });
+      } catch (refreshError) {
+        console.error("[Polling] Refresh error:", refreshError);
+      }
     }
 
     // 返回简化的数据（只包含必要字段）
