@@ -28,3 +28,6 @@ pnpm-debug.log*
 
 # 其他
 .vscode
+*.tsbuildinfo
+tmp_artifacts.json
+ios-logs*.zip

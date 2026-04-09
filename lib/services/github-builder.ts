@@ -12,6 +12,10 @@ const downloadingArtifacts = new Map<string, Promise<Buffer | null>>();
 // 记录 runId 对应的 repo，用于状态查询和 artifact 下载
 const runIdToRepo = new Map<string, string>();
 
+// 缓存仓库默认分支（5 分钟 TTL）
+const defaultBranchCache = new Map<string, { branch: string; cachedAt: number }>();
+const BRANCH_CACHE_TTL = 5 * 60 * 1000;
+
 /**
  * 根据平台类型获取 GitHub 仓库和 workflow 配置
  */
@@ -96,25 +100,33 @@ export async function triggerGitHubBuild(
   }
 
   try {
-    // Dynamically get the default branch for the repo
+    // Get default branch (cached for 5 minutes)
+    const cacheKey = `${owner}/${repo}`;
+    const cached = defaultBranchCache.get(cacheKey);
     let defaultBranch = "main";
-    try {
-      const repoInfoResp = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
+
+    if (cached && Date.now() - cached.cachedAt < BRANCH_CACHE_TTL) {
+      defaultBranch = cached.branch;
+    } else {
+      try {
+        const repoInfoResp = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}`,
+          {
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+          }
+        );
+        if (repoInfoResp.ok) {
+          const repoInfo = await repoInfoResp.json();
+          defaultBranch = repoInfo.default_branch || "main";
+          defaultBranchCache.set(cacheKey, { branch: defaultBranch, cachedAt: Date.now() });
         }
-      );
-      if (repoInfoResp.ok) {
-        const repoInfo = await repoInfoResp.json();
-        defaultBranch = repoInfo.default_branch || "main";
+      } catch (e) {
+        console.warn("[GitHub Build] Failed to get default branch, using 'main'");
       }
-    } catch (e) {
-      console.warn("[GitHub Build] Failed to get default branch, using 'main'");
     }
 
     console.log(`[GitHub Build] Dispatching workflow ${workflowFile} on ${owner}/${repo} ref=${defaultBranch}`);
@@ -154,40 +166,39 @@ export async function triggerGitHubBuild(
 
     console.log(`[GitHub Build] Workflow triggered for build ${config.buildId}`);
 
-    // 等待一小段时间让workflow run创建
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // 短间隔重试获取 workflow run ID（替代固定 2s 等待）
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-    // 获取最新的workflow run ID
-    try {
-      const runsResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?per_page=1`,
-        {
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
+      try {
+        const runsResponse = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/runs?per_page=1`,
+          {
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+          }
+        );
+
+        githubRateLimiter.updateRateLimit(runsResponse.headers);
+
+        if (runsResponse.ok) {
+          const runsData = await runsResponse.json();
+          const latestRun = runsData.workflow_runs?.[0];
+          if (latestRun) {
+            console.log(`[GitHub Build] Found run ID: ${latestRun.id} (attempt ${attempt + 1})`);
+            runIdToRepo.set(String(latestRun.id), repo);
+            return {
+              success: true,
+              runId: String(latestRun.id),
+            };
+          }
         }
-      );
-
-      // 更新速率限制信息
-      githubRateLimiter.updateRateLimit(runsResponse.headers);
-
-      if (runsResponse.ok) {
-        const runsData = await runsResponse.json();
-        const latestRun = runsData.workflow_runs?.[0];
-        if (latestRun) {
-          console.log(`[GitHub Build] Found run ID: ${latestRun.id}`);
-          // 缓存 runId 对应的 repo，用于后续状态查询
-          runIdToRepo.set(String(latestRun.id), repo);
-          return {
-            success: true,
-            runId: String(latestRun.id),
-          };
-        }
+      } catch (error) {
+        console.warn(`[GitHub Build] Failed to get run ID (attempt ${attempt + 1}):`, error);
       }
-    } catch (error) {
-      console.warn(`[GitHub Build] Failed to get run ID:`, error);
     }
 
     return {

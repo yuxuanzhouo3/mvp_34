@@ -393,58 +393,55 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
 
   console.log(`[Build ${buildId}] Icon normalized successfully`);
 
-  // 处理应用图标
+  // 处理应用图标（并行处理所有尺寸）
   const appIconDir = path.join(imagesDir, "AppIcon.appiconset");
   if (fs.existsSync(appIconDir)) {
     console.log(`[Build ${buildId}] Processing AppIcon...`);
-    for (const { name, size } of IOS_APP_ICON_SIZES) {
+    await Promise.all(IOS_APP_ICON_SIZES.map(async ({ name, size }) => {
       const outputPath = path.join(appIconDir, name);
       try {
         await sharp(normalizedBuffer)
           .resize(size, size)
           .png()
           .toFile(outputPath);
-        console.log(`[Build ${buildId}] Created: AppIcon/${name} (${size}x${size})`);
       } catch (err) {
         console.error(`[Build ${buildId}] Failed to create ${outputPath}:`, err);
       }
-    }
+    }));
   }
 
-  // 处理启动页中心图标
+  // 处理启动页中心图标（并行处理所有尺寸）
   const launchCenterDir = path.join(imagesDir, "LaunchCenter.imageset");
   if (fs.existsSync(launchCenterDir)) {
     console.log(`[Build ${buildId}] Processing LaunchCenter...`);
-    for (const { name, size } of IOS_LAUNCH_CENTER_SIZES) {
+    await Promise.all(IOS_LAUNCH_CENTER_SIZES.map(async ({ name, size }) => {
       const outputPath = path.join(launchCenterDir, name);
       try {
         await sharp(normalizedBuffer)
           .resize(size, size)
           .png()
           .toFile(outputPath);
-        console.log(`[Build ${buildId}] Created: LaunchCenter/${name} (${size}x${size})`);
       } catch (err) {
         console.error(`[Build ${buildId}] Failed to create ${outputPath}:`, err);
       }
-    }
+    }));
   }
 
-  // 处理侧边栏头图
+  // 处理侧边栏头图（并行处理所有尺寸）
   const headerImageDir = path.join(imagesDir, "HeaderImage.imageset");
   if (fs.existsSync(headerImageDir)) {
     console.log(`[Build ${buildId}] Processing HeaderImage...`);
-    for (const { name, size } of IOS_HEADER_IMAGE_SIZES) {
+    await Promise.all(IOS_HEADER_IMAGE_SIZES.map(async ({ name, size }) => {
       const outputPath = path.join(headerImageDir, name);
       try {
         await sharp(normalizedBuffer)
           .resize(size, size)
           .png()
           .toFile(outputPath);
-        console.log(`[Build ${buildId}] Created: HeaderImage/${name} (${size}x${size})`);
       } catch (err) {
         console.error(`[Build ${buildId}] Failed to create ${outputPath}:`, err);
       }
-    }
+    }));
   }
 
   console.log(`[Build ${buildId}] All iOS icons processed successfully`);
