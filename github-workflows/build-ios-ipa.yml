@@ -26,50 +26,51 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Download Source
+      - name: Download and Prepare Source
         run: |
           echo "Downloading source from: ${{ inputs.source_url }}"
           curl -L -o source.zip "${{ inputs.source_url }}"
           mkdir -p source
           cd source
           unzip ../source.zip
-          
-          # 查找 Xcode 项目目录（排除 Pods 目录）
-          # 优先使用 .xcworkspace（CocoaPods 项目需要）
-          WORKSPACE=$(find . -name "*.xcworkspace" -not -path "*/Pods/*" -not -path "*/.build/*" -maxdepth 4 | head -1)
+
+          # Step 1: 查找 .xcodeproj（排除 Pods 目录）确定项目根目录
+          PROJ=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" -not -path "*/.build/*" -maxdepth 4 | head -1)
+          if [ -z "$PROJ" ]; then
+            echo "ERROR: No Xcode project found!"
+            exit 1
+          fi
+
+          XCODE_DIR=$(dirname "$PROJ")
+          PROJ_NAME=$(basename "$PROJ")
+          echo "Found project: $PROJ"
+          echo "Xcode directory: $XCODE_DIR"
+          ls -la "$XCODE_DIR/"
+
+          # Step 2: 安装 CocoaPods 依赖（必须在查找 workspace 之前）
+          cd "$XCODE_DIR"
+          if [ -f "Podfile" ]; then
+            echo "Podfile found, installing CocoaPods dependencies..."
+            pod install --repo-update || pod install
+            echo "CocoaPods installed successfully"
+          else
+            echo "No Podfile found, skipping CocoaPods"
+          fi
+          cd -
+
+          # Step 3: 查找 workspace（CocoaPods 生成的，排除 .xcodeproj 内置的 project.xcworkspace）
+          WORKSPACE=$(find "$XCODE_DIR" -name "*.xcworkspace" -not -path "*/Pods/*" -not -path "*/.build/*" -not -path "*.xcodeproj/*" -maxdepth 2 | head -1)
           if [ -n "$WORKSPACE" ]; then
-            XCODE_DIR=$(dirname "$WORKSPACE")
             WORKSPACE_NAME=$(basename "$WORKSPACE")
-            echo "Found workspace: $WORKSPACE"
+            echo "Found CocoaPods workspace: $WORKSPACE"
             echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
             echo "BUILD_TYPE=workspace" >> $GITHUB_ENV
             echo "WORKSPACE_NAME=$WORKSPACE_NAME" >> $GITHUB_ENV
           else
-            # 回退到 .xcodeproj（排除 Pods）
-            PROJ=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" -not -path "*/.build/*" -maxdepth 4 | head -1)
-            if [ -n "$PROJ" ]; then
-              XCODE_DIR=$(dirname "$PROJ")
-              PROJ_NAME=$(basename "$PROJ")
-              echo "Found project: $PROJ"
-              echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
-              echo "BUILD_TYPE=project" >> $GITHUB_ENV
-              echo "PROJ_NAME=$PROJ_NAME" >> $GITHUB_ENV
-            else
-              echo "ERROR: No Xcode project found!"
-              exit 1
-            fi
-          fi
-          echo "Xcode directory: $XCODE_DIR"
-          ls -la "$XCODE_DIR/"
-
-      - name: Install CocoaPods (if needed)
-        run: |
-          cd "source/$XCODE_DIR"
-          if [ -f "Podfile" ]; then
-            echo "Podfile found, installing CocoaPods dependencies..."
-            pod install --repo-update || pod install
-          else
-            echo "No Podfile found, skipping CocoaPods"
+            echo "No workspace found, using project: $PROJ_NAME"
+            echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
+            echo "BUILD_TYPE=project" >> $GITHUB_ENV
+            echo "PROJ_NAME=$PROJ_NAME" >> $GITHUB_ENV
           fi
 
       - name: Build IPA
@@ -78,22 +79,9 @@ jobs:
           
           # 获取 scheme 名称（排除 Tests scheme）
           if [ "$BUILD_TYPE" = "workspace" ]; then
-            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "
-import sys,json
-data=json.load(sys.stdin)
-schemes=data.get('workspace',{}).get('schemes',[])
-# 过滤掉 Tests 结尾的 scheme
-non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]
-print(non_test[0] if non_test else (schemes[0] if schemes else ''))
-" 2>/dev/null || echo "")
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); schemes=data.get('workspace',{}).get('schemes',[]); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; print(non_test[0] if non_test else (schemes[0] if schemes else ''))" 2>/dev/null || echo "")
           else
-            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "
-import sys,json
-data=json.load(sys.stdin)
-schemes=data.get('project',{}).get('schemes',[])
-non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]
-print(non_test[0] if non_test else (schemes[0] if schemes else ''))
-" 2>/dev/null || echo "")
+            SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; data=json.load(sys.stdin); schemes=data.get('project',{}).get('schemes',[]); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; print(non_test[0] if non_test else (schemes[0] if schemes else ''))" 2>/dev/null || echo "")
           fi
           
           if [ -z "$SCHEME" ]; then
