@@ -7,6 +7,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { withDbRetry } from "@/lib/cloudbase/retry-wrapper";
 import { createServiceClient } from "@/lib/supabase/server";
+import { waitUntil } from "@vercel/functions";
+
+export const maxDuration = 120;
 
 export async function POST(
   request: NextRequest,
@@ -83,18 +86,17 @@ export async function POST(
       console.error(`[GitHub Callback] Supabase update failed (may not exist there):`, sbError);
     }
 
-    // 如果构建成功，触发 artifact 下载（异步处理）
+    // 如果构建成功，触发 artifact 下载（使用 waitUntil 保持函数存活）
     if (status === "success" && run_id) {
-      // 异步下载 artifact（不阻塞回调响应）
-      downloadAndUpdateArtifact(buildId, run_id).catch((error) => {
+      waitUntil(downloadAndUpdateArtifact(buildId, run_id).catch((error) => {
         console.error(`[GitHub Callback] Failed to download artifact for build ${buildId}:`, error);
-      });
+      }));
     }
 
-    // 删除Android Source中间产物（异步处理）
-    cleanupIntermediateArtifacts(buildId).catch((error) => {
+    // 删除Android Source中间产物（使用 waitUntil 保持函数存活）
+    waitUntil(cleanupIntermediateArtifacts(buildId).catch((error) => {
       console.error(`[GitHub Callback] Failed to cleanup intermediate artifacts:`, error);
-    });
+    }));
 
     return NextResponse.json({
       success: true,
