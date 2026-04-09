@@ -81,6 +81,7 @@ jobs:
 
           # 从 .xcodeproj 名称推断主 app scheme
           APP_NAME=$(ls -d *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
+          export APP_NAME
           echo "Project name: $APP_NAME"
 
           # 获取 scheme 列表，优先选择匹配项目名的 scheme
