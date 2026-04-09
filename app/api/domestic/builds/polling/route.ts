@@ -214,10 +214,35 @@ async function autoSyncStuckBuilds(builds: any[]) {
       continue;
     }
 
-    // 检查是否有 github_run_id
+    // 检查是否有 github_run_id，如果没有且是 IPA/HAP 构建，尝试从 Supabase 获取
     if (!build.github_run_id) {
-      console.log(`[AutoSync] ⏭️ Skip: no github_run_id`);
-      continue;
+      if (build.platform === "ios-ipa" || build.platform === "harmonyos-hap") {
+        try {
+          const supabase = createServiceClient();
+          const { data: sbBuild } = await supabase
+            .from("builds")
+            .select("github_run_id")
+            .eq("id", build._id)
+            .single();
+          if (sbBuild?.github_run_id) {
+            build.github_run_id = sbBuild.github_run_id;
+            console.log(`[AutoSync] 📥 Got github_run_id from Supabase: ${build.github_run_id}`);
+            // 同步回 CloudBase
+            const syncConnector = new CloudBaseConnector();
+            await syncConnector.initialize();
+            const syncDb = syncConnector.getClient();
+            await syncDb.collection("builds").doc(build._id).update({
+              github_run_id: build.github_run_id,
+            }).catch(() => {});
+          }
+        } catch (e) {
+          console.error(`[AutoSync] Failed to fetch github_run_id from Supabase:`, e);
+        }
+      }
+      if (!build.github_run_id) {
+        console.log(`[AutoSync] ⏭️ Skip: no github_run_id`);
+        continue;
+      }
     }
 
     // 检查是否在已完成缓存中（防止数据库延迟导致重复同步）
