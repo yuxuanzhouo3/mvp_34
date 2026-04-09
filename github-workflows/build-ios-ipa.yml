@@ -36,7 +36,7 @@ jobs:
             exit 1
           fi
 
-          XCODE_DIR=$(dirname "$PROJ")
+          XCODE_DIR=$(dirname "$PROJ" | sed 's|^\./||')
           PROJ_NAME=$(basename "$PROJ")
           echo "Found project: $PROJ"
           echo "Xcode directory: $XCODE_DIR"
