@@ -106,6 +106,33 @@ export async function POST(request: NextRequest) {
     const buildId = build.id;
     console.log(`[HarmonyOS HAP Build] Build record created: ${buildId}`);
 
+    // 同步创建 CloudBase 记录（国内版 UI 从 CloudBase 读取）
+    try {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      await db.collection("builds").add({
+        _id: buildId,
+        user_id: user.id,
+        platform: "harmonyos-hap",
+        status: "pending",
+        progress: 0,
+        app_name: appName,
+        package_name: bundleName,
+        version_name: versionName,
+        version_code: versionCode,
+        url: url,
+        privacy_policy: privacyPolicy,
+        icon_path: preUploadedIconPath,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      console.log(`[HarmonyOS HAP Build] CloudBase record synced: ${buildId}`);
+    } catch (cbError) {
+      console.error(`[HarmonyOS HAP Build] CloudBase sync failed:`, cbError);
+    }
+
     // 8. 异步处理构建
     waitUntil(processHarmonyHapBuildAsync(serviceClient, buildId, {
       url, appName, bundleName, versionName, versionCode, privacyPolicy,
