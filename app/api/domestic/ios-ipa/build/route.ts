@@ -106,6 +106,33 @@ export async function POST(request: NextRequest) {
     const buildId = build.id;
     console.log(`[iOS IPA Build] Build record created: ${buildId}`);
 
+    // 同步创建 CloudBase 记录（国内版 UI 从 CloudBase 读取）
+    try {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
+      await db.collection("builds").add({
+        _id: buildId,
+        user_id: user.id,
+        platform: "ios-ipa",
+        status: "pending",
+        progress: 0,
+        app_name: appName,
+        package_name: bundleId,
+        version_name: versionString,
+        version_code: buildNumber,
+        url: url,
+        privacy_policy: privacyPolicy,
+        icon_path: preUploadedIconPath,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      console.log(`[iOS IPA Build] CloudBase record synced: ${buildId}`);
+    } catch (cbError) {
+      console.error(`[iOS IPA Build] CloudBase sync failed:`, cbError);
+    }
+
     // 8. 异步处理构建（立即返回给用户）
     waitUntil(processIOSIpaBuildAsync(serviceClient, buildId, {
       url, appName, bundleId, versionString, buildNumber, privacyPolicy,
@@ -128,6 +155,23 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * 同步更新 CloudBase 构建进度（非阻塞）
+ */
+async function syncCloudBaseProgress(buildId: string, data: Record<string, any>) {
+  try {
+    const connector = new CloudBaseConnector();
+    await connector.initialize();
+    const db = connector.getClient();
+    await db.collection("builds").doc(buildId).update({
+      ...data,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // 非关键路径，不阻塞主流程
+  }
+}
+
+/**
  * 异步处理 iOS IPA 构建
  */
 async function processIOSIpaBuildAsync(
@@ -144,6 +188,7 @@ async function processIOSIpaBuildAsync(
     await serviceClient.from("builds").update({
       status: "processing", progress: 10, updated_at: new Date().toISOString(),
     }).eq("id", buildId);
+    syncCloudBaseProgress(buildId, { status: "processing", progress: 10 });
 
     // 步骤 1: 生成 iOS Source
     console.log(`[iOS IPA Build ${buildId}] Step 1: Generating iOS Source...`);
@@ -180,6 +225,7 @@ async function processIOSIpaBuildAsync(
     await serviceClient.from("builds").update({
       progress: 96, updated_at: new Date().toISOString(),
     }).eq("id", buildId);
+    syncCloudBaseProgress(buildId, { progress: 96 });
 
     // 步骤 2: 触发 GitHub Actions 构建
     console.log(`[iOS IPA Build ${buildId}] Step 2: Triggering GitHub Actions...`);
@@ -199,20 +245,7 @@ async function processIOSIpaBuildAsync(
       github_run_id: githubResult.runId || null,
       updated_at: new Date().toISOString(),
     }).eq("id", buildId);
-
-    // 同步 github_run_id 到 CloudBase（用于 auto-sync 轮询检测）
-    try {
-      const connector = new CloudBaseConnector();
-      await connector.initialize();
-      const db = connector.getClient();
-      await db.collection("builds").doc(buildId).update({
-        github_run_id: githubResult.runId || null,
-        progress: 97,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (cbError) {
-      console.error(`[iOS IPA Build ${buildId}] CloudBase sync github_run_id failed:`, cbError);
-    }
+    syncCloudBaseProgress(buildId, { status: "processing", progress: 97, github_run_id: githubResult.runId || null });
 
   } catch (error) {
     console.error(`[iOS IPA Build ${buildId}] Error:`, error);
@@ -221,6 +254,10 @@ async function processIOSIpaBuildAsync(
       error_message: error instanceof Error ? error.message : "Unknown error",
       updated_at: new Date().toISOString(),
     }).eq("id", buildId);
+    syncCloudBaseProgress(buildId, {
+      status: "failed",
+      error_message: error instanceof Error ? error.message : "Unknown error",
+    });
 
     await refundBuildQuota(params.userId, 1);
   }
