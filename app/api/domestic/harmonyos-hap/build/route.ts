@@ -183,6 +183,14 @@ async function processHarmonyHapBuildAsync(
       iconPath: params.iconPath,
     });
 
+    // processHarmonyOSBuild sets status="completed" internally (also used by source-only route)
+    // But HAP build still needs GitHub Actions compilation, so reset immediately
+    await serviceClient.from("builds").update({
+      status: "processing",
+      progress: 50,
+      updated_at: new Date().toISOString(),
+    }).eq("id", buildId);
+
     // 获取生成的源文件路径（harmonyos-builder 存的是 output_file_path，不是 download_url）
     const { data: sourceBuild } = await serviceClient
       .from("builds").select("output_file_path, status").eq("id", buildId).single();
