@@ -130,6 +130,18 @@ jobs:
           fi
           echo "Using scheme: $SCHEME"
 
+          # Get signing identity from keychain
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution\|iPhone Distribution" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$IDENTITY" ]; then
+            IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          fi
+          if [ -z "$IDENTITY" ]; then
+            echo "ERROR: No codesigning identity found in keychain"
+            security find-identity -v "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "Using signing identity: $IDENTITY"
+
           BUILD_CMD="xcodebuild archive"
           if [ "$BUILD_TYPE" = "workspace" ]; then
             BUILD_CMD="$BUILD_CMD -workspace $WORKSPACE_NAME"
@@ -137,18 +149,17 @@ jobs:
             BUILD_CMD="$BUILD_CMD -project $PROJ_NAME"
           fi
 
-          # ========== Phase 1: Build UNSIGNED archive ==========
-          echo "=== Phase 1: Building unsigned archive ==="
+          # ========== Phase 1: Build SIGNED archive ==========
+          echo "=== Phase 1: Building signed archive ==="
           $BUILD_CMD \
             -scheme "$SCHEME" \
             -archivePath build/app.xcarchive \
             -destination 'generic/platform=iOS' \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            -allowProvisioningUpdates \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_IDENTITY="$IDENTITY" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PP_NAME" \
             2>&1 | tail -50
 
           echo "=== Archive contents ==="
@@ -162,77 +173,56 @@ jobs:
           fi
           echo "Found app bundle: $APP_PATH"
 
-          # ========== Phase 2: Post-build code signing ==========
-          echo "=== Phase 2: Manual code signing ==="
+          # Extract bundle ID from the built app for ExportOptions
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+          echo "Bundle ID: $BUNDLE_ID"
 
-          # 2a. Get signing identity from keychain
-          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution\|iPhone Distribution" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          if [ -z "$IDENTITY" ]; then
-            IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          fi
-          if [ -z "$IDENTITY" ]; then
-            echo "ERROR: No codesigning identity found in keychain"
-            security find-identity -v "$KEYCHAIN_PATH"
+          # ========== Phase 2: Export IPA using xcodebuild ==========
+          echo "=== Phase 2: Exporting IPA with xcodebuild -exportArchive ==="
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" << EXPORTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>ad-hoc</string>
+    <key>teamID</key>
+    <string>${TEAM_ID}</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>compileBitcode</key>
+    <false/>
+    <key>stripSwiftSymbols</key>
+    <true/>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>${BUNDLE_ID}</key>
+        <string>${PP_NAME}</string>
+    </dict>
+</dict>
+</plist>
+EXPORTEOF
+
+          echo "ExportOptions.plist:"
+          cat "$RUNNER_TEMP/ExportOptions.plist"
+
+          xcodebuild -exportArchive \
+            -archivePath build/app.xcarchive \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath build/export \
+            2>&1 | tail -30
+
+          # Copy exported IPA
+          IPA_FILE=$(ls build/export/*.ipa 2>/dev/null | head -1)
+          if [ -z "$IPA_FILE" ]; then
+            echo "ERROR: No IPA file found after export!"
+            ls -la build/export/ 2>/dev/null
             exit 1
           fi
-          echo "Using signing identity: $IDENTITY"
 
-          # 2b. Extract entitlements from provisioning profile
-          ENTITLEMENTS_FILE="$RUNNER_TEMP/entitlements.plist"
-          security cms -D -i "$PP_PATH_FILE" > "$RUNNER_TEMP/profile.plist"
-          python3 -c "
-          import plistlib, sys
-          with open('$RUNNER_TEMP/profile.plist', 'rb') as f:
-              data = plistlib.load(f)
-          entitlements = data.get('Entitlements', {})
-          with open('$RUNNER_TEMP/entitlements.plist', 'wb') as f:
-              plistlib.dump(entitlements, f)
-          "
-          echo "=== Extracted entitlements ==="
-          cat "$ENTITLEMENTS_FILE"
-
-          # 2c. Embed provisioning profile into .app bundle
-          cp "$PP_PATH_FILE" "$APP_PATH/embedded.mobileprovision"
-          echo "Embedded provisioning profile"
-
-          # 2d. Sign all embedded frameworks (must sign inside-out)
-          if [ -d "$APP_PATH/Frameworks" ]; then
-            echo "Signing embedded frameworks..."
-            find "$APP_PATH/Frameworks" -type d -name "*.framework" | while read FRAMEWORK; do
-              echo "  Signing: $(basename "$FRAMEWORK")"
-              codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --timestamp=none --generate-entitlement-der "$FRAMEWORK"
-            done
-            find "$APP_PATH/Frameworks" -maxdepth 1 -name "*.dylib" | while read DYLIB; do
-              echo "  Signing dylib: $(basename "$DYLIB")"
-              codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --timestamp=none "$DYLIB"
-            done
-          fi
-
-          # 2e. Sign app extensions if present
-          if [ -d "$APP_PATH/PlugIns" ]; then
-            echo "Signing app extensions..."
-            find "$APP_PATH/PlugIns" -type d -name "*.appex" | while read APPEX; do
-              echo "  Signing extension: $(basename "$APPEX")"
-              codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --entitlements "$ENTITLEMENTS_FILE" --timestamp=none --generate-entitlement-der "$APPEX"
-            done
-          fi
-
-          # 2f. Sign the main .app bundle (must be last)
-          echo "Signing main app bundle..."
-          codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --entitlements "$ENTITLEMENTS_FILE" --timestamp=none --generate-entitlement-der "$APP_PATH"
-
-          # 2g. Verify signature
-          echo "=== Verifying signature ==="
-          codesign -vvv --deep "$APP_PATH"
-          echo "Signature verification passed"
-
-          # 2h. Package into IPA
-          echo "=== Creating IPA ==="
-          mkdir -p build/Payload
-          cp -r "$APP_PATH" build/Payload/
-          cd build && zip -r ../app-release.ipa Payload/ && cd ..
-
-          echo "IPA file:"
+          cp "$IPA_FILE" app-release.ipa
+          echo "=== IPA file created ==="
           ls -la app-release.ipa
 
       - name: Upload Artifact
