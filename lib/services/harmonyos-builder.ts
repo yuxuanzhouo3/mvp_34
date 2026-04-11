@@ -18,7 +18,8 @@ interface BuildConfig {
 
 export async function processHarmonyOSBuild(
   buildId: string,
-  config: BuildConfig
+  config: BuildConfig,
+  options?: { skipFinalStatus?: boolean }
 ): Promise<void> {
   const supabase = createServiceClient();
   let tempDir: string | null = null;
@@ -169,14 +170,17 @@ export async function processHarmonyOSBuild(
     await updateBuildStatus(supabase, buildId, "processing", 95);
 
     // Step 10: Update build record with output path
+    const updatePayload: Record<string, unknown> = {
+      output_file_path: outputPath,
+      file_size: outputBuffer.length,
+    };
+    if (!options?.skipFinalStatus) {
+      updatePayload.status = "completed";
+      updatePayload.progress = 100;
+    }
     const { error: updateError } = await supabase
       .from("builds")
-      .update({
-        status: "completed",
-        progress: 100,
-        output_file_path: outputPath,
-        file_size: outputBuffer.length,
-      })
+      .update(updatePayload)
       .eq("id", buildId);
 
     if (updateError) {

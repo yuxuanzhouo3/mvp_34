@@ -1,5 +1,4 @@
-# iOS IPA Build Workflow
-# 此文件需要放置在 workflows_ipa 仓库的 .github/workflows/ 目录下
+# iOS IPA Build Workflow (with Code Signing)
 name: Build iOS IPA
 
 on:
@@ -21,6 +20,53 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Install Certificate and Provisioning Profile
+        env:
+          P12_BASE64: ${{ secrets.P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 12)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import certificate
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          echo "$P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          # Show installed identities
+          echo "=== Installed signing identities ==="
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          # Install provisioning profile with correct UUID filename
+          PP_PATH="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP_PATH"
+          TEMP_PP="$RUNNER_TEMP/build.mobileprovision"
+          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$TEMP_PP"
+
+          # Extract UUID from the provisioning profile
+          PP_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(/usr/bin/security cms -D -i "$TEMP_PP")")
+          PP_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< "$(/usr/bin/security cms -D -i "$TEMP_PP")")
+          echo "Provisioning profile UUID: $PP_UUID"
+          echo "Provisioning profile Name: $PP_NAME"
+
+          # Install with UUID as filename (required by Xcode)
+          cp "$TEMP_PP" "$PP_PATH/$PP_UUID.mobileprovision"
+          echo "Provisioning profile installed"
+
+          # Save for later steps
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+          echo "PP_UUID=$PP_UUID" >> $GITHUB_ENV
+          echo "PP_NAME=$PP_NAME" >> $GITHUB_ENV
+          echo "PP_PATH_FILE=$TEMP_PP" >> $GITHUB_ENV
+
       - name: Download and Prepare Source
         run: |
           echo "Downloading source from: ${{ inputs.source_url }}"
@@ -29,7 +75,6 @@ jobs:
           cd source
           unzip ../source.zip
 
-          # Step 1: 查找 .xcodeproj（排除 Pods 目录）确定项目根目录
           PROJ=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" -not -path "*/.build/*" -maxdepth 4 | head -1)
           if [ -z "$PROJ" ]; then
             echo "ERROR: No Xcode project found!"
@@ -40,46 +85,40 @@ jobs:
           PROJ_NAME=$(basename "$PROJ")
           echo "Found project: $PROJ"
           echo "Xcode directory: $XCODE_DIR"
-          ls -la "$XCODE_DIR/"
 
-          # Step 2: 安装 CocoaPods 依赖（仅在 Pods 目录不存在时）
           cd "$XCODE_DIR"
           if [ -d "Pods" ]; then
             echo "Pods directory already exists, skipping pod install"
           elif [ -f "Podfile" ]; then
             echo "Podfile found, installing CocoaPods dependencies..."
             pod install --repo-update || pod install
-            echo "CocoaPods installed successfully"
           else
             echo "No Podfile found, skipping CocoaPods"
           fi
           cd -
 
-          # Step 3: 查找 workspace（CocoaPods 生成的，排除 .xcodeproj 内置的 project.xcworkspace）
           WORKSPACE=$(find "$XCODE_DIR" -name "*.xcworkspace" -not -path "*/Pods/*" -not -path "*/.build/*" -not -path "*.xcodeproj/*" -maxdepth 2 | head -1)
           if [ -n "$WORKSPACE" ]; then
             WORKSPACE_NAME=$(basename "$WORKSPACE")
-            echo "Found CocoaPods workspace: $WORKSPACE"
             echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
             echo "BUILD_TYPE=workspace" >> $GITHUB_ENV
             echo "WORKSPACE_NAME=$WORKSPACE_NAME" >> $GITHUB_ENV
           else
-            echo "No workspace found, using project: $PROJ_NAME"
             echo "XCODE_DIR=$XCODE_DIR" >> $GITHUB_ENV
             echo "BUILD_TYPE=project" >> $GITHUB_ENV
             echo "PROJ_NAME=$PROJ_NAME" >> $GITHUB_ENV
           fi
 
       - name: Build IPA
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           cd "source/$XCODE_DIR"
 
-          # 从 .xcodeproj 名称推断主 app scheme
           APP_NAME=$(ls -d *.xcodeproj 2>/dev/null | head -1 | sed 's/.xcodeproj//')
           export APP_NAME
           echo "Project name: $APP_NAME"
 
-          # 获取 scheme 列表，优先选择匹配项目名的 scheme
           if [ "$BUILD_TYPE" = "workspace" ]; then
             SCHEME=$(xcodebuild -workspace "$WORKSPACE_NAME" -list -json 2>/dev/null | python3 -c "import sys,json,os; data=json.load(sys.stdin); schemes=data.get('workspace',{}).get('schemes',[]); app=os.environ.get('APP_NAME',''); non_test=[s for s in schemes if not s.endswith('Tests') and not s.endswith('UITests')]; match=[s for s in non_test if s==app]; print(match[0] if match else (non_test[0] if non_test else (schemes[0] if schemes else '')))" 2>/dev/null || echo "")
           else
@@ -90,16 +129,16 @@ jobs:
             SCHEME="${APP_NAME:-WebViewApp}"
           fi
           echo "Using scheme: $SCHEME"
-          
-          # 构建命令 - 根据 workspace 或 project
+
           BUILD_CMD="xcodebuild archive"
           if [ "$BUILD_TYPE" = "workspace" ]; then
             BUILD_CMD="$BUILD_CMD -workspace $WORKSPACE_NAME"
           else
             BUILD_CMD="$BUILD_CMD -project $PROJ_NAME"
           fi
-          
-          # 执行构建（无签名，用于导出未签名 IPA）
+
+          # ========== Phase 1: Build UNSIGNED archive ==========
+          echo "=== Phase 1: Building unsigned archive ==="
           $BUILD_CMD \
             -scheme "$SCHEME" \
             -archivePath build/app.xcarchive \
@@ -111,27 +150,89 @@ jobs:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             2>&1 | tail -50
-          
-          # 验证 archive 产物
+
           echo "=== Archive contents ==="
           ls -la build/app.xcarchive/Products/Applications/ 2>/dev/null || echo "WARNING: No Applications directory found"
-          
-          # 创建无签名 IPA
-          mkdir -p build/Payload
-          if [ -d "build/app.xcarchive/Products/Applications/" ]; then
-            cp -r build/app.xcarchive/Products/Applications/*.app build/Payload/
-          else
+
+          APP_PATH=$(ls -d build/app.xcarchive/Products/Applications/*.app 2>/dev/null | head -1)
+          if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app bundle found in archive!"
-            echo "Archive structure:"
-            find build/app.xcarchive -maxdepth 3 -type d
+            find build/app.xcarchive -maxdepth 3 -type d 2>/dev/null
             exit 1
           fi
-          
-          cd build
-          zip -r ../app-release.ipa Payload/
-          cd ..
-          
-          echo "IPA created successfully"
+          echo "Found app bundle: $APP_PATH"
+
+          # ========== Phase 2: Post-build code signing ==========
+          echo "=== Phase 2: Manual code signing ==="
+
+          # 2a. Get signing identity from keychain
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Apple Distribution\|iPhone Distribution" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$IDENTITY" ]; then
+            IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          fi
+          if [ -z "$IDENTITY" ]; then
+            echo "ERROR: No codesigning identity found in keychain"
+            security find-identity -v "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "Using signing identity: $IDENTITY"
+
+          # 2b. Extract entitlements from provisioning profile
+          ENTITLEMENTS_FILE="$RUNNER_TEMP/entitlements.plist"
+          security cms -D -i "$PP_PATH_FILE" > "$RUNNER_TEMP/profile.plist"
+          python3 -c "
+          import plistlib, sys
+          with open('$RUNNER_TEMP/profile.plist', 'rb') as f:
+              data = plistlib.load(f)
+          entitlements = data.get('Entitlements', {})
+          with open('$RUNNER_TEMP/entitlements.plist', 'wb') as f:
+              plistlib.dump(entitlements, f)
+          "
+          echo "=== Extracted entitlements ==="
+          cat "$ENTITLEMENTS_FILE"
+
+          # 2c. Embed provisioning profile into .app bundle
+          cp "$PP_PATH_FILE" "$APP_PATH/embedded.mobileprovision"
+          echo "Embedded provisioning profile"
+
+          # 2d. Sign all embedded frameworks (must sign inside-out)
+          if [ -d "$APP_PATH/Frameworks" ]; then
+            echo "Signing embedded frameworks..."
+            find "$APP_PATH/Frameworks" -type d -name "*.framework" | while read FRAMEWORK; do
+              echo "  Signing: $(basename "$FRAMEWORK")"
+              codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --timestamp=none --generate-entitlement-der "$FRAMEWORK"
+            done
+            find "$APP_PATH/Frameworks" -maxdepth 1 -name "*.dylib" | while read DYLIB; do
+              echo "  Signing dylib: $(basename "$DYLIB")"
+              codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --timestamp=none "$DYLIB"
+            done
+          fi
+
+          # 2e. Sign app extensions if present
+          if [ -d "$APP_PATH/PlugIns" ]; then
+            echo "Signing app extensions..."
+            find "$APP_PATH/PlugIns" -type d -name "*.appex" | while read APPEX; do
+              echo "  Signing extension: $(basename "$APPEX")"
+              codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --entitlements "$ENTITLEMENTS_FILE" --timestamp=none --generate-entitlement-der "$APPEX"
+            done
+          fi
+
+          # 2f. Sign the main .app bundle (must be last)
+          echo "Signing main app bundle..."
+          codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN_PATH" --entitlements "$ENTITLEMENTS_FILE" --timestamp=none --generate-entitlement-der "$APP_PATH"
+
+          # 2g. Verify signature
+          echo "=== Verifying signature ==="
+          codesign -vvv --deep "$APP_PATH"
+          echo "Signature verification passed"
+
+          # 2h. Package into IPA
+          echo "=== Creating IPA ==="
+          mkdir -p build/Payload
+          cp -r "$APP_PATH" build/Payload/
+          cd build && zip -r ../app-release.ipa Payload/ && cd ..
+
+          echo "IPA file:"
           ls -la app-release.ipa
 
       - name: Upload Artifact
@@ -141,13 +242,20 @@ jobs:
           path: source/${{ env.XCODE_DIR }}/app-release.ipa
           retention-days: 7
 
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          fi
+
       - name: Notify Callback
         if: always()
         run: |
           if [ -n "${{ inputs.callback_url }}" ]; then
             STATUS="${{ job.status }}"
             RUN_ID="${{ github.run_id }}"
-            
+
             curl -X POST "${{ inputs.callback_url }}" \
               -H "Content-Type: application/json" \
               -d "{\"status\": \"$STATUS\", \"run_id\": \"$RUN_ID\", \"artifact_url\": \"\"}" \
