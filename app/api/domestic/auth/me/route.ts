@@ -5,6 +5,7 @@ import { CloudBaseAuthService } from "@/lib/cloudbase/auth";
 import jwt from "jsonwebtoken";
 import { CloudBaseConnector, isCloudBaseConfigured, getMissingCloudBaseEnvVars } from "@/lib/cloudbase/connector";
 import { withCache } from "@/lib/cloudbase/cache";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -40,16 +41,16 @@ export async function GET(req: Request) {
       null;
     const token = cookieToken || headerToken || null;
 
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const service = new CloudBaseAuthService();
-    let user = await service.validateToken(token);
+    let user = null;
     let isCloudBaseTimeout = false;
 
-    // 如果CloudBase session验证失败，尝试JWT验证
-    if (!user) {
+    // 尝试 CloudBase auth-token / JWT 认证
+    if (token) {
+      const service = new CloudBaseAuthService();
+      user = await service.validateToken(token);
+
+      // 如果CloudBase session验证失败，尝试JWT验证
+      if (!user) {
       try {
         const decoded = jwt.verify(
           token,
@@ -117,6 +118,33 @@ export async function GET(req: Request) {
         } else {
           console.error("[domestic/auth/me] Unexpected error:", jwtError);
         }
+      }
+      }
+    } // end if (token)
+
+    if (!user) {
+      // CloudBase auth failed — try Supabase session as fallback
+      try {
+        const supabase = await createClient();
+        const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+        if (supabaseUser) {
+          user = {
+            id: supabaseUser.id,
+            email: supabaseUser.email || "",
+            name: supabaseUser.user_metadata?.name || supabaseUser.email?.split("@")[0] || "User",
+            avatar: supabaseUser.user_metadata?.avatar_url || null,
+            createdAt: new Date(supabaseUser.created_at),
+            metadata: {
+              pro: false,
+              region: "CN",
+              plan: "free",
+              plan_exp: null,
+              hide_ads: false,
+            },
+          };
+        }
+      } catch (supabaseError) {
+        // Supabase auth also failed, continue to return Unauthorized
       }
     }
 
