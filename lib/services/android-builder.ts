@@ -91,7 +91,8 @@ const ACTIONBAR_NIGHT_ICON_SIZES = [
 
 export async function processAndroidBuild(
   buildId: string,
-  config: BuildConfig
+  config: BuildConfig,
+  options?: { skipFinalStatus?: boolean }
 ): Promise<void> {
   const supabase = createServiceClient();
   const progressHelper = new BuildProgressHelper("android");
@@ -232,14 +233,17 @@ export async function processAndroidBuild(
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("uploading"));
 
     // Step 8: Update build record with output path and file size
+    const updatePayload: Record<string, unknown> = {
+      output_file_path: outputPath,
+      file_size: outputBuffer.length,
+    };
+    if (!options?.skipFinalStatus) {
+      updatePayload.status = "completed";
+      updatePayload.progress = progressHelper.getProgressForStage("completed");
+    }
     const { error: updateError } = await supabase
       .from("builds")
-      .update({
-        status: "completed",
-        progress: progressHelper.getProgressForStage("completed"),
-        output_file_path: outputPath,
-        file_size: outputBuffer.length,
-      })
+      .update(updatePayload)
       .eq("id", buildId);
 
     if (updateError) {
