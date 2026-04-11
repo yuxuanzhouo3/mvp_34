@@ -8,7 +8,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { deductBuildQuota, checkBuildQuota, getEffectiveSupabaseUserWallet, refundBuildQuota } from "@/services/wallet-supabase";
 import { getPlanBuildExpireDays } from "@/utils/plan-limits";
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
-import { processAndroidBuildDomestic } from "@/lib/services/domestic/android-builder";
+import { processAndroidBuild } from "@/lib/services/android-builder";
 import { triggerGitHubBuild } from "@/lib/services/github-builder";
 import { waitUntil } from "@vercel/functions";
 
@@ -165,6 +165,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * 异步处理 Android APK 构建
+ * 流程与 HarmonyOS HAP 一致：Supabase 源码生成 → GitHub Actions 编译
  */
 async function processAndroidApkBuildAsync(
   serviceClient: ReturnType<typeof createServiceClient>,
@@ -180,38 +181,10 @@ async function processAndroidApkBuildAsync(
     userId: string;
   }
 ) {
-  // 临时构建 ID 用于 CloudBase 源码生成
-  const tempSourceBuildId = `${buildId}-source`;
-
   try {
-    // 更新 Supabase 状态为处理中
-    await serviceClient.from("builds").update({
-      status: "processing", progress: 10, updated_at: new Date().toISOString(),
-    }).eq("id", buildId);
-
-    // 步骤 1: 生成 Android Source（使用 CloudBase 源码构建服务）
+    // 步骤 1: 生成 Android Source（使用 Supabase 存储，与鸿蒙一致）
     console.log(`[Android APK Build ${buildId}] Step 1: Generating Android Source...`);
-
-    const connector = new CloudBaseConnector();
-    await connector.initialize();
-    const db = connector.getClient();
-
-    // 创建临时 CloudBase 构建记录（processAndroidBuildDomestic 需要从 CloudBase 读取）
-    await db.collection("builds").add({
-      _id: tempSourceBuildId,
-      user_id: params.userId,
-      platform: "android-source",
-      app_name: params.appName,
-      package_name: params.packageName,
-      url: params.url,
-      status: "pending",
-      progress: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-
-    // 调用现有的 Android Source 构建服务
-    await processAndroidBuildDomestic(tempSourceBuildId, {
+    await processAndroidBuild(buildId, {
       url: params.url,
       appName: params.appName,
       packageName: params.packageName,
@@ -219,21 +192,28 @@ async function processAndroidApkBuildAsync(
       versionCode: params.versionCode,
       privacyPolicy: params.privacyPolicy,
       iconPath: params.iconPath,
-    });
+    }, { skipFinalStatus: true });
 
-    // 获取生成的 Android Source 下载 URL（从 CloudBase 读取）
-    const sourceBuild = await db.collection("builds").doc(tempSourceBuildId).get();
-    const sourceData = sourceBuild?.data?.[0];
+    // 获取生成的源文件路径（从 Supabase 读取）
+    const { data: sourceBuild } = await serviceClient
+      .from("builds").select("output_file_path, status").eq("id", buildId).single();
 
-    if (!sourceData || !sourceData.download_url) {
-      console.error(`[Android APK Build ${buildId}] Failed to get download_url`);
-      throw new Error("Failed to generate Android Source");
+    if (!sourceBuild?.output_file_path || sourceBuild.status === "failed") {
+      throw new Error("Failed to generate Android Source - build failed or no output file");
     }
 
-    const sourceUrl = sourceData.download_url;
-    console.log(`[Android APK Build ${buildId}] Android Source generated: ${sourceUrl}`);
+    // 从 Supabase Storage 生成临时下载链接（1小时有效）
+    const { data: signedData } = await serviceClient.storage
+      .from("user-builds")
+      .createSignedUrl(sourceBuild.output_file_path, 3600);
 
-    // 更新 Supabase 进度
+    if (!signedData?.signedUrl) {
+      throw new Error("Failed to generate download URL for Android Source");
+    }
+
+    const sourceUrl = signedData.signedUrl;
+    console.log(`[Android APK Build ${buildId}] Android Source generated: ${sourceUrl.substring(0, 80)}...`);
+
     await serviceClient.from("builds").update({
       progress: 50, updated_at: new Date().toISOString(),
     }).eq("id", buildId);
@@ -259,6 +239,9 @@ async function processAndroidApkBuildAsync(
 
     // 同步 github_run_id 到 CloudBase（用于 auto-sync 轮询检测）
     try {
+      const connector = new CloudBaseConnector();
+      await connector.initialize();
+      const db = connector.getClient();
       await db.collection("builds").doc(buildId).update({
         github_run_id: githubResult.runId || null,
         progress: 97,
@@ -269,9 +252,6 @@ async function processAndroidApkBuildAsync(
       console.error(`[Android APK Build ${buildId}] CloudBase sync github_run_id failed:`, cbError);
     }
 
-    // 清理临时的 source build 记录
-    await db.collection("builds").doc(tempSourceBuildId).delete().catch(() => {});
-
   } catch (error) {
     console.error(`[Android APK Build ${buildId}] Error:`, error);
     await serviceClient.from("builds").update({
@@ -280,17 +260,21 @@ async function processAndroidApkBuildAsync(
       updated_at: new Date().toISOString(),
     }).eq("id", buildId);
 
-    // 退还配额
-    await refundBuildQuota(params.userId, 1);
-
-    // 清理临时的 source build 记录（失败情况）
+    // 同步失败状态到 CloudBase
     try {
       const connector = new CloudBaseConnector();
       await connector.initialize();
       const db = connector.getClient();
-      await db.collection("builds").doc(tempSourceBuildId).delete().catch(() => {});
+      await db.collection("builds").doc(buildId).update({
+        status: "failed",
+        error_message: error instanceof Error ? error.message : "Unknown error",
+        updated_at: new Date().toISOString(),
+      });
     } catch {
-      // ignore cleanup errors
+      // ignore CloudBase sync errors
     }
+
+    // 退还配额
+    await refundBuildQuota(params.userId, 1);
   }
 }
