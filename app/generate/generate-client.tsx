@@ -662,7 +662,7 @@ function GenerateContent() {
       if (hasAndroid) {
         // 使用实际选中的 Android 平台 ID
         const androidPlatform = selectedPlatforms.find(p => p === "android-source" || p === "android-apk") || "android-source";
-        const latestIconPath = uploadedIconPathsRef.current[androidPlatform] || uploadedIconPaths[androidPlatform];
+        const latestIconPath = uploadedIconPathsRef.current[androidPlatform] || uploadedIconPaths[androidPlatform] || uploadedIconPathsRef.current["android"] || uploadedIconPaths["android"];
         platforms.push({
           platform: androidPlatform, appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
@@ -671,7 +671,7 @@ function GenerateContent() {
       }
       if (hasIOS) {
         const iosPlatform = selectedPlatforms.find(p => p === "ios" || p === "ios-ipa") || "ios";
-        const latestIconPath = uploadedIconPathsRef.current[iosPlatform] || uploadedIconPaths[iosPlatform];
+        const latestIconPath = uploadedIconPathsRef.current[iosPlatform] || uploadedIconPaths[iosPlatform] || uploadedIconPathsRef.current["ios"] || uploadedIconPaths["ios"];
         platforms.push({
           platform: iosPlatform, appName, bundleId,
           versionString: iosVersionString, buildNumber: iosBuildNumber, privacyPolicy: iosPrivacyPolicy,
@@ -683,7 +683,7 @@ function GenerateContent() {
       }
       if (hasHarmonyOS) {
         const harmonyPlatform = selectedPlatforms.find(p => p === "harmonyos-source" || p === "harmonyos-hap") || "harmonyos-source";
-        const latestIconPath = uploadedIconPathsRef.current[harmonyPlatform] || uploadedIconPaths[harmonyPlatform];
+        const latestIconPath = uploadedIconPathsRef.current[harmonyPlatform] || uploadedIconPaths[harmonyPlatform] || uploadedIconPathsRef.current["harmonyos"] || uploadedIconPaths["harmonyos"];
         platforms.push({
           platform: harmonyPlatform, appName, bundleName: harmonyBundleName,
           versionName: harmonyVersionName, versionCode: harmonyVersionCode, privacyPolicy: harmonyPrivacyPolicy,
