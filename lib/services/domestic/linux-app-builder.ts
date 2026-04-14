@@ -5,6 +5,7 @@
 
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
+import { downloadIconBuffer } from "@/lib/services/domestic/icon-download";
 import { BuildProgressHelper } from "@/lib/build-progress";
 import { trackBuildCompleteEvent } from "@/services/analytics";
 import sharp from "sharp";
@@ -96,7 +97,7 @@ export async function processLinuxAppBuildDomestic(
     // Step 6: Replace icon if provided
     if (config.iconPath) {
       console.log(`[Domestic Linux Build ${buildId}] Replacing icon...`);
-      await replaceAppIcon(storage, resourcesDir, config.iconPath);
+      await replaceAppIcon(resourcesDir, config.iconPath);
     }
 
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
@@ -244,12 +245,11 @@ function findAppDirectory(baseDir: string): string | null {
 }
 
 async function replaceAppIcon(
-  storage: ReturnType<typeof getCloudBaseStorage>,
   resourcesDir: string,
   iconPath: string
 ): Promise<void> {
   try {
-    const iconBuffer = await storage.downloadFile(iconPath);
+    const iconBuffer = await downloadIconBuffer(iconPath);
 
     const processedIcon = await sharp(iconBuffer)
       .resize(512, 512, { fit: "cover" })

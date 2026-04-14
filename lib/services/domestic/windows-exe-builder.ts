@@ -5,6 +5,7 @@
 
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
+import { downloadIconBuffer } from "@/lib/services/domestic/icon-download";
 import { BuildProgressHelper } from "@/lib/build-progress";
 import { trackBuildCompleteEvent } from "@/services/analytics";
 import sharp from "sharp";
@@ -167,9 +168,10 @@ async function modifyExeResources(
     if (config.iconPath) {
       console.log(`[Domestic Windows Build] Starting icon replacement, iconPath: ${config.iconPath}`);
       try {
-        console.log(`[Domestic Windows Build] Downloading icon from CloudBase...`);
-        const iconBuffer = await storage.downloadFile(config.iconPath);
-        console.log(`[Domestic Windows Build] Icon downloaded successfully, size: ${iconBuffer.length} bytes`);
+        // 下载图标（CloudBase 优先，Supabase 兜底）
+        console.log(`[Domestic Windows Build] Downloading icon: ${config.iconPath}`);
+        const iconBuffer = await downloadIconBuffer(config.iconPath);
+        console.log(`[Domestic Windows Build] Icon downloaded, size: ${iconBuffer.length} bytes`);
 
         console.log(`[Domestic Windows Build] Converting to ICO format...`);
         const icoBuffer = await generateIco(iconBuffer);

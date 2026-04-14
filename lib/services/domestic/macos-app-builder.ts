@@ -5,6 +5,7 @@
 
 import { CloudBaseConnector } from "@/lib/cloudbase/connector";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
+import { downloadIconBuffer } from "@/lib/services/domestic/icon-download";
 import { BuildProgressHelper } from "@/lib/build-progress";
 import { trackBuildCompleteEvent } from "@/services/analytics";
 import AdmZip from "adm-zip";
@@ -85,7 +86,7 @@ export async function processMacOSAppBuildDomestic(
     // Step 7: Replace icon if provided
     if (config.iconPath) {
       console.log(`[Domestic macOS Build ${buildId}] Replacing icon...`);
-      await replaceAppIcon(storage, appDir, config.iconPath);
+      await replaceAppIcon(appDir, config.iconPath);
     }
 
     await updateBuildStatus(db, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
@@ -270,12 +271,11 @@ function escapeXml(str: string): string {
 }
 
 async function replaceAppIcon(
-  storage: ReturnType<typeof getCloudBaseStorage>,
   appDir: string,
   iconPath: string
 ): Promise<void> {
   try {
-    const iconBuffer = await storage.downloadFile(iconPath);
+    const iconBuffer = await downloadIconBuffer(iconPath);
 
     // Generate ICNS file
     const icnsBuffer = await generateIcns(iconBuffer);
