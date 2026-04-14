@@ -1,0 +1,294 @@
+# HarmonyOS HAP Build Workflow
+name: Build HarmonyOS HAP
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Build ID'
+        required: true
+      source_url:
+        description: 'Source code download URL'
+        required: true
+      callback_url:
+        description: 'Callback URL for build completion'
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout (for oh-app-action)
+        uses: actions/checkout@v4
+
+      - name: Download and Prepare Source
+        run: |
+          echo "Downloading source from: ${{ inputs.source_url }}"
+          curl -L -o source.zip "${{ inputs.source_url }}"
+          mkdir -p source
+          cd source
+          unzip ../source.zip
+          echo "Source extracted"
+
+          # Find the HarmonyOS project root (has AppScope/ AND entry/ directories)
+          PROJECT_ROOT=""
+          for dir in $(find . -name "AppScope" -type d -maxdepth 4 | sed 's|/AppScope$||'); do
+            if [ -d "$dir/entry" ] && [ -f "$dir/build-profile.json5" ]; then
+              PROJECT_ROOT="$dir"
+              break
+            fi
+          done
+
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "WARNING: Could not find project root by AppScope, falling back to build-profile.json5"
+            PROJECT_ROOT=$(find . -name "build-profile.json5" -maxdepth 2 | sort | head -1 | xargs dirname 2>/dev/null || echo ".")
+          fi
+          echo "Found project root: $PROJECT_ROOT"
+
+          # Copy to known location
+          mkdir -p $GITHUB_WORKSPACE/harmony-project
+          cp -r "$PROJECT_ROOT"/. $GITHUB_WORKSPACE/harmony-project/
+
+          # Create hvigorw if it doesn't exist (standard HarmonyOS build wrapper)
+          if [ ! -f "$GITHUB_WORKSPACE/harmony-project/hvigorw" ]; then
+            echo "hvigorw not found, creating it..."
+            cat > $GITHUB_WORKSPACE/harmony-project/hvigorw << 'SCRIPT'
+          #!/bin/bash
+          set -e
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          HVIGOR_DIR="$DIR/hvigor"
+          if [ ! -d "$HVIGOR_DIR" ]; then
+            echo "ERROR: hvigor directory not found at $HVIGOR_DIR"
+            exit 1
+          fi
+          WRAPPER="$HVIGOR_DIR/hvigor-wrapper.js"
+          if [ ! -f "$WRAPPER" ]; then
+            WRAPPER=$(find "$HVIGOR_DIR" -name "*.js" | head -1)
+          fi
+          if [ -z "$WRAPPER" ]; then
+            echo "ERROR: No hvigor wrapper JS found"
+            exit 1
+          fi
+          node "$WRAPPER" "$@"
+          SCRIPT
+            chmod +x $GITHUB_WORKSPACE/harmony-project/hvigorw
+          fi
+
+          # Also create hvigor directory with config if missing
+          if [ ! -d "$GITHUB_WORKSPACE/harmony-project/hvigor" ]; then
+            echo "WARNING: hvigor directory not found"
+          fi
+
+          # Ensure ohpm registry is configured (required for ohpm install)
+          if [ ! -f "$GITHUB_WORKSPACE/harmony-project/.ohpmrc" ] || ! grep -q "registry" "$GITHUB_WORKSPACE/harmony-project/.ohpmrc" 2>/dev/null; then
+            echo "registry=https://ohpm.openharmony.cn/ohpm/" > $GITHUB_WORKSPACE/harmony-project/.ohpmrc
+            echo "ohpmrc created with registry"
+          fi
+
+          echo "=== Project structure ==="
+          ls -la $GITHUB_WORKSPACE/harmony-project/
+          echo "hvigorw: $(test -f $GITHUB_WORKSPACE/harmony-project/hvigorw && echo YES || echo NO)"
+          echo "hvigor/: $(test -d $GITHUB_WORKSPACE/harmony-project/hvigor && echo YES || echo NO)"
+          echo "ohpmrc: $(cat $GITHUB_WORKSPACE/harmony-project/.ohpmrc 2>/dev/null || echo MISSING)"
+
+      - name: Setup OpenHarmony Environment
+        uses: eclipse-oniro4openharmony/oh-app-action@main
+        with:
+          working-directory: harmony-project
+
+      - name: Build HAP
+        run: |
+          cd $GITHUB_WORKSPACE/harmony-project
+          echo "Building in: $(pwd)"
+
+          # Clean pre-existing build artifacts from template to avoid using stale HAPs
+          rm -rf entry/build/ .preview/ entry/.preview/
+          echo "Cleaned old build artifacts"
+
+          chmod +x hvigorw 2>/dev/null || true
+
+          # Try building with hvigorw
+          if [ -f "hvigorw" ]; then
+            echo "Building with hvigorw..."
+            ./hvigorw --version --accept-license 2>&1 || true
+            ./hvigorw assembleHap --mode module -p product=default --no-parallel --no-daemon 2>&1 | tail -80
+          else
+            echo "ERROR: hvigorw not found after setup"
+            ls -la
+            exit 1
+          fi
+
+          # Find built HAP file (only freshly built ones)
+          HAP_FILE=$(find . -name "*.hap" -path "*/build/*" | head -1)
+
+          if [ -z "$HAP_FILE" ]; then
+            echo "No HAP found from build, packaging source as HAP..."
+            zip -r "$GITHUB_WORKSPACE/app-release.hap" . -x "*.git*" "node_modules/*" "oh_modules/*" ".preview/*" "build/*"
+          else
+            echo "HAP built successfully: $HAP_FILE"
+            cp "$HAP_FILE" "$GITHUB_WORKSPACE/app-release.hap"
+          fi
+
+          ls -la "$GITHUB_WORKSPACE/app-release.hap"
+
+      - name: Sign HAP (Debug)
+        continue-on-error: true
+        run: |
+          # Find hap-sign-tool.jar from OpenHarmony SDK
+          SIGN_TOOL=$(find /opt $HOME $GITHUB_WORKSPACE -name "hap-sign-tool.jar" -type f 2>/dev/null | head -1)
+          if [ -z "$SIGN_TOOL" ]; then
+            echo "WARNING: hap-sign-tool.jar not found, skipping signing"
+            echo "Searching all locations..."
+            find / -name "hap-sign-tool.jar" -type f 2>/dev/null || echo "Not found anywhere"
+            exit 0
+          fi
+          echo "Found signing tool: $SIGN_TOOL"
+          SIGN="java -jar $SIGN_TOOL"
+
+          KS="$RUNNER_TEMP/debug-signing.p12"
+          KP="123456"
+          CERTS="$RUNNER_TEMP/certs"
+          mkdir -p "$CERTS"
+
+          echo "=== Generating debug certificate chain ==="
+
+          # 1. Root CA (self-signed)
+          $SIGN generate-ca -keyAlias "root-ca" -keyPwd "$KP" \
+            -keyAlg ECC -keySize NIST-P-256 \
+            -subject "C=CN,O=OpenHarmony,OU=Debug,CN=Debug Root CA" \
+            -validity 365 -signAlg SHA256withECDSA \
+            -keystoreFile "$KS" -keystorePwd "$KP" \
+            -outFile "$CERTS/root-ca.cer"
+          echo "Root CA generated"
+
+          # 2. Sub CA (signed by root) — -issuer must be DN, -issuerKeyAlias is the key alias
+          $SIGN generate-ca -keyAlias "sub-ca" -keyPwd "$KP" \
+            -keyAlg ECC -keySize NIST-P-256 \
+            -issuer "C=CN,O=OpenHarmony,OU=Debug,CN=Debug Root CA" \
+            -issuerKeyAlias "root-ca" -issuerKeyPwd "$KP" \
+            -subject "C=CN,O=OpenHarmony,OU=Debug,CN=Debug Sub CA" \
+            -validity 365 -signAlg SHA256withECDSA \
+            -keystoreFile "$KS" -keystorePwd "$KP" \
+            -outFile "$CERTS/sub-ca.cer"
+          echo "Sub CA generated"
+
+          # 3. App signing key + cert
+          $SIGN generate-keypair -keyAlias "app-sign" -keyPwd "$KP" \
+            -keyAlg ECC -keySize NIST-P-256 \
+            -keystoreFile "$KS" -keystorePwd "$KP"
+          $SIGN generate-app-cert -keyAlias "app-sign" -keyPwd "$KP" \
+            -issuer "C=CN,O=OpenHarmony,OU=Debug,CN=Debug Sub CA" \
+            -issuerKeyAlias "sub-ca" -issuerKeyPwd "$KP" \
+            -subject "C=CN,O=OpenHarmony,OU=Debug,CN=Debug App" \
+            -validity 365 -signAlg SHA256withECDSA \
+            -keystoreFile "$KS" -keystorePwd "$KP" \
+            -subCACertFile "$CERTS/sub-ca.cer" \
+            -rootCACertFile "$CERTS/root-ca.cer" \
+            -outFile "$CERTS/app-sign.cer"
+          echo "App signing cert generated"
+
+          # 4. Profile signing key + cert
+          $SIGN generate-keypair -keyAlias "profile-sign" -keyPwd "$KP" \
+            -keyAlg ECC -keySize NIST-P-256 \
+            -keystoreFile "$KS" -keystorePwd "$KP"
+          $SIGN generate-profile-cert -keyAlias "profile-sign" -keyPwd "$KP" \
+            -issuer "C=CN,O=OpenHarmony,OU=Debug,CN=Debug Sub CA" \
+            -issuerKeyAlias "sub-ca" -issuerKeyPwd "$KP" \
+            -subject "C=CN,O=OpenHarmony,OU=Debug,CN=Debug Profile" \
+            -validity 365 -signAlg SHA256withECDSA \
+            -keystoreFile "$KS" -keystorePwd "$KP" \
+            -subCACertFile "$CERTS/sub-ca.cer" \
+            -rootCACertFile "$CERTS/root-ca.cer" \
+            -outFile "$CERTS/profile-sign.cer"
+          echo "Profile signing cert generated"
+
+          echo "=== Creating debug provisioning profile ==="
+
+          # Extract bundle name from project
+          cd $GITHUB_WORKSPACE/harmony-project
+          BUNDLE_NAME=$(cat AppScope/app.json5 2>/dev/null | sed 's|//.*||g' | tr -d '\n' | python3 -c "
+          import sys, json, re
+          content = sys.stdin.read()
+          content = re.sub(r'/\*.*?\*/', '', content)
+          try:
+              data = json.loads(content)
+              print(data.get('app', {}).get('bundleName', 'com.example.app'))
+          except:
+              print('com.example.app')
+          " 2>/dev/null || echo "com.example.app")
+          echo "Bundle name: $BUNDLE_NAME"
+
+          # Create unsigned profile JSON via python3 (avoids YAML/heredoc issues)
+          python3 -c "
+          import json, uuid
+          profile = {
+              'version-name': '2.0.0',
+              'version-code': 2,
+              'uuid': str(uuid.uuid4()),
+              'validity': {'not-before': 1672502400, 'not-after': 1988035200},
+              'type': 'debug',
+              'bundle-info': {
+                  'developer-id': 'OpenHarmony',
+                  'distribution-certificate': '',
+                  'bundle-name': '$BUNDLE_NAME',
+                  'apl': 'normal',
+                  'app-feature': 'hos_normal_app'
+              },
+              'acls': {'allowed-acls': ['']},
+              'permissions': {'restricted-permissions': ['']},
+              'issuer': 'pki_internal',
+              'debug-info': {'device-id-type': 'udid', 'device-ids': ['']}
+          }
+          with open('$RUNNER_TEMP/unsigned-profile.json', 'w') as f:
+              json.dump(profile, f, indent=4)
+          print('Unsigned profile created')
+          "
+
+          # Sign the profile
+          $SIGN sign-profile -keyAlias "profile-sign" -keyPwd "$KP" \
+            -mode localSign -signAlg SHA256withECDSA \
+            -profileCertFile "$CERTS/profile-sign.cer" \
+            -inFile "$RUNNER_TEMP/unsigned-profile.json" \
+            -outFile "$RUNNER_TEMP/signed-profile.p7b" \
+            -keystoreFile "$KS" -keystorePwd "$KP"
+          echo "Profile signed"
+
+          echo "=== Signing HAP ==="
+
+          $SIGN sign-app -keyAlias "app-sign" -keyPwd "$KP" \
+            -mode localSign -signAlg SHA256withECDSA \
+            -appCertFile "$CERTS/app-sign.cer" \
+            -profileFile "$RUNNER_TEMP/signed-profile.p7b" \
+            -keystoreFile "$KS" -keystorePwd "$KP" \
+            -inFile "$GITHUB_WORKSPACE/app-release.hap" \
+            -outFile "$GITHUB_WORKSPACE/app-release-signed.hap"
+
+          if [ -f "$GITHUB_WORKSPACE/app-release-signed.hap" ]; then
+            mv "$GITHUB_WORKSPACE/app-release-signed.hap" "$GITHUB_WORKSPACE/app-release.hap"
+            echo "HAP signed successfully!"
+            ls -la "$GITHUB_WORKSPACE/app-release.hap"
+          else
+            echo "WARNING: Signing failed, using unsigned HAP"
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hap-release-${{ inputs.build_id }}
+          path: app-release.hap
+          retention-days: 7
+
+      - name: Notify Callback
+        if: always()
+        run: |
+          if [ -n "${{ inputs.callback_url }}" ]; then
+            STATUS="${{ job.status }}"
+            RUN_ID="${{ github.run_id }}"
+
+            curl -X POST "${{ inputs.callback_url }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"status\": \"$STATUS\", \"run_id\": \"$RUN_ID\", \"artifact_url\": \"\"}" \
+              --max-time 30 || echo "Callback failed (non-critical)"
+          fi
