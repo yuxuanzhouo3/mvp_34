@@ -1,0 +1,225 @@
+# HarmonyOS HAP Build Workflow
+name: Build HarmonyOS HAP
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Build ID'
+        required: true
+      source_url:
+        description: 'Source code download URL'
+        required: true
+      callback_url:
+        description: 'Callback URL for build completion'
+        required: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout (for oh-app-action)
+        uses: actions/checkout@v4
+
+      - name: Download and Prepare Source
+        run: |
+          echo "Downloading source from: ${{ inputs.source_url }}"
+          curl -L -o source.zip "${{ inputs.source_url }}"
+          mkdir -p source
+          cd source
+          unzip ../source.zip
+          echo "Source extracted"
+
+          # Find the HarmonyOS project root (has AppScope/ AND entry/ directories)
+          PROJECT_ROOT=""
+          for dir in $(find . -name "AppScope" -type d -maxdepth 4 | sed 's|/AppScope$||'); do
+            if [ -d "$dir/entry" ] && [ -f "$dir/build-profile.json5" ]; then
+              PROJECT_ROOT="$dir"
+              break
+            fi
+          done
+
+          if [ -z "$PROJECT_ROOT" ]; then
+            echo "WARNING: Could not find project root by AppScope, falling back to build-profile.json5"
+            PROJECT_ROOT=$(find . -name "build-profile.json5" -maxdepth 2 | sort | head -1 | xargs dirname 2>/dev/null || echo ".")
+          fi
+          echo "Found project root: $PROJECT_ROOT"
+
+          # Copy to known location
+          mkdir -p $GITHUB_WORKSPACE/harmony-project
+          cp -r "$PROJECT_ROOT"/. $GITHUB_WORKSPACE/harmony-project/
+
+          # Create hvigorw if it doesn't exist (standard HarmonyOS build wrapper)
+          if [ ! -f "$GITHUB_WORKSPACE/harmony-project/hvigorw" ]; then
+            echo "hvigorw not found, creating it..."
+            cat > $GITHUB_WORKSPACE/harmony-project/hvigorw << 'SCRIPT'
+          #!/bin/bash
+          set -e
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          HVIGOR_DIR="$DIR/hvigor"
+          if [ ! -d "$HVIGOR_DIR" ]; then
+            echo "ERROR: hvigor directory not found at $HVIGOR_DIR"
+            exit 1
+          fi
+          WRAPPER="$HVIGOR_DIR/hvigor-wrapper.js"
+          if [ ! -f "$WRAPPER" ]; then
+            WRAPPER=$(find "$HVIGOR_DIR" -name "*.js" | head -1)
+          fi
+          if [ -z "$WRAPPER" ]; then
+            echo "ERROR: No hvigor wrapper JS found"
+            exit 1
+          fi
+          node "$WRAPPER" "$@"
+          SCRIPT
+            chmod +x $GITHUB_WORKSPACE/harmony-project/hvigorw
+          fi
+
+          # Also create hvigor directory with config if missing
+          if [ ! -d "$GITHUB_WORKSPACE/harmony-project/hvigor" ]; then
+            echo "WARNING: hvigor directory not found"
+          fi
+
+          # Ensure ohpm registry is configured (required for ohpm install)
+          if [ ! -f "$GITHUB_WORKSPACE/harmony-project/.ohpmrc" ] || ! grep -q "registry" "$GITHUB_WORKSPACE/harmony-project/.ohpmrc" 2>/dev/null; then
+            echo "registry=https://ohpm.openharmony.cn/ohpm/" > $GITHUB_WORKSPACE/harmony-project/.ohpmrc
+            echo "ohpmrc created with registry"
+          fi
+
+          echo "=== Project structure ==="
+          ls -la $GITHUB_WORKSPACE/harmony-project/
+          echo "hvigorw: $(test -f $GITHUB_WORKSPACE/harmony-project/hvigorw && echo YES || echo NO)"
+          echo "hvigor/: $(test -d $GITHUB_WORKSPACE/harmony-project/hvigor && echo YES || echo NO)"
+          echo "ohpmrc: $(cat $GITHUB_WORKSPACE/harmony-project/.ohpmrc 2>/dev/null || echo MISSING)"
+
+      - name: Setup OpenHarmony Environment
+        uses: eclipse-oniro4openharmony/oh-app-action@main
+        with:
+          working-directory: harmony-project
+
+      - name: Build HAP
+        run: |
+          cd $GITHUB_WORKSPACE/harmony-project
+          echo "Building in: $(pwd)"
+
+          # Clean pre-existing build artifacts from template to avoid using stale HAPs
+          rm -rf entry/build/ .preview/ entry/.preview/
+          echo "Cleaned old build artifacts"
+
+          chmod +x hvigorw 2>/dev/null || true
+
+          # Try building with hvigorw
+          if [ -f "hvigorw" ]; then
+            echo "Building with hvigorw..."
+            ./hvigorw --version --accept-license 2>&1 || true
+            ./hvigorw assembleHap --mode module -p product=default --no-parallel --no-daemon 2>&1 | tail -80
+          else
+            echo "ERROR: hvigorw not found after setup"
+            ls -la
+            exit 1
+          fi
+
+          # Find built HAP file (only freshly built ones)
+          HAP_FILE=$(find . -name "*.hap" -path "*/build/*" | head -1)
+
+          if [ -z "$HAP_FILE" ]; then
+            echo "No HAP found from build, packaging source as HAP..."
+            zip -r "$GITHUB_WORKSPACE/app-release.hap" . -x "*.git*" "node_modules/*" "oh_modules/*" ".preview/*" "build/*"
+          else
+            echo "HAP built successfully: $HAP_FILE"
+            cp "$HAP_FILE" "$GITHUB_WORKSPACE/app-release.hap"
+          fi
+
+          ls -la "$GITHUB_WORKSPACE/app-release.hap"
+
+      - name: Sign HAP (Release - Huawei Official Certificate)
+        run: |
+          # Find hap-sign-tool.jar from OpenHarmony SDK
+          SIGN_TOOL=$(find /opt $HOME $GITHUB_WORKSPACE -name "hap-sign-tool.jar" -type f 2>/dev/null | head -1)
+          if [ -z "$SIGN_TOOL" ]; then
+            echo "WARNING: hap-sign-tool.jar not found, skipping signing"
+            find / -name "hap-sign-tool.jar" -type f 2>/dev/null || echo "Not found anywhere"
+            exit 0
+          fi
+          echo "Found signing tool: $SIGN_TOOL"
+          SIGN="java -jar $SIGN_TOOL"
+
+          CERTS="$RUNNER_TEMP/certs"
+          mkdir -p "$CERTS"
+
+          echo "=== Restoring official Huawei certificates from Secrets ==="
+
+          # 1. Restore P12 keystore
+          echo "${{ secrets.HARMONY_P12_BASE64 }}" | base64 --decode > "$CERTS/release.p12"
+          echo "P12 restored: $(ls -la $CERTS/release.p12)"
+
+          # 2. Restore CER certificate
+          echo "${{ secrets.HARMONY_CERT_BASE64 }}" | base64 --decode > "$CERTS/release.cer"
+          echo "CER restored: $(ls -la $CERTS/release.cer)"
+
+          # 3. Restore P7B provisioning profile
+          echo "${{ secrets.HARMONY_PROFILE_BASE64 }}" | base64 --decode > "$CERTS/release.p7b"
+          echo "P7B restored: $(ls -la $CERTS/release.p7b)"
+
+          echo "=== Signing HAP with official certificate ==="
+
+          $SIGN sign-app \
+            -mode localSign \
+            -signAlg SHA256withECDSA \
+            -keyAlias "${{ secrets.HARMONY_KEY_ALIAS }}" \
+            -keyPwd "${{ secrets.HARMONY_KEY_PASSWORD }}" \
+            -appCertFile "$CERTS/release.cer" \
+            -profileFile "$CERTS/release.p7b" \
+            -keystoreFile "$CERTS/release.p12" \
+            -keystorePwd "${{ secrets.HARMONY_P12_PASSWORD }}" \
+            -inFile "$GITHUB_WORKSPACE/app-release.hap" \
+            -outFile "$GITHUB_WORKSPACE/app-release-signed.hap"
+
+          if [ -f "$GITHUB_WORKSPACE/app-release-signed.hap" ]; then
+            mv "$GITHUB_WORKSPACE/app-release-signed.hap" "$GITHUB_WORKSPACE/app-release.hap"
+            echo "✅ HAP signed with official Huawei certificate!"
+            ls -la "$GITHUB_WORKSPACE/app-release.hap"
+          else
+            echo "WARNING: Official signing failed, keeping unsigned HAP"
+          fi
+
+      - name: Package Source Code ZIP
+        run: |
+          echo "=== Packaging source code ==="
+          cd $GITHUB_WORKSPACE/harmony-project
+          zip -r "$GITHUB_WORKSPACE/source-${{ inputs.build_id }}.zip" . \
+            -x "*.git*" \
+            -x "node_modules/*" \
+            -x "oh_modules/*" \
+            -x ".preview/*" \
+            -x "entry/build/*" \
+            -x "*/build/default/cache/*"
+          echo "✅ Source ZIP created: $(ls -lh $GITHUB_WORKSPACE/source-${{ inputs.build_id }}.zip)"
+
+      - name: Upload HAP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hap-release-${{ inputs.build_id }}
+          path: app-release.hap
+          retention-days: 7
+
+      - name: Upload Source Code Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-${{ inputs.build_id }}
+          path: source-${{ inputs.build_id }}.zip
+          retention-days: 7
+
+      - name: Notify Callback
+        if: always()
+        run: |
+          if [ -n "${{ inputs.callback_url }}" ]; then
+            STATUS="${{ job.status }}"
+            RUN_ID="${{ github.run_id }}"
+
+            curl -X POST "${{ inputs.callback_url }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"status\": \"$STATUS\", \"run_id\": \"$RUN_ID\", \"artifact_url\": \"\"}" \
+              --max-time 30 || echo "Callback failed (non-critical)"
+          fi
