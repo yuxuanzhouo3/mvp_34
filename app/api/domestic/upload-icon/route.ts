@@ -1,12 +1,11 @@
 /**
  * 国内版图标上传 API
- * 用于在构建表单中立即上传图标到CloudBase
- * 支持 Supabase 和 CloudBase 双认证
+ * 同时上传到 Supabase 和 CloudBase，确保所有 builder 都能下载
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/domestic/build-helpers";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isIconUploadEnabled, validateImageSize } from "@/lib/config/upload";
 import { getCloudBaseStorage } from "@/lib/cloudbase/storage";
 import { nanoid } from "nanoid";
@@ -18,7 +17,6 @@ export async function POST(request: NextRequest) {
     // 认证：优先 Supabase，兜底 CloudBase
     let userId: string | null = null;
 
-    // 尝试 Supabase 认证
     try {
       const supabase = await createClient();
       const { data: { user: supabaseUser } } = await supabase.auth.getUser();
@@ -29,7 +27,6 @@ export async function POST(request: NextRequest) {
       // Supabase 认证失败，继续尝试 CloudBase
     }
 
-    // 兜底 CloudBase 认证
     if (!userId) {
       const authResult = await authenticateUser();
       if (authResult.success && authResult.user) {
@@ -40,8 +37,6 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized", message: "Please login" }, { status: 401 });
     }
-
-    const user = { id: userId };
 
     const formData = await request.formData();
     const icon = formData.get("icon") as File | null;
@@ -60,14 +55,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Icon too large", message: `Icon size exceeds limit` }, { status: 400 });
     }
 
-    // 生成唯一的图标路径
     const iconId = nanoid();
-    const iconPath = `user-builds/temp-icons/${user.id}/${platform}-${iconId}.png`;
-
-    // 上传到CloudBase
-    const storage = getCloudBaseStorage();
+    const iconPath = `user-builds/temp-icons/${userId}/${platform}-${iconId}.png`;
     const iconBuffer = Buffer.from(await icon.arrayBuffer());
-    await storage.uploadFile(iconPath, iconBuffer);
+
+    // 同时上传到 Supabase 和 CloudBase（确保所有 builder 都能下载）
+    const supabaseUpload = createServiceClient().storage
+      .from("user-builds")
+      .upload(iconPath, iconBuffer, { contentType: "image/png", upsert: true })
+      .then(({ error }) => {
+        if (error) console.error("[Upload Icon] Supabase upload failed:", error.message);
+        else console.log("[Upload Icon] Supabase upload OK:", iconPath);
+      });
+
+    const cloudbaseUpload = (async () => {
+      try {
+        const storage = getCloudBaseStorage();
+        await storage.uploadFile(iconPath, iconBuffer);
+        console.log("[Upload Icon] CloudBase upload OK:", iconPath);
+      } catch (err) {
+        console.error("[Upload Icon] CloudBase upload failed:", err);
+      }
+    })();
+
+    // 并行上传，任一成功即可
+    await Promise.allSettled([supabaseUpload, cloudbaseUpload]);
 
     return NextResponse.json({ success: true, iconPath, message: "Icon uploaded successfully" });
   } catch (error) {
