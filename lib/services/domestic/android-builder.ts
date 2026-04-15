@@ -320,6 +320,11 @@ async function updateAppConfig(configPath: string, config: BuildConfig): Promise
     appConfig.general.androidPackageName = config.packageName;
     appConfig.general.androidVersionName = config.versionName;
     appConfig.general.androidVersionCode = parseInt(config.versionCode, 10) || 1;
+
+    // Fix Google OAuth "disallowed_useragent" — use standard Chrome UA without WebView marker
+    const chromeUA = "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+    appConfig.general.forceUserAgent = chromeUA;
+    appConfig.general.androidForceUserAgent = chromeUA;
   }
 
   fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf-8");
