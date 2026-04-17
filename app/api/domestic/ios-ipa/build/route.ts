@@ -36,6 +36,15 @@ export async function POST(request: NextRequest) {
     const buildNumber = formData.get("buildNumber") as string || "1";
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const preUploadedIconPath = formData.get("iconPath") as string | null;
+    const iconUrl = formData.get("iconUrl") as string | null;
+    const iconFile = formData.get("iconFile") as File | null;
+
+    // 将图标文件转为 Buffer（直接从 FormData 获取，最可靠）
+    let iconBuffer: Buffer | null = null;
+    if (iconFile && iconFile.size > 500) {
+      iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+      console.log(`[iOS IPA Build] ✅ Icon file received directly: ${iconBuffer.length} bytes`);
+    }
 
     // 3. 验证必填字段
     if (!url || !appName) {
@@ -131,7 +140,7 @@ export async function POST(request: NextRequest) {
     // 8. 异步处理构建（立即返回给用户）
     waitUntil(processIOSIpaBuildAsync(serviceClient, buildId, {
       url, appName, bundleId, versionString, buildNumber, privacyPolicy,
-      iconPath: preUploadedIconPath, userId: user.id,
+      iconPath: preUploadedIconPath, iconBuffer, userId: user.id,
     }));
 
     // 触发额度刷新
@@ -175,7 +184,7 @@ async function processIOSIpaBuildAsync(
   params: {
     url: string; appName: string; bundleId: string;
     versionString: string; buildNumber: string; privacyPolicy: string;
-    iconPath: string | null; userId: string;
+    iconPath: string | null; iconBuffer: Buffer | null; userId: string;
   }
 ) {
   try {
@@ -195,6 +204,7 @@ async function processIOSIpaBuildAsync(
       buildNumber: params.buildNumber,
       privacyPolicy: params.privacyPolicy,
       iconPath: params.iconPath,
+      iconBuffer: params.iconBuffer || undefined,
     }, { skipFinalStatus: true });
 
     // 获取生成的源文件路径（ios-builder 存的是 output_file_path，不是 download_url）

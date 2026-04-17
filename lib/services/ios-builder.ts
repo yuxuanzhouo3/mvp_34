@@ -14,6 +14,7 @@ interface iOSBuildConfig {
   buildNumber: string;
   privacyPolicy: string;
   iconPath: string | null;
+  iconBuffer?: Buffer;
 }
 
 interface iOSBuildOptions {
@@ -143,20 +144,34 @@ export async function processiOSBuild(
     await updateBuildStatus(supabase, buildId, "processing", 55);
 
     // Step 6: Process icons if provided
-    if (config.iconPath) {
-      console.log(`[Build ${buildId}] Processing icons, iconPath: ${config.iconPath}`);
+    const hasIcon = config.iconBuffer || config.iconPath;
+    if (hasIcon) {
+      console.log(`[Build ${buildId}] Processing icons, iconPath: ${config.iconPath}, hasDirectBuffer: ${!!config.iconBuffer} (${config.iconBuffer?.length || 0} bytes)`);
       try {
-        const { data: iconData, error: iconError } = await supabase.storage
-          .from("user-builds")
-          .download(config.iconPath);
+        let iconBuffer: Buffer | null = config.iconBuffer || null;
+        if (iconBuffer) {
+          console.log(`[Build ${buildId}] ✅ Using directly provided icon buffer: ${iconBuffer.length} bytes`);
+        }
 
-        if (iconError) {
-          console.error(`[Build ${buildId}] Failed to download icon: ${iconError.message}`);
-        } else if (iconData) {
-          console.log(`[Build ${buildId}] Icon downloaded successfully, size: ${iconData.size} bytes`);
-          const iconBuffer = Buffer.from(await iconData.arrayBuffer());
+        // Fallback: download from Supabase storage
+        if (!iconBuffer && config.iconPath) {
+          const { data: iconData, error: iconError } = await supabase.storage
+            .from("user-builds")
+            .download(config.iconPath);
+
+          if (iconError) {
+            console.error(`[Build ${buildId}] Failed to download icon: ${iconError.message}`);
+          } else if (iconData) {
+            console.log(`[Build ${buildId}] Icon downloaded successfully, size: ${iconData.size} bytes`);
+            iconBuffer = Buffer.from(await iconData.arrayBuffer());
+          }
+        }
+
+        if (iconBuffer && iconBuffer.length > 0) {
           await processIcons(projectRoot, iconBuffer, buildId);
           console.log(`[Build ${buildId}] Icon processing completed`);
+        } else {
+          console.warn(`[Build ${buildId}] No valid icon buffer available, skipping`);
         }
       } catch (iconProcessError) {
         console.error(`[Build ${buildId}] Icon processing failed:`, iconProcessError);
