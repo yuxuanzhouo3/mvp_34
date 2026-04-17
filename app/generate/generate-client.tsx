@@ -631,9 +631,9 @@ function GenerateContent() {
           if (hasAnyIconPath) {
             console.log("[Domestic] Using pre-uploaded icon paths for batch build");
           } else {
-            console.log("[Domestic] No icon paths found, falling back to international upload for iconUrl...");
+            console.log("[Domestic] No icon paths found, falling back to Supabase upload for iconUrl...");
             try {
-              const uploadResults = await uploadIconsBatch(iconsToUpload, user.id);
+              const uploadResults = await uploadIconsBatch(iconsToUpload, user.id, { forceSupabase: true });
               uploadResults.forEach(r => {
                 if (r.success && r.url) {
                   iconUrls[r.platform] = r.url;
