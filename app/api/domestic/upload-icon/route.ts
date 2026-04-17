@@ -60,12 +60,15 @@ export async function POST(request: NextRequest) {
     const iconBuffer = Buffer.from(await icon.arrayBuffer());
 
     // 同时上传到 Supabase 和 CloudBase（确保所有 builder 都能下载）
+    let supabaseOk = false;
+    let cloudbaseOk = false;
+
     const supabaseUpload = createServiceClient().storage
       .from("user-builds")
       .upload(iconPath, iconBuffer, { contentType: "image/png", upsert: true })
       .then(({ error }) => {
         if (error) console.error("[Upload Icon] Supabase upload failed:", error.message);
-        else console.log("[Upload Icon] Supabase upload OK:", iconPath);
+        else { console.log("[Upload Icon] Supabase upload OK:", iconPath); supabaseOk = true; }
       });
 
     const cloudbaseUpload = (async () => {
@@ -73,14 +76,19 @@ export async function POST(request: NextRequest) {
         const storage = getCloudBaseStorage();
         await storage.uploadFile(iconPath, iconBuffer);
         console.log("[Upload Icon] CloudBase upload OK:", iconPath);
+        cloudbaseOk = true;
       } catch (err) {
         console.error("[Upload Icon] CloudBase upload failed:", err);
       }
     })();
 
-    // 并行上传，任一成功即可
     await Promise.allSettled([supabaseUpload, cloudbaseUpload]);
 
+    if (!supabaseOk && !cloudbaseOk) {
+      return NextResponse.json({ error: "Upload failed", message: "Icon upload failed to both storage backends" }, { status: 500 });
+    }
+
+    console.log(`[Upload Icon] Result: Supabase=${supabaseOk}, CloudBase=${cloudbaseOk}, path=${iconPath}`);
     return NextResponse.json({ success: true, iconPath, message: "Icon uploaded successfully" });
   } catch (error) {
     console.error("[Domestic Upload Icon API] Error:", error);

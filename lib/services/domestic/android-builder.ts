@@ -366,8 +366,8 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     const outputPath = path.join(iconDir, fileName);
 
     if (!fs.existsSync(iconDir)) {
-      console.log(`[Domestic Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
-      return;
+      fs.mkdirSync(iconDir, { recursive: true });
+      console.log(`[Domestic Build ${buildId}] Created missing dir: ${folder}`);
     }
 
     try {
@@ -384,8 +384,8 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     const outputPath = path.join(iconDir, fileName);
 
     if (!fs.existsSync(iconDir)) {
-      console.log(`[Domestic Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
-      return;
+      fs.mkdirSync(iconDir, { recursive: true });
+      console.log(`[Domestic Build ${buildId}] Created missing dir: ${folder}`);
     }
 
     try {
