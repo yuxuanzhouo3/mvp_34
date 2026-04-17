@@ -623,8 +623,27 @@ function GenerateContent() {
             await Promise.all(pendingUploads.map(([_, promise]) => promise));
             console.log("[Domestic] All pending uploads completed");
           }
-          console.log("[Domestic] Using pre-uploaded icon paths for batch build");
-          // iconPath 将在构建平台配置时从 uploadedIconPathsRef 中获取
+
+          // 检查国内版上传是否成功，如果失败则回退到国际版上传获取 iconUrl
+          const hasAnyIconPath = iconsToUpload.some(({ platform }) =>
+            uploadedIconPathsRef.current[platform] || uploadedIconPaths[platform]
+          );
+          if (hasAnyIconPath) {
+            console.log("[Domestic] Using pre-uploaded icon paths for batch build");
+          } else {
+            console.log("[Domestic] No icon paths found, falling back to international upload for iconUrl...");
+            try {
+              const uploadResults = await uploadIconsBatch(iconsToUpload, user.id);
+              uploadResults.forEach(r => {
+                if (r.success && r.url) {
+                  iconUrls[r.platform] = r.url;
+                }
+              });
+              console.log("[Domestic] Fallback upload results:", Object.keys(iconUrls));
+            } catch (fallbackErr) {
+              console.error("[Domestic] Fallback icon upload also failed:", fallbackErr);
+            }
+          }
         } else {
           // 国际版：上传到 Supabase Storage
           try {
