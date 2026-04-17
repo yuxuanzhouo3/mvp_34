@@ -33,11 +33,12 @@ function isDomesticVersion(): boolean {
 export async function uploadIconToStorage(
   file: File,
   userId: string,
-  platform: string
+  platform: string,
+  options?: { forceSupabase?: boolean }
 ): Promise<IconUploadResult> {
   try {
     // 国内版：直接返回文件对象，由后端API处理上传
-    if (isDomesticVersion()) {
+    if (isDomesticVersion() && !options?.forceSupabase) {
       return {
         success: true,
         file: file,
@@ -94,11 +95,12 @@ export async function uploadIconToStorage(
  */
 export async function uploadIconsBatch(
   icons: Array<{ file: File; platform: string }>,
-  userId: string
+  userId: string,
+  options?: { forceSupabase?: boolean }
 ): Promise<Array<IconUploadResult & { platform: string }>> {
   const results = await Promise.all(
     icons.map(async ({ file, platform }) => {
-      const result = await uploadIconToStorage(file, userId, platform);
+      const result = await uploadIconToStorage(file, userId, platform, options);
       return { ...result, platform };
     })
   );
