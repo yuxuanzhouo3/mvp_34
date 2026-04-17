@@ -182,28 +182,38 @@ export async function processAndroidBuild(
 
     // Step 5: Process icons if provided
     if (config.iconPath) {
-      console.log(`[Build ${buildId}] Processing icons, iconPath: ${config.iconPath}`);
+      console.log(`[Build ${buildId}] ===== ICON PROCESSING START =====`);
+      console.log(`[Build ${buildId}] iconPath: ${config.iconPath}`);
       try {
+        // Try Supabase download first
+        console.log(`[Build ${buildId}] Downloading icon from Supabase bucket "user-builds"...`);
         const { data: iconData, error: iconError } = await supabase.storage
           .from("user-builds")
           .download(config.iconPath);
 
         if (iconError) {
-          console.error(`[Build ${buildId}] Failed to download icon: ${iconError.message}`);
-          // 图标下载失败不中断构建，继续执行
-        } else if (iconData) {
-          console.log(`[Build ${buildId}] Icon downloaded successfully, size: ${iconData.size} bytes`);
+          console.error(`[Build ${buildId}] Supabase icon download FAILED: ${iconError.message}`);
+        }
+
+        if (iconData) {
+          console.log(`[Build ${buildId}] Icon downloaded OK, size: ${iconData.size} bytes`);
           const iconBuffer = Buffer.from(await iconData.arrayBuffer());
-          await processIcons(projectRoot, iconBuffer, buildId);
-          console.log(`[Build ${buildId}] Icon processing completed`);
+          if (iconBuffer.length === 0) {
+            console.error(`[Build ${buildId}] Icon buffer is EMPTY after conversion`);
+          } else {
+            await processIcons(projectRoot, iconBuffer, buildId);
+            console.log(`[Build ${buildId}] ===== ICON PROCESSING COMPLETE =====`);
+          }
+        } else if (!iconError) {
+          console.error(`[Build ${buildId}] Supabase returned no data and no error`);
         }
       } catch (iconProcessError) {
-        // 图标处理失败不中断构建，记录错误并继续
-        console.error(`[Build ${buildId}] Icon processing failed:`, iconProcessError);
+        console.error(`[Build ${buildId}] ===== ICON PROCESSING FAILED =====`);
+        console.error(`[Build ${buildId}] Error:`, iconProcessError);
         console.log(`[Build ${buildId}] Continuing build without custom icons...`);
       }
     } else {
-      console.log(`[Build ${buildId}] No icon provided, skipping icon processing`);
+      console.log(`[Build ${buildId}] No icon provided (iconPath is null), skipping`);
     }
 
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));
@@ -413,10 +423,10 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     const iconDir = path.join(resDir, folder);
     const outputPath = path.join(iconDir, fileName);
 
-    // 只有目录存在时才处理（不创建新目录）
+    // 如果目录不存在则创建（确保图标一定会被写入）
     if (!fs.existsSync(iconDir)) {
-      console.log(`[Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
-      return;
+      fs.mkdirSync(iconDir, { recursive: true });
+      console.log(`[Build ${buildId}] Created missing dir: ${folder}`);
     }
 
     try {
@@ -439,8 +449,8 @@ async function processIcons(projectRoot: string, iconBuffer: Buffer, buildId: st
     const outputPath = path.join(iconDir, fileName);
 
     if (!fs.existsSync(iconDir)) {
-      console.log(`[Build ${buildId}] Skipping ${folder}/${fileName} - directory not found`);
-      return;
+      fs.mkdirSync(iconDir, { recursive: true });
+      console.log(`[Build ${buildId}] Created missing dir: ${folder}`);
     }
 
     try {
