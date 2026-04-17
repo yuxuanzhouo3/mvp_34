@@ -39,11 +39,26 @@ export async function POST(request: NextRequest) {
     const iconUrl = formData.get("iconUrl") as string | null;
     const iconFile = formData.get("iconFile") as File | null;
 
+    // 调试信息：记录所有图标来源（将保存到构建记录中）
+    const iconDebugInfo = {
+      hasIconFile: !!iconFile,
+      iconFileSize: iconFile?.size || 0,
+      iconFileName: iconFile?.name || null,
+      iconFileType: iconFile?.type || null,
+      hasIconPath: !!preUploadedIconPath,
+      iconPath: preUploadedIconPath,
+      hasIconUrl: !!iconUrl,
+      iconUrl: iconUrl?.substring(0, 100) || null,
+    };
+    console.log(`[Android APK Build] Icon debug info:`, JSON.stringify(iconDebugInfo));
+
     // 将图标文件转为 Buffer（直接从 FormData 获取，绕过所有存储上传链路）
     let iconBuffer: Buffer | null = null;
-    if (iconFile) {
+    if (iconFile && iconFile.size > 500) {
       iconBuffer = Buffer.from(await iconFile.arrayBuffer());
-      console.log(`[Android APK Build] Icon file received directly, size: ${iconBuffer.length} bytes`);
+      console.log(`[Android APK Build] ✅ Icon file received directly, size: ${iconBuffer.length} bytes`);
+    } else if (iconFile) {
+      console.warn(`[Android APK Build] ⚠️ Icon file too small (${iconFile.size} bytes), ignoring - likely corrupt`);
     }
 
     // 3. 验证必填字段
@@ -106,7 +121,7 @@ export async function POST(request: NextRequest) {
         version_code: versionCode,
         url: url,
         privacy_policy: privacyPolicy,
-        icon_path: preUploadedIconPath,
+        icon_path: preUploadedIconPath || JSON.stringify(iconDebugInfo),
         expires_at: expiresAt,
       })
       .select()
