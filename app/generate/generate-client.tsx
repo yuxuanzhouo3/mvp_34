@@ -663,6 +663,7 @@ function GenerateContent() {
         // 使用实际选中的 Android 平台 ID
         const androidPlatform = selectedPlatforms.find(p => p === "android-source" || p === "android-apk") || "android-source";
         const latestIconPath = uploadedIconPathsRef.current[androidPlatform] || uploadedIconPaths[androidPlatform] || uploadedIconPathsRef.current["android"] || uploadedIconPaths["android"];
+        console.log(`[Build Config] Android iconPath debug: androidPlatform=${androidPlatform}, latestIconPath=${latestIconPath}, ref keys=${JSON.stringify(Object.keys(uploadedIconPathsRef.current))}, state keys=${JSON.stringify(Object.keys(uploadedIconPaths))}`);
         platforms.push({
           platform: androidPlatform, appName, packageName,
           versionName: androidVersionName, versionCode: androidVersionCode, privacyPolicy,
@@ -752,8 +753,10 @@ function GenerateContent() {
           formData.append("privacyPolicy", platforms[0].privacyPolicy || "");
         }
 
-        if ((platforms[0] as any).iconPath) {
-          formData.append("iconPath", (platforms[0] as any).iconPath);
+        const platformIconPath = (platforms[0] as any).iconPath;
+        console.log(`[Build Submit] iconPath to send: ${platformIconPath || 'NULL'}, platform config:`, JSON.stringify(platforms[0]));
+        if (platformIconPath) {
+          formData.append("iconPath", platformIconPath);
         }
 
         const apiPath = isAndroidApkOnly
