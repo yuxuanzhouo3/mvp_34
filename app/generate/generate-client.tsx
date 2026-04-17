@@ -777,13 +777,13 @@ function GenerateContent() {
         // 获取对应平台的原始图标文件
         const iconFile = isAndroidApkOnly ? appIcon : isIOSIpaOnly ? iosIcon : harmonyIcon;
         console.log(`[Build Submit] iconPath=${platformIconPath || 'NULL'}, iconUrl=${platformIconUrl || 'NULL'}, hasFile=${!!iconFile}`);
-        if (platformIconPath) {
+        // 单平台构建优先直接发送原始文件（最可靠，无需额外网络请求）
+        if (iconFile) {
+          formData.append("iconFile", iconFile);
+        } else if (platformIconPath) {
           formData.append("iconPath", platformIconPath);
         } else if (platformIconUrl) {
           formData.append("iconUrl", platformIconUrl);
-        } else if (iconFile) {
-          // 直接发送图标文件（绕过所有上传链路，最可靠的方式）
-          formData.append("iconFile", iconFile);
         }
 
         const apiPath = isAndroidApkOnly
