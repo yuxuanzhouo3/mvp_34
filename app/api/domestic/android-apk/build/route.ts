@@ -37,6 +37,14 @@ export async function POST(request: NextRequest) {
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const preUploadedIconPath = formData.get("iconPath") as string | null;
     const iconUrl = formData.get("iconUrl") as string | null;
+    const iconFile = formData.get("iconFile") as File | null;
+
+    // 将图标文件转为 Buffer（直接从 FormData 获取，绕过所有存储上传链路）
+    let iconBuffer: Buffer | null = null;
+    if (iconFile) {
+      iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+      console.log(`[Android APK Build] Icon file received directly, size: ${iconBuffer.length} bytes`);
+    }
 
     // 3. 验证必填字段
     if (!url || !appName || !packageName) {
@@ -146,7 +154,7 @@ export async function POST(request: NextRequest) {
     // 9. 异步处理构建
     waitUntil(processAndroidApkBuildAsync(serviceClient, buildId, {
       url, appName, packageName, versionName, versionCode, privacyPolicy,
-      iconPath: preUploadedIconPath, iconUrl, userId: user.id,
+      iconPath: preUploadedIconPath, iconUrl, iconBuffer, userId: user.id,
     }));
 
     return NextResponse.json({
@@ -180,6 +188,7 @@ async function processAndroidApkBuildAsync(
     privacyPolicy: string;
     iconPath: string | null;
     iconUrl: string | null;
+    iconBuffer: Buffer | null;
     userId: string;
   }
 ) {
@@ -195,6 +204,7 @@ async function processAndroidApkBuildAsync(
       privacyPolicy: params.privacyPolicy,
       iconPath: params.iconPath,
       iconUrl: params.iconUrl,
+      iconBuffer: params.iconBuffer,
     }, { skipFinalStatus: true });
 
     // 获取生成的源文件路径（从 Supabase 读取）

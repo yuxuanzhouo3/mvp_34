@@ -16,6 +16,7 @@ interface BuildConfig {
   privacyPolicy: string;
   iconPath: string | null;
   iconUrl?: string | null;
+  iconBuffer?: Buffer | null;
 }
 
 // Icon sizes for Android - 应用图标 (ic_launcher.png)
@@ -182,15 +183,15 @@ export async function processAndroidBuild(
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_privacy"));
 
     // Step 5: Process icons if provided
-    const hasIcon = config.iconPath || config.iconUrl;
+    const hasIcon = config.iconBuffer || config.iconPath || config.iconUrl;
     if (hasIcon) {
       console.log(`[Build ${buildId}] ===== ICON PROCESSING START =====`);
-      console.log(`[Build ${buildId}] iconPath: ${config.iconPath}, iconUrl: ${config.iconUrl}`);
+      console.log(`[Build ${buildId}] iconBuffer: ${config.iconBuffer ? config.iconBuffer.length + ' bytes' : 'null'}, iconPath: ${config.iconPath}, iconUrl: ${config.iconUrl}`);
       try {
-        let iconBuffer: Buffer | null = null;
+        let iconBuffer: Buffer | null = config.iconBuffer || null;
 
-        // Try iconPath (Supabase storage path) first
-        if (config.iconPath) {
+        // Try iconPath (Supabase storage path) if no direct buffer
+        if (!iconBuffer && config.iconPath) {
           console.log(`[Build ${buildId}] Downloading icon from Supabase bucket "user-builds"...`);
           const { data: iconData, error: iconError } = await supabase.storage
             .from("user-builds")

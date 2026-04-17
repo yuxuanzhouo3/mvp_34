@@ -774,11 +774,16 @@ function GenerateContent() {
 
         const platformIconPath = (platforms[0] as any).iconPath;
         const platformIconUrl = (platforms[0] as any).iconUrl;
-        console.log(`[Build Submit] iconPath=${platformIconPath || 'NULL'}, iconUrl=${platformIconUrl || 'NULL'}`);
+        // 获取对应平台的原始图标文件
+        const iconFile = isAndroidApkOnly ? appIcon : isIOSIpaOnly ? iosIcon : harmonyIcon;
+        console.log(`[Build Submit] iconPath=${platformIconPath || 'NULL'}, iconUrl=${platformIconUrl || 'NULL'}, hasFile=${!!iconFile}`);
         if (platformIconPath) {
           formData.append("iconPath", platformIconPath);
         } else if (platformIconUrl) {
           formData.append("iconUrl", platformIconUrl);
+        } else if (iconFile) {
+          // 直接发送图标文件（绕过所有上传链路，最可靠的方式）
+          formData.append("iconFile", iconFile);
         }
 
         const apiPath = isAndroidApkOnly
