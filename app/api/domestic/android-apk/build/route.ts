@@ -37,6 +37,28 @@ export async function POST(request: NextRequest) {
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const preUploadedIconPath = formData.get("iconPath") as string | null;
     const iconUrl = formData.get("iconUrl") as string | null;
+    const iconFile = formData.get("iconFile") as File | null;
+
+    // 调试信息：记录所有图标来源
+    const iconDebugInfo = {
+      hasIconFile: !!iconFile,
+      iconFileSize: iconFile?.size || 0,
+      iconFileName: iconFile?.name || null,
+      iconFileType: iconFile?.type || null,
+      hasIconPath: !!preUploadedIconPath,
+      iconPath: preUploadedIconPath,
+      hasIconUrl: !!iconUrl,
+    };
+    console.log(`[Android APK Build] Icon debug:`, JSON.stringify(iconDebugInfo));
+
+    // 将图标文件转为 Buffer（直接从 FormData 获取，最可靠）
+    let iconBuffer: Buffer | null = null;
+    if (iconFile && iconFile.size > 500) {
+      iconBuffer = Buffer.from(await iconFile.arrayBuffer());
+      console.log(`[Android APK Build] ✅ Icon file received directly: ${iconBuffer.length} bytes`);
+    } else if (iconFile) {
+      console.warn(`[Android APK Build] ⚠️ Icon file too small (${iconFile.size} bytes), ignoring`);
+    }
 
     // 3. 验证必填字段
     if (!url || !appName || !packageName) {
@@ -146,7 +168,7 @@ export async function POST(request: NextRequest) {
     // 9. 异步处理构建
     waitUntil(processAndroidApkBuildAsync(serviceClient, buildId, {
       url, appName, packageName, versionName, versionCode, privacyPolicy,
-      iconPath: preUploadedIconPath, iconUrl, userId: user.id,
+      iconPath: preUploadedIconPath, iconUrl, iconBuffer, userId: user.id,
     }));
 
     return NextResponse.json({
@@ -180,6 +202,7 @@ async function processAndroidApkBuildAsync(
     privacyPolicy: string;
     iconPath: string | null;
     iconUrl: string | null;
+    iconBuffer: Buffer | null;
     userId: string;
   }
 ) {
@@ -195,6 +218,7 @@ async function processAndroidApkBuildAsync(
       privacyPolicy: params.privacyPolicy,
       iconPath: params.iconPath,
       iconUrl: params.iconUrl,
+      iconBuffer: params.iconBuffer || undefined,
     }, { skipFinalStatus: true });
 
     // 获取生成的源文件路径（从 Supabase 读取）

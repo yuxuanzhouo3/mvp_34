@@ -774,11 +774,23 @@ function GenerateContent() {
 
         const platformIconPath = (platforms[0] as any).iconPath;
         const platformIconUrl = (platforms[0] as any).iconUrl;
-        console.log(`[Build Submit] iconPath=${platformIconPath || 'NULL'}, iconUrl=${platformIconUrl || 'NULL'}`);
-        if (platformIconPath) {
-          formData.append("iconPath", platformIconPath);
-        } else if (platformIconUrl) {
-          formData.append("iconUrl", platformIconUrl);
+        // 获取对应平台的原始图标文件
+        const iconFile = isAndroidApkOnly ? appIcon : isIOSIpaOnly ? iosIcon : harmonyIcon;
+        console.log(`[Build Submit] iconPath=${platformIconPath || 'NULL'}, iconUrl=${platformIconUrl || 'NULL'}, hasFile=${!!iconFile}, fileSize=${iconFile?.size || 0}, fileName=${iconFile?.name || 'N/A'}, fileType=${iconFile?.type || 'N/A'}`);
+        // 单平台构建优先直接发送原始文件（最可靠，无需额外网络请求）
+        // 额外检查：如果文件小于 500 bytes，说明不是真实图标（可能是空白占位图），跳过
+        if (iconFile && iconFile.size > 500) {
+          formData.append("iconFile", iconFile);
+          console.log(`[Build Submit] ✅ Sending raw icon file: ${iconFile.name} (${iconFile.size} bytes)`);
+        } else if (iconFile) {
+          console.warn(`[Build Submit] ⚠️ Icon file too small (${iconFile.size} bytes), likely not a real icon - skipping`);
+        }
+        if (!formData.has("iconFile")) {
+          if (platformIconPath) {
+            formData.append("iconPath", platformIconPath);
+          } else if (platformIconUrl) {
+            formData.append("iconUrl", platformIconUrl);
+          }
         }
 
         const apiPath = isAndroidApkOnly
