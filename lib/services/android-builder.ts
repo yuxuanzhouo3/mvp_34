@@ -15,6 +15,7 @@ interface BuildConfig {
   versionCode: string;
   privacyPolicy: string;
   iconPath: string | null;
+  iconUrl?: string | null;
 }
 
 // Icon sizes for Android - 应用图标 (ic_launcher.png)
@@ -181,31 +182,55 @@ export async function processAndroidBuild(
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_privacy"));
 
     // Step 5: Process icons if provided
-    if (config.iconPath) {
+    const hasIcon = config.iconPath || config.iconUrl;
+    if (hasIcon) {
       console.log(`[Build ${buildId}] ===== ICON PROCESSING START =====`);
-      console.log(`[Build ${buildId}] iconPath: ${config.iconPath}`);
+      console.log(`[Build ${buildId}] iconPath: ${config.iconPath}, iconUrl: ${config.iconUrl}`);
       try {
-        // Try Supabase download first
-        console.log(`[Build ${buildId}] Downloading icon from Supabase bucket "user-builds"...`);
-        const { data: iconData, error: iconError } = await supabase.storage
-          .from("user-builds")
-          .download(config.iconPath);
+        let iconBuffer: Buffer | null = null;
 
-        if (iconError) {
-          console.error(`[Build ${buildId}] Supabase icon download FAILED: ${iconError.message}`);
+        // Try iconPath (Supabase storage path) first
+        if (config.iconPath) {
+          console.log(`[Build ${buildId}] Downloading icon from Supabase bucket "user-builds"...`);
+          const { data: iconData, error: iconError } = await supabase.storage
+            .from("user-builds")
+            .download(config.iconPath);
+
+          if (iconError) {
+            console.error(`[Build ${buildId}] Supabase icon download FAILED: ${iconError.message}`);
+          }
+          if (iconData) {
+            console.log(`[Build ${buildId}] Icon downloaded OK, size: ${iconData.size} bytes`);
+            iconBuffer = Buffer.from(await iconData.arrayBuffer());
+            if (iconBuffer.length === 0) {
+              console.error(`[Build ${buildId}] Icon buffer is EMPTY after conversion`);
+              iconBuffer = null;
+            }
+          }
         }
 
-        if (iconData) {
-          console.log(`[Build ${buildId}] Icon downloaded OK, size: ${iconData.size} bytes`);
-          const iconBuffer = Buffer.from(await iconData.arrayBuffer());
-          if (iconBuffer.length === 0) {
-            console.error(`[Build ${buildId}] Icon buffer is EMPTY after conversion`);
+        // Fallback: download from iconUrl (public URL)
+        if (!iconBuffer && config.iconUrl) {
+          console.log(`[Build ${buildId}] Falling back to iconUrl: ${config.iconUrl}`);
+          const response = await fetch(config.iconUrl);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            iconBuffer = Buffer.from(arrayBuffer);
+            console.log(`[Build ${buildId}] Icon downloaded from URL OK, size: ${iconBuffer.length} bytes`);
+            if (iconBuffer.length === 0) {
+              console.error(`[Build ${buildId}] Icon buffer from URL is EMPTY`);
+              iconBuffer = null;
+            }
           } else {
-            await processIcons(projectRoot, iconBuffer, buildId);
-            console.log(`[Build ${buildId}] ===== ICON PROCESSING COMPLETE =====`);
+            console.error(`[Build ${buildId}] Icon URL fetch failed: ${response.status} ${response.statusText}`);
           }
-        } else if (!iconError) {
-          console.error(`[Build ${buildId}] Supabase returned no data and no error`);
+        }
+
+        if (iconBuffer) {
+          await processIcons(projectRoot, iconBuffer, buildId);
+          console.log(`[Build ${buildId}] ===== ICON PROCESSING COMPLETE =====`);
+        } else {
+          console.error(`[Build ${buildId}] No icon data obtained from any source`);
         }
       } catch (iconProcessError) {
         console.error(`[Build ${buildId}] ===== ICON PROCESSING FAILED =====`);
@@ -213,7 +238,7 @@ export async function processAndroidBuild(
         console.log(`[Build ${buildId}] Continuing build without custom icons...`);
       }
     } else {
-      console.log(`[Build ${buildId}] No icon provided (iconPath is null), skipping`);
+      console.log(`[Build ${buildId}] No icon provided (iconPath and iconUrl both null), skipping`);
     }
 
     await updateBuildStatus(supabase, buildId, "processing", progressHelper.getProgressForStage("processing_icons"));

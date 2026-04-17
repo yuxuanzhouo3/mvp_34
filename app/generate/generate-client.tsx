@@ -754,9 +754,12 @@ function GenerateContent() {
         }
 
         const platformIconPath = (platforms[0] as any).iconPath;
-        console.log(`[Build Submit] iconPath to send: ${platformIconPath || 'NULL'}, platform config:`, JSON.stringify(platforms[0]));
+        const platformIconUrl = (platforms[0] as any).iconUrl;
+        console.log(`[Build Submit] iconPath=${platformIconPath || 'NULL'}, iconUrl=${platformIconUrl || 'NULL'}`);
         if (platformIconPath) {
           formData.append("iconPath", platformIconPath);
+        } else if (platformIconUrl) {
+          formData.append("iconUrl", platformIconUrl);
         }
 
         const apiPath = isAndroidApkOnly

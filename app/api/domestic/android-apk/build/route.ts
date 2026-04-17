@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     const versionCode = formData.get("versionCode") as string || "1";
     const privacyPolicy = formData.get("privacyPolicy") as string || "";
     const preUploadedIconPath = formData.get("iconPath") as string | null;
+    const iconUrl = formData.get("iconUrl") as string | null;
 
     // 3. 验证必填字段
     if (!url || !appName || !packageName) {
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     // 9. 异步处理构建
     waitUntil(processAndroidApkBuildAsync(serviceClient, buildId, {
       url, appName, packageName, versionName, versionCode, privacyPolicy,
-      iconPath: preUploadedIconPath, userId: user.id,
+      iconPath: preUploadedIconPath, iconUrl, userId: user.id,
     }));
 
     return NextResponse.json({
@@ -178,6 +179,7 @@ async function processAndroidApkBuildAsync(
     versionCode: string;
     privacyPolicy: string;
     iconPath: string | null;
+    iconUrl: string | null;
     userId: string;
   }
 ) {
@@ -192,6 +194,7 @@ async function processAndroidApkBuildAsync(
       versionCode: params.versionCode,
       privacyPolicy: params.privacyPolicy,
       iconPath: params.iconPath,
+      iconUrl: params.iconUrl,
     }, { skipFinalStatus: true });
 
     // 获取生成的源文件路径（从 Supabase 读取）
